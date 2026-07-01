@@ -49,6 +49,12 @@ def test_simple_view_flags_liar():
     assert "FABRICATED" in doc
 
 
+def test_simple_view_shows_reasoning():
+    res = _game("honest_cooperator,bayesian_solo")
+    doc = render_simple(res.transcript.events, "t")
+    assert "💭" in doc, "the report must show each agent's reasoning"
+
+
 def test_simple_view_shows_budget_start_and_end():
     res = _game("bayesian_solo")
     doc = render_simple(res.transcript.events, "t")

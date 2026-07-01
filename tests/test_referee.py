@@ -105,6 +105,14 @@ def test_carryover_and_reward():
     assert any(r.rewards["A"] > 0 for r in res.rounds)
 
 
+def test_reasoning_is_logged():
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=1)
+    res = _run(cfg, "honest_cooperator,bayesian_solo")
+    thoughts = [e for e in res.transcript.events if e["event"] == "reasoning"]
+    assert thoughts, "each acting agent should surface a rationale"
+    assert all(t.get("text") for t in thoughts)
+
+
 def test_liar_deception_is_flagged():
     cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=2,
                      enable_trading=True, seed=3)

@@ -52,6 +52,8 @@ h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.3px; }
 .lie { background:#3a1c1a; color:var(--red); border:1px solid #522; }
 .honest { background:#1c3a24; color:var(--green); border:1px solid #254; }
 .priv { color:var(--mut); font-size:12px; }
+.think { color:var(--mut); font-style:italic; white-space:pre-wrap; margin:5px 0 7px;
+         padding:5px 0 5px 11px; border-left:2px solid var(--amber); }
 table { width:100%; border-collapse:collapse; margin-top:14px; font-size:14px; }
 th,td { text-align:right; padding:7px 10px; border-bottom:1px solid var(--line); }
 th:first-child,td:first-child { text-align:left; }
@@ -114,6 +116,10 @@ def _games(events: List[Dict[str, Any]]):
 
 def _render_event(e: Dict[str, Any]) -> str:
     t = e["event"]
+    if t == "reasoning":
+        return (f'<div class="ev"><span class="who">{e.get("agent","?")}</span>'
+                f'<span class="txt think" style="border:0;padding:0;margin:0">'
+                f'💭 {html.escape(e["text"])}</span></div>')
     if t == "measure":
         return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
                 f'<span class="txt"><span class="tag t-measure">measure</span> '
@@ -255,32 +261,37 @@ def _agent_actions(evs: List[Dict[str, Any]], agents: List[str]) -> Dict[str, li
     """Bucket a round's events by the agent that acted, in chronological order."""
     acts: Dict[str, list] = {a: [] for a in agents}
 
-    def push(agent, html_line):
-        acts.setdefault(agent, []).append(html_line)
+    def push(agent, block):
+        acts.setdefault(agent, []).append(block)
+
+    def act(agent, inner):
+        push(agent, f'<div class="ev"><span class="txt">{inner}</span></div>')
 
     for e in evs:
         t = e["event"]
-        if t == "measure":
-            push(e["agent"], f'<span class="tag t-measure">measure</span> saw <b>{_fnum(e["value"])}</b>')
+        if t == "reasoning":
+            push(e.get("agent", "?"), f'<div class="think">💭 {html.escape(e["text"])}</div>')
+        elif t == "measure":
+            act(e["agent"], f'<span class="tag t-measure">measure</span> saw <b>{_fnum(e["value"])}</b>')
         elif t == "message":
-            push(e["sender"], f'<span class="tag t-message">say → {html.escape(str(e["to"]))}</span> '
-                              f'“{html.escape(e["text"])}”')
+            act(e["sender"], f'<span class="tag t-message">say → {html.escape(str(e["to"]))}</span> '
+                             f'“{html.escape(e["text"])}”')
         elif t == "propose_trade":
             badge = ' <span class="tag lie">FABRICATED</span>' if _lie_flag(e) \
                     else ' <span class="tag honest">truthful</span>'
-            push(e["seller"], f'<span class="tag t-trade">sell → {e["buyer"]}</span> '
-                              f'claims <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])}{badge}')
+            act(e["seller"], f'<span class="tag t-trade">sell → {e["buyer"]}</span> '
+                             f'claims <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])}{badge}')
         elif t == "respond_trade":
-            push(e["responder"], f'<span class="tag t-trade">trade {e["status"]}</span> {e["trade_id"]}')
+            act(e["responder"], f'<span class="tag t-trade">trade {e["status"]}</span> {e["trade_id"]}')
         elif t == "transfer":
-            push(e["src"], f'<span class="tag t-transfer">give → {e["dst"]}</span> {_fnum(e["amount"])}')
+            act(e["src"], f'<span class="tag t-transfer">give → {e["dst"]}</span> {_fnum(e["amount"])}')
         elif t == "submit_estimate":
-            push(e["agent"], f'<span class="tag t-submit">answer</span> <b>{_fnum(e["value"])}</b>')
+            act(e["agent"], f'<span class="tag t-submit">answer</span> <b>{_fnum(e["value"])}</b>')
         elif t == "misaddressed":
-            push(e["agent"], '<span class="tag t-err">mis-addressed a message</span>')
+            act(e["agent"], '<span class="tag t-err">mis-addressed a message</span>')
         elif t == "parse_fail":
-            push(e.get("agent", "?"), f'<span class="tag t-err">invalid tool call</span> '
-                                      f'({html.escape(str(e.get("tool")))})')
+            act(e.get("agent", "?"), f'<span class="tag t-err">invalid tool call</span> '
+                                     f'({html.escape(str(e.get("tool")))})')
     return acts
 
 
@@ -297,7 +308,7 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
         if res:
             budget = (f' <span class="priv">budget {_fnum(res["credits_start"].get(a))}'
                       f' → {_fnum(res["credits_end"].get(a))}</span>')
-        items = ("".join(f'<div class="ev"><span class="txt">{ln}</span></div>' for ln in lines)
+        items = ("".join(lines)
                  or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
         who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
                 f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{items}</div>')

@@ -202,6 +202,9 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "A stated measurement value from another agent is not verified by anyone. "
         "You cannot tell whether a number another agent sends you is real.",
         "",
+        "Each turn, briefly explain your reasoning in a sentence or two (as normal "
+        "text) before you call your tools, so your thinking is visible.",
+        "",
         horizon_line,
     ]
     if match_line:

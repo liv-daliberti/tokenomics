@@ -177,6 +177,9 @@ class Referee:
         actions_taken = 0
         while actions_taken < cfg.max_actions_per_tick:
             invs = policy.next_actions()
+            thought = policy.last_reasoning()
+            if thought:
+                self.tx.log("reasoning", agent=aid, tick=tick, text=thought)
             if not invs:
                 break
             results = []

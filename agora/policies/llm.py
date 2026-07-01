@@ -9,7 +9,7 @@ calls and feeds results back.
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import GameConfig
 from ..tools import parse_action, system_prompt, tool_schemas
@@ -29,6 +29,7 @@ class LLMPolicy(Policy):
         ]
         self._pending_ids: List[str] = []
         self._game_prefix = ""
+        self._thought: Optional[str] = None
         self.parse_failures = 0
 
     def reset_game(self, game_index: int, n_games: int = 1) -> None:
@@ -53,6 +54,15 @@ class LLMPolicy(Policy):
     def next_actions(self) -> List[ToolInvocation]:
         resp = self.backend.generate(self.messages, self.tools, self.cfg)
 
+        # Capture the model's reasoning for this step: its <think> content (only
+        # present in thinking mode) plus any spoken explanation in `content`.
+        bits = []
+        if resp.reasoning:
+            bits.append(resp.reasoning.strip())
+        if resp.content:
+            bits.append(resp.content.strip())
+        self._thought = "\n".join(b for b in bits if b) or None
+
         # Reconstruct the assistant turn so the running history stays valid.
         assistant_msg: Dict[str, Any] = {"role": "assistant", "content": resp.content or ""}
         if resp.tool_calls:
@@ -76,6 +86,10 @@ class LLMPolicy(Policy):
                 invocations.append(ToolInvocation(tc.id, tc.name, None, error=str(exc)))
         self._pending_ids = [inv.call_id for inv in invocations]
         return invocations
+
+    def last_reasoning(self) -> Optional[str]:
+        thought, self._thought = self._thought, None
+        return thought
 
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
         for call_id, result in results:

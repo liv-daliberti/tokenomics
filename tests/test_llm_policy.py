@@ -53,6 +53,25 @@ def test_llm_policy_round_trip():
         assert sorted(tool_call_ids) == sorted(tool_reply_ids)
 
 
+def test_llm_reasoning_is_captured():
+    cfg = GameConfig(agent_ids=["A"], horizon_mode="fixed", n_rounds=1, seed=0)
+
+    def script(messages, tools, _cfg):
+        n = sum(1 for m in messages if m["role"] == "assistant")
+        if n == 0:
+            return LLMResponse(content="I'll measure to cut the noise.",
+                               reasoning="thinking: one sample is not enough",
+                               tool_calls=[RawToolCall("m", "measure", {})])
+        return LLMResponse(content="Answering now.",
+                           tool_calls=[RawToolCall("e", "end_turn", {})])
+
+    pol = LLMPolicy(MockBackend(script), cfg, "A", [])
+    res = Referee(cfg, {"A": pol}).run()
+    texts = [e["text"] for e in res.transcript.events if e["event"] == "reasoning"]
+    assert any("cut the noise" in t for t in texts)        # spoken content captured
+    assert any("one sample is not enough" in t for t in texts)  # <think> captured too
+
+
 def test_llm_parse_failure_is_counted():
     cfg = GameConfig(agent_ids=["A"], horizon_mode="fixed", n_rounds=1, seed=0)
 

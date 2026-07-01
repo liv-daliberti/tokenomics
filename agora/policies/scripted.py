@@ -50,6 +50,7 @@ class ScriptedPolicy(Policy):
         self._offered = False
         self._shared: set = set()
         self._call_n = 0
+        self._rationale: Optional[str] = None
 
     def reset_round(self, round_index: int) -> None:
         self._submitted = False
@@ -127,11 +128,33 @@ class ScriptedPolicy(Policy):
             self._submitted = True
 
         plan.append(Action(ActionType.END_TURN))
+        self._rationale = self._describe(obs, plan)
         self._queue = [self._inv(a) for a in plan]
+
+    def _describe(self, obs: Dict[str, Any], plan: List[Action]) -> str:
+        kinds = [a.type for a in plan]
+        bits = []
+        if ActionType.RESPOND_TRADE in kinds:
+            accept = any(a.type is ActionType.RESPOND_TRADE and a.args.get("accept") for a in plan)
+            bits.append("taking an offered measurement" if accept else "declining an offer")
+        if ActionType.PROPOSE_TRADE in kinds:
+            bits.append("offering a measurement for sale")
+        if ActionType.SEND_MESSAGE in kinds:
+            bits.append("sharing my reading so we can pool")
+        if ActionType.MEASURE in kinds:
+            bits.append(f"measuring to cut the noise (I have {len(obs['my_measurements'])} so far)")
+        if ActionType.SUBMIT_ESTIMATE in kinds:
+            est = next((a.args["value"] for a in plan if a.type is ActionType.SUBMIT_ESTIMATE), None)
+            bits.append(f"locking in my estimate of {est:.0f}" if est is not None else "answering")
+        return "; ".join(bits) if bits else "holding this tick"
 
     def next_actions(self) -> List[ToolInvocation]:
         queue, self._queue = self._queue, []
         return queue
+
+    def last_reasoning(self) -> Optional[str]:
+        r, self._rationale = self._rationale, None
+        return r
 
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
         pass

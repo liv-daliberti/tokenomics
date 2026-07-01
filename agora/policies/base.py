@@ -39,5 +39,12 @@ class Policy:
         """Return the tool calls for the next model step (empty list = done)."""
         raise NotImplementedError
 
+    def last_reasoning(self) -> Optional[str]:
+        """The agent's reasoning for the step just returned by next_actions().
+
+        Returned once then cleared, so the referee can log it. None if the policy
+        has no reasoning to surface (e.g. a purely scripted rule)."""
+        return None
+
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
         """Feed back (call_id, result_string) pairs for the calls just executed."""
