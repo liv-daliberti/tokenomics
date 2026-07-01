@@ -102,6 +102,32 @@ def test_cooperative_is_default_framing():
     assert meta["framing"] == "cooperative"
 
 
+def test_nonnumeric_knobs_do_not_crash():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    # garbage in numeric fields + a multi-dash seed must NOT 500; they fall back.
+    r = c.post("/new", data={"preset": "base", "backend": "scripted",
+                             "policies": "bayesian_solo",
+                             "tau": "abc", "gamma": "??", "agents": "xyz", "seed": "--5"})
+    assert r.status_code == 302
+    job_id = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, job_id) == "done"
+    import json as _json
+    meta = _json.load(open(os.path.join(os.environ["AGORA_RUNS"], f"{job_id}.json")))
+    assert meta["tau"] == 150.0  # bad tau ignored -> base preset value
+
+
+def test_blank_policies_falls_back_to_default():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.post("/new", data={"preset": "smoke", "backend": "scripted",
+                             "policies": "   ", "seed": "1"})
+    job_id = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, job_id) == "done"  # not "error" (no ZeroDivisionError)
+
+
 def test_bad_policy_surfaces_error():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

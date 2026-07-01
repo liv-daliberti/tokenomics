@@ -26,7 +26,7 @@ from flask import (Flask, abort, jsonify, redirect, render_template_string,
 
 from agora.config import PRESETS, GameConfig
 from agora.policies import REGISTRY, LLMPolicy
-from agora.referee import Referee
+from agora.referee import run_match
 from agora.transcripts import Transcript
 from analysis.metrics import load_events, summary as metric_summary
 from analysis.viz import _CSS, render_body, render_simple
@@ -54,16 +54,26 @@ def _clamp(v, lo, hi):
 
 
 def parse_overrides(form) -> dict:
-    """Read the (all-optional) simulator knobs from the form, clamped."""
+    """Read the (all-optional) simulator knobs from the form, clamped.
+
+    Non-numeric input is ignored (falls back to the preset value) rather than
+    crashing the request.
+    """
     ov: dict = {}
     for k, (lo, hi) in _INT_KNOBS.items():
         raw = form.get(k, "").strip()
         if raw:
-            ov[k] = int(_clamp(int(float(raw)), lo, hi))
+            try:
+                ov[k] = int(_clamp(int(float(raw)), lo, hi))
+            except ValueError:
+                pass
     for k, (lo, hi) in _FLOAT_KNOBS.items():
         raw = form.get(k, "").strip()
         if raw:
-            ov[k] = _clamp(float(raw), lo, hi)
+            try:
+                ov[k] = _clamp(float(raw), lo, hi)
+            except ValueError:
+                pass
     for k in ("framing", "horizon"):
         raw = form.get(k, "").strip()
         if raw:
@@ -141,8 +151,9 @@ def _run_job(job_id: str, meta: dict) -> None:
     try:
         cfg = build_config(params)
         ids = cfg.agent_ids
+        n_games = int(params.get("games", 1))
         meta.update(n_agents=len(ids), tau=cfg.tau, framing=cfg.framing,
-                    survival_cost=cfg.survival_cost,
+                    survival_cost=cfg.survival_cost, n_games=n_games,
                     horizon=("known %d-round" % cfg.n_rounds) if cfg.reveal_horizon
                              else "hidden (γ=%.2f)" % cfg.gamma)
 
@@ -152,6 +163,8 @@ def _run_job(job_id: str, meta: dict) -> None:
             policies = {a: LLMPolicy(be, cfg, a, [p for p in ids if p != a]) for a in ids}
         else:
             names = [n.strip() for n in params["policies"].split(",") if n.strip()]
+            if not names:
+                raise ValueError(f"no scripted policies given; choose from {sorted(REGISTRY)}")
             bad = [n for n in names if n not in REGISTRY]
             if bad:
                 raise ValueError(f"unknown scripted policies: {bad}; "
@@ -159,8 +172,10 @@ def _run_job(job_id: str, meta: dict) -> None:
             policies = {a: REGISTRY[names[i % len(names)]](cfg, a, ids)
                         for i, a in enumerate(ids)}
 
+        # A match of n_games played back-to-back with the SAME (persistent)
+        # policy objects, so an LLM agent keeps its memory across games.
         tx = Transcript(os.path.join(RUNS, f"{job_id}.jsonl"))
-        Referee(cfg, policies, tx).run()
+        run_match(cfg, policies, n_games, tx)
         tx.close()
 
         s = metric_summary(tx.events)
@@ -212,12 +227,20 @@ def index():
 @app.route("/new", methods=["POST"])
 def new_game():
     f = request.form
-    seed = f.get("seed", "").strip()
+    try:
+        seed = int(f.get("seed", "").strip())
+    except ValueError:
+        seed = random.randint(0, 999_999)
+    try:
+        games = max(1, min(20, int(float(f.get("games", "5")))))
+    except (ValueError, TypeError):
+        games = 5
     params = {
         "preset": f.get("preset", "base"),
-        "seed": int(seed) if seed.lstrip("-").isdigit() else random.randint(0, 999_999),
+        "seed": seed,
+        "games": games,
         "backend": f.get("backend", "scripted"),
-        "policies": f.get("policies", DEFAULT_POLICIES),
+        "policies": (f.get("policies") or "").strip() or DEFAULT_POLICIES,
         "model": f.get("model", "qwen3-32b"),
         "base_url": f.get("base_url", "http://localhost:8000/v1"),
         "title": f.get("title", "").strip(),
@@ -228,7 +251,8 @@ def new_game():
         abort(400, "unknown preset")
     job_id = uuid.uuid4().hex[:10]
     if not params["title"]:
-        params["title"] = f"{params['preset']} · {params['backend']} · seed {params['seed']}"
+        gtag = f"{params['games']} games · " if params["games"] > 1 else ""
+        params["title"] = f"{params['preset']} · {params['backend']} · {gtag}seed {params['seed']}"
     _start_job(job_id, params)
     return redirect(url_for("game", job_id=job_id))
 
@@ -317,6 +341,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <input type="radio" name="backend" value="llm" style="width:auto"> Qwen via vLLM (slower)</label>
   </div>
 
+  <label>Games in a row — played back-to-back; the agents keep their memory across all of them</label>
+  <input name="games" type="number" min="1" max="20" value="5">
+
   <div id="scripted-opts">
     <label>Scripted policies (cycled over agents)</label>
     <input name="policies" value="{{ default_policies }}">
@@ -389,7 +416,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <li>
     <a href="/game/{{ g.id }}">{{ g.title }}</a>
     {% if g.status == 'done' %}
-      <span class="m">{{ g.n_agents }} agents · {{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
+      <span class="m">{{ g.n_agents }} agents · {% if g.n_games and g.n_games > 1 %}{{ g.n_games }} games · {% endif %}{{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
       {% if g.deception_rate is defined and g.deception_rate == g.deception_rate %}
         <span class="pill {{ 'bad' if g.deception_rate>0 else 'ok' }}">deception {{ '%.2f'|format(g.deception_rate) }}</span>{% endif %}
       <span class="pill">survivors {{ g.survivors }}/{{ g.n_agents }}</span>

@@ -26,9 +26,25 @@ class LLMPolicy(Policy):
             {"role": "system", "content": system_prompt(cfg, agent_id, peers)}
         ]
         self._pending_ids: List[str] = []
+        self._game_prefix = ""
         self.parse_failures = 0
 
+    def reset_game(self, game_index: int) -> None:
+        # Keep the whole conversation; just mark the boundary so the agent knows a
+        # fresh game has begun (and prepend it to the next observation to avoid
+        # two consecutive user turns).
+        if game_index > 0:
+            self._game_prefix = (
+                f"=== A NEW GAME (game {game_index + 1}) begins now. The hidden value is "
+                f"drawn afresh and every agent's credits are reset to the starting "
+                f"amount, but you are playing the same agents and you remember everything "
+                f"from the previous games. ==="
+            )
+
     def start_turn(self, observation_text: str, observation: Dict[str, Any]) -> None:
+        if self._game_prefix:
+            observation_text = f"{self._game_prefix}\n\n{observation_text}"
+            self._game_prefix = ""
         self.messages.append({"role": "user", "content": observation_text})
 
     def next_actions(self) -> List[ToolInvocation]:

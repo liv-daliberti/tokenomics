@@ -26,6 +26,9 @@ class ToolInvocation:
 class Policy:
     """Base class. Subclasses implement the three-method turn protocol."""
 
+    def reset_game(self, game_index: int) -> None:
+        """Called once before each game in a match. Memory persists across games."""
+
     def reset_round(self, round_index: int) -> None:
         """Called once at the start of each round."""
 

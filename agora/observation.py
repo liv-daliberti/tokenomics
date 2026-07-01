@@ -8,7 +8,7 @@ text).
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .config import GameConfig
 from .types import AgentState, Trade

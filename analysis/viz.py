@@ -92,6 +92,26 @@ def _rounds(events: List[Dict[str, Any]]):
         yield cur, bucket
 
 
+def _games(events: List[Dict[str, Any]]):
+    """Group a (possibly multi-game match) transcript into per-game event lists.
+
+    Returns a list of (game_start_event, [events for that game]). A single-game
+    transcript yields one entry.
+    """
+    games = []
+    cur = None
+    for e in events:
+        if e["event"] == "game_start":
+            if cur is not None:
+                games.append(cur)
+            cur = (e, [e])
+        elif cur is not None:
+            cur[1].append(e)
+    if cur is not None:
+        games.append(cur)
+    return games
+
+
 def _render_event(e: Dict[str, Any]) -> str:
     t = e["event"]
     if t == "measure":
@@ -202,9 +222,14 @@ def render_body(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
            f'{cfg.get("prior_sigma")}²) · τ={cfg.get("tau")} · horizon {horizon} · '
            f'framing {cfg.get("framing","neutral")}')
 
+    games = _games(events)
     rounds_html = ""
-    for i, (start, evs) in enumerate(_rounds(events)):
-        rounds_html += _render_round(start, evs, is_first=(i == 0))
+    for gi, (gstart, gevs) in enumerate(games):
+        if len(games) > 1:
+            rounds_html += (f'<div class="tick" style="margin-top:18px;font-size:14px">'
+                            f'▮ Game {gi + 1} of {len(games)}</div>')
+        for i, (start, evs) in enumerate(_rounds(gevs)):
+            rounds_html += _render_round(start, evs, is_first=(gi == 0 and i == 0))
 
     legend = ('<div class="legend">Values marked <span class="tag lie">FABRICATED</span> '
               'are sales whose claimed value matches none of the seller\'s actual '
@@ -259,9 +284,50 @@ def _agent_actions(evs: List[Dict[str, Any]], agents: List[str]) -> Dict[str, li
     return acts
 
 
+def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
+                  agents: List[str], is_open: bool) -> str:
+    res = next((e["result"] for e in evs if e["event"] == "round_end"), None)
+    acts = _agent_actions(evs, agents)
+
+    who = ""
+    for a in agents:
+        lines = acts.get(a, [])
+        alive = (not res) or res["alive"].get(a, True)
+        budget = ""
+        if res:
+            budget = (f' <span class="priv">budget {_fnum(res["credits_start"].get(a))}'
+                      f' → {_fnum(res["credits_end"].get(a))}</span>')
+        items = ("".join(f'<div class="ev"><span class="txt">{ln}</span></div>' for ln in lines)
+                 or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
+        who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
+                f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{items}</div>')
+
+    rows = ""
+    if res:
+        for a in agents:
+            est = res["estimates"].get(a)
+            err = res["errors"].get(a, float("nan"))
+            dead = not res["alive"].get(a, True)
+            rows += (f'<tr class="{"dead" if dead else ""}"><td>{a}</td>'
+                     f'<td>{_fnum(est) if est is not None else "—"}</td>'
+                     f'<td>{_fnum(err) if err == err else "—"}</td>'
+                     f'<td>{_fnum(res["rewards"].get(a,0),0)}</td>'
+                     f'<td>{_fnum(res["credits_start"].get(a))} → {_fnum(res["credits_end"].get(a))}</td>'
+                     f'</tr>')
+    outcome = (f'<div class="tick">outcome — true value θ = {_fnum(start["truth"])}</div>'
+               f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th>'
+               f'<th>credits</th></tr>{rows}</table>') if res else ""
+
+    return (f'<details class="round"{" open" if is_open else ""}><summary>'
+            f'<b>Round {start["round"]}</b>'
+            f'<span class="chip truth">θ = {_fnum(start["truth"])}</span></summary>'
+            f'<div class="body"><div class="tick">what each agent did</div>{who}{outcome}</div></details>')
+
+
 def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
-    gs = next((e for e in events if e["event"] == "game_start"), {})
-    cfg = gs.get("config", {})
+    games = _games(events)
+    n_games = len(games)
+    cfg = games[0][0].get("config", {}) if games else {}
     agents = cfg.get("agent_ids", [])
     prompt = next((e["text"] for e in events if e["event"] == "agent_prompt"), None)
 
@@ -270,6 +336,8 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
     sub = (f'{len(agents)} agents · measurement noise τ={cfg.get("tau")} · '
            f'θ~N({cfg.get("prior_mu")},{cfg.get("prior_sigma")}²) · '
            f'horizon {horizon} · framing {cfg.get("framing","neutral")}')
+    if n_games > 1:
+        sub += f' · {n_games} games in a row (agents keep their memory across games)'
 
     parts = [f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>']
 
@@ -280,45 +348,19 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
             f'<div class="body"><pre style="white-space:pre-wrap;margin:0;color:var(--fg)">'
             f'{html.escape(prompt)}</pre></div></details>')
 
-    for i, (start, evs) in enumerate(_rounds(events)):
-        end = next((e for e in evs if e["event"] == "round_end"), None)
-        acts = _agent_actions(evs, agents)
-
-        res = end["result"] if end else None
-        who = ""
-        for a in agents:
-            lines = acts.get(a, [])
-            alive = (not res) or res["alive"].get(a, True)
-            budget = ""
-            if res:
-                budget = (f' <span class="priv">budget {_fnum(res["credits_start"].get(a))}'
-                          f' → {_fnum(res["credits_end"].get(a))}</span>')
-            items = ("".join(f'<div class="ev"><span class="txt">{ln}</span></div>' for ln in lines)
-                     or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
-            who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
-                    f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{items}</div>')
-
-        rows = ""
-        if res:
-            for a in agents:
-                est = res["estimates"].get(a)
-                err = res["errors"].get(a, float("nan"))
-                dead = not res["alive"].get(a, True)
-                rows += (f'<tr class="{"dead" if dead else ""}"><td>{a}</td>'
-                         f'<td>{_fnum(est) if est is not None else "—"}</td>'
-                         f'<td>{_fnum(err) if err == err else "—"}</td>'
-                         f'<td>{_fnum(res["rewards"].get(a,0),0)}</td>'
-                         f'<td>{_fnum(res["credits_start"].get(a))} → {_fnum(res["credits_end"].get(a))}</td>'
-                         f'</tr>')
-        outcome = (f'<div class="tick">outcome — true value θ = {_fnum(start["truth"])}</div>'
-                   f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th>'
-                   f'<th>credits</th></tr>{rows}</table>') if res else ""
-
-        parts.append(
-            f'<details class="round"{" open" if i == 0 else ""}><summary>'
-            f'<b>Round {start["round"]}</b>'
-            f'<span class="chip truth">θ = {_fnum(start["truth"])}</span></summary>'
-            f'<div class="body"><div class="tick">what each agent did</div>{who}{outcome}</div></details>')
+    for gi, (gstart, gevs) in enumerate(games):
+        rlist = list(_rounds(gevs))
+        rounds_html = "".join(
+            _simple_round(start, evs, agents, is_open=(n_games == 1 and i == 0))
+            for i, (start, evs) in enumerate(rlist))
+        if n_games > 1:
+            parts.append(
+                f'<details class="round"{" open" if gi == 0 else ""}><summary>'
+                f'<b>Game {gi + 1} of {n_games}</b>'
+                f'<span class="chip">{len(rlist)} round(s)</span></summary>'
+                f'<div class="body">{rounds_html}</div></details>')
+        else:
+            parts.append(rounds_html)
 
     return "".join(parts)
 

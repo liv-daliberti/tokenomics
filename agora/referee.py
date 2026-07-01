@@ -30,11 +30,42 @@ class GameResult:
     transcript: Transcript
 
 
+@dataclass
+class MatchResult:
+    config: GameConfig
+    n_games: int
+    games: List[GameResult]
+    transcript: Transcript
+
+
+def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
+              transcript: Optional[Transcript] = None) -> MatchResult:
+    """Play ``n_games`` games back-to-back with the SAME policy objects.
+
+    The world resets each game (fresh hidden values via a per-game seed, budgets
+    restored, agents revived) but the policies persist — so an LLM agent keeps
+    its whole conversation and can remember and adapt to earlier games. This is
+    the "co-evolving within a context window" setting.
+    """
+    tx = transcript or Transcript()
+    tx.log("match_start", config=cfg, n_games=n_games)
+    games: List[GameResult] = []
+    for g in range(n_games):
+        for pol in policies.values():
+            if hasattr(pol, "reset_game"):
+                pol.reset_game(g)
+        ref = Referee(cfg.with_(seed=cfg.seed + g), policies, tx, game_index=g)
+        games.append(ref.run())
+    tx.log("match_end", n_games=n_games)
+    return MatchResult(cfg, n_games, games, tx)
+
+
 class Referee:
     def __init__(self, cfg: GameConfig, policies: Dict[str, object],
-                 transcript: Optional[Transcript] = None):
+                 transcript: Optional[Transcript] = None, game_index: int = 0):
         self.cfg = cfg
         self.policies = policies
+        self.game_index = game_index
         self.env = Environment(cfg)
         self.tx = transcript or Transcript()
         self.states: Dict[str, AgentState] = {
@@ -58,7 +89,8 @@ class Referee:
     def run(self) -> GameResult:
         cfg = self.cfg
         horizon = self.env.horizon()
-        self.tx.log("game_start", config=cfg, n_rounds_actual=len(horizon))
+        self.tx.log("game_start", game_index=self.game_index, config=cfg,
+                    n_rounds_actual=len(horizon))
         # Record the prompt each agent is given (the shared task framing), so a
         # report can show "the prompt asked of the agents".
         for aid in cfg.agent_ids:
@@ -73,8 +105,8 @@ class Referee:
             self.round_index = r
             self.truth = self.env.draw_truth(r)
             self._reset_round(r)
-            self.tx.log("round_start", round=r, truth=self.truth,
-                        alive=self._alive(),
+            self.tx.log("round_start", game_index=self.game_index, round=r,
+                        truth=self.truth, alive=self._alive(),
                         credits={a: self.states[a].credits for a in self._alive()})
 
             self._run_ticks(past_truths)
@@ -91,7 +123,7 @@ class Referee:
                 alive={a: self.states[a].alive for a in cfg.agent_ids},
             )
             rounds.append(rr)
-            self.tx.log("round_end", round=r, result=rr)
+            self.tx.log("round_end", game_index=self.game_index, round=r, result=rr)
             past_truths.append(self.truth)
 
         self.tx.log("game_end", final_credits={a: self.states[a].credits

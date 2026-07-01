@@ -25,15 +25,35 @@ def load_events(path: str) -> List[Dict[str, Any]]:
         return [json.loads(line) for line in fh if line.strip()]
 
 
-def _by_round(events: List[Dict[str, Any]]) -> Dict[int, List[Dict[str, Any]]]:
-    out: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+def _games(events: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Split a match transcript into per-game event lists (one entry if single)."""
+    games: List[List[Dict[str, Any]]] = []
     cur = None
     for e in events:
+        if e["event"] == "game_start":
+            if cur is not None:
+                games.append(cur)
+            cur = [e]
+        elif cur is not None:
+            cur.append(e)
+    if cur is not None:
+        games.append(cur)
+    return games or [events]
+
+
+def _round_groups(events: List[Dict[str, Any]]):
+    """Yield (round_index, [events in round]) for a single game's events."""
+    cur = None
+    bucket: List[Dict[str, Any]] = []
+    for e in events:
         if e["event"] == "round_start":
-            cur = e["round"]
-        if cur is not None:
-            out[cur].append(e)
-    return out
+            if cur is not None:
+                yield cur, bucket
+            cur, bucket = e["round"], [e]
+        elif cur is not None:
+            bucket.append(e)
+    if cur is not None:
+        yield cur, bucket
 
 
 def posterior_mean(values: List[float], mu: float, sigma: float, tau: float) -> float:
@@ -113,24 +133,29 @@ def cooperation(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any
 # --------------------------------------------------------------------------- #
 # Regret vs an all-pooling oracle, plus welfare / inequality / survival.       #
 # --------------------------------------------------------------------------- #
-def regret(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    cfg = next(e for e in events if e["event"] == "game_start")["config"]
+def regret(events: List[Dict[str, Any]]) -> Dict[Any, Any]:
+    gstart = next((e for e in events if e["event"] == "game_start"), None)
+    if gstart is None:
+        return {}
+    cfg = gstart["config"]
     mu, sigma, tau = cfg["prior_mu"], cfg["prior_sigma"], cfg["tau"]
-    rounds = _by_round(events)
-    per_round = {}
-    for r, evs in rounds.items():
-        truth = next(e["truth"] for e in evs if e["event"] == "round_start")
-        all_measures = [e["value"] for e in evs if e["event"] == "measure"]
-        oracle_est = posterior_mean(all_measures, mu, sigma, tau)
-        oracle_err = abs(oracle_est - truth)
-        end = next((e for e in evs if e["event"] == "round_end"), None)
-        errs = end["result"]["errors"] if end else {}
-        per_round[r] = {
-            "oracle_error": oracle_err,
-            "agent_errors": errs,
-            "agent_regret": {a: (v - oracle_err) for a, v in errs.items()
-                             if v == v},  # skip NaN (dead)
-        }
+    games = _games(events)
+    multi = len(games) > 1
+    per_round: Dict[Any, Any] = {}
+    for gi, gevs in enumerate(games):
+        for r, evs in _round_groups(gevs):
+            truth = evs[0]["truth"]
+            all_measures = [e["value"] for e in evs if e["event"] == "measure"]
+            oracle_err = abs(posterior_mean(all_measures, mu, sigma, tau) - truth)
+            end = next((e for e in evs if e["event"] == "round_end"), None)
+            errs = end["result"]["errors"] if end else {}
+            key = f"g{gi}.r{r}" if multi else r
+            per_round[key] = {
+                "oracle_error": oracle_err,
+                "agent_errors": errs,
+                "agent_regret": {a: (v - oracle_err) for a, v in errs.items()
+                                 if v == v},  # skip NaN (dead)
+            }
     return per_round
 
 
@@ -170,8 +195,8 @@ def diagnostics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
-    end = next((e for e in events if e["event"] == "game_end"), None)
-    final = end["final_credits"] if end else {}
+    game_ends = [e for e in events if e["event"] == "game_end"]
+    final = game_ends[-1]["final_credits"] if game_ends else {}  # last game's end state
     rounds = [e for e in events if e["event"] == "round_end"]
     welfare = sum(sum(e["result"]["rewards"].values()) for e in rounds)
     alive_final = {a: c > 0 for a, c in final.items()}
@@ -182,6 +207,7 @@ def summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "gini_final_credits": gini(list(final.values())),
         "survivors": sum(1 for v in alive_final.values() if v),
         "n_agents": len(final),
+        "n_games": len(_games(events)) if game_ends else 1,
         "diagnostics": diagnostics(events),
         "regret_by_round": regret(events),
     }
