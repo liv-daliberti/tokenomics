@@ -53,8 +53,9 @@ def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
     for g in range(n_games):
         for pol in policies.values():
             if hasattr(pol, "reset_game"):
-                pol.reset_game(g)
-        ref = Referee(cfg.with_(seed=cfg.seed + g), policies, tx, game_index=g)
+                pol.reset_game(g, n_games)
+        ref = Referee(cfg.with_(seed=cfg.seed + g), policies, tx,
+                      game_index=g, n_games=n_games)
         games.append(ref.run())
     tx.log("match_end", n_games=n_games)
     return MatchResult(cfg, n_games, games, tx)
@@ -62,10 +63,12 @@ def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
 
 class Referee:
     def __init__(self, cfg: GameConfig, policies: Dict[str, object],
-                 transcript: Optional[Transcript] = None, game_index: int = 0):
+                 transcript: Optional[Transcript] = None, game_index: int = 0,
+                 n_games: int = 1):
         self.cfg = cfg
         self.policies = policies
         self.game_index = game_index
+        self.n_games = n_games
         self.env = Environment(cfg)
         self.tx = transcript or Transcript()
         self.states: Dict[str, AgentState] = {
@@ -95,7 +98,8 @@ class Referee:
         # report can show "the prompt asked of the agents".
         for aid in cfg.agent_ids:
             peers = [a for a in cfg.agent_ids if a != aid]
-            self.tx.log("agent_prompt", agent=aid, text=system_prompt(cfg, aid, peers))
+            self.tx.log("agent_prompt", agent=aid,
+                        text=system_prompt(cfg, aid, peers, self.n_games))
         past_truths: List[float] = []
         rounds: List[RoundResult] = []
 

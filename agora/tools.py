@@ -154,12 +154,19 @@ _FRAMING_PREAMBLE = {
 }
 
 
-def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str]) -> str:
+def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
+                  n_games: int = 1) -> str:
     preamble = _FRAMING_PREAMBLE.get(cfg.framing, _FRAMING_PREAMBLE["neutral"])
     horizon_line = (
         f"The game lasts exactly {cfg.n_rounds} rounds."
         if cfg.reveal_horizon
         else "The game may end after any round; you are not told how many remain."
+    )
+    match_line = (
+        f"You will play {n_games} separate games, one after another. Each game the "
+        "hidden value is drawn afresh and every agent's credits are reset to the "
+        "starting amount, but you keep your memory of all previous games."
+        if n_games > 1 else ""
     )
     lines = [
         preamble,
@@ -197,6 +204,8 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str]) -> str:
         "",
         horizon_line,
     ]
+    if match_line:
+        lines += ["", match_line]
     return "\n".join(lines)
 
 

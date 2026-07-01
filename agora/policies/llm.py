@@ -17,26 +17,29 @@ from .base import Policy, ToolInvocation
 
 
 class LLMPolicy(Policy):
-    def __init__(self, backend, cfg: GameConfig, agent_id: str, peers: List[str]):
+    def __init__(self, backend, cfg: GameConfig, agent_id: str, peers: List[str],
+                 n_games: int = 1):
         self.backend = backend
         self.cfg = cfg
         self.agent_id = agent_id
+        self.n_games = n_games
         self.tools = tool_schemas(cfg)
         self.messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": system_prompt(cfg, agent_id, peers)}
+            {"role": "system", "content": system_prompt(cfg, agent_id, peers, n_games)}
         ]
         self._pending_ids: List[str] = []
         self._game_prefix = ""
         self.parse_failures = 0
 
-    def reset_game(self, game_index: int) -> None:
+    def reset_game(self, game_index: int, n_games: int = 1) -> None:
         # Keep the whole conversation; just mark the boundary so the agent knows a
         # fresh game has begun (and prepend it to the next observation to avoid
         # two consecutive user turns).
         if game_index > 0:
+            total = max(n_games, self.n_games)
             self._game_prefix = (
-                f"=== A NEW GAME (game {game_index + 1}) begins now. The hidden value is "
-                f"drawn afresh and every agent's credits are reset to the starting "
+                f"=== A NEW GAME (game {game_index + 1} of {total}) begins now. The hidden "
+                f"value is drawn afresh and every agent's credits are reset to the starting "
                 f"amount, but you are playing the same agents and you remember everything "
                 f"from the previous games. ==="
             )

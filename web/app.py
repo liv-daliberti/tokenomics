@@ -160,7 +160,8 @@ def _run_job(job_id: str, meta: dict) -> None:
         if params["backend"] == "llm":
             from agora.backends import OpenAIBackend
             be = OpenAIBackend(model=params["model"], base_url=params["base_url"])
-            policies = {a: LLMPolicy(be, cfg, a, [p for p in ids if p != a]) for a in ids}
+            policies = {a: LLMPolicy(be, cfg, a, [p for p in ids if p != a], n_games=n_games)
+                        for a in ids}
         else:
             names = [n.strip() for n in params["policies"].split(",") if n.strip()]
             if not names:
@@ -206,7 +207,8 @@ def _preset_data() -> dict:
     out = {}
     for name, c in PRESETS.items():
         out[name] = {
-            "agents": len(c.agent_ids), "tau": c.tau, "prior_sigma": c.prior_sigma,
+            "agents": len(c.agent_ids), "tau": c.tau,
+            "prior_mu": c.prior_mu, "prior_sigma": c.prior_sigma,
             "survival_cost": c.survival_cost, "n_rounds": c.n_rounds,
             "measure_cost": c.measure_cost, "starting_credits": c.starting_credits,
             "message_quota": c.message_quota, "max_ticks": c.max_ticks, "gamma": c.gamma,
@@ -369,8 +371,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <input name="tau" placeholder="preset"></div>
   </div>
   <div class="row">
+    <div><label>Prior mean μ — the average true value</label><input name="prior_mu" placeholder="preset"></div>
     <div><label>Prior spread σ — how much the true value varies</label><input name="prior_sigma" placeholder="preset"></div>
+  </div>
+  <div class="row">
     <div><label>Survival cost / round — 0 = nobody dies</label><input name="survival_cost" placeholder="preset"></div>
+    <div><label>Measurement cost (credits each)</label><input name="measure_cost" placeholder="preset"></div>
   </div>
   <div class="row">
     <div><label>Horizon</label>
@@ -388,7 +394,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <option value="neutral">neutral</option>
         <option value="competitive">competitive</option>
       </select></div>
-    <div><label>Measurement cost (credits each)</label><input name="measure_cost" placeholder="preset"></div>
+    <div></div>
   </div>
   <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mut);font-size:13px">more knobs…</summary>
     <div class="row">
@@ -433,7 +439,7 @@ const AGORA_PRESETS = {{ preset_data|safe }};
 function fillPreset(){
   var sel = document.querySelector('select[name=preset]'); if(!sel) return;
   var p = AGORA_PRESETS[sel.value]; if(!p) return;
-  ['tau','prior_sigma','survival_cost','n_rounds','measure_cost',
+  ['tau','prior_mu','prior_sigma','survival_cost','n_rounds','measure_cost',
    'starting_credits','message_quota','max_ticks','gamma'].forEach(function(k){
     var el = document.querySelector('[name="'+k+'"]');
     if(el && p[k]!==undefined && p[k]!==null) el.value = p[k];
