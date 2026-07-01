@@ -73,13 +73,16 @@ def parse_overrides(form) -> dict:
 
 def build_config(params: dict) -> GameConfig:
     """Start from the chosen preset, then apply the form's overrides."""
-    cfg = PRESETS[params["preset"]]
+    preset = PRESETS[params["preset"]]
+    cfg = preset
     ov = dict(params.get("overrides", {}))
 
     agents = ov.pop("agents", None)
-    if agents:
+    if agents and agents != len(preset.agent_ids):
+        # Only rebuild the roster when the count actually changes; this preserves
+        # a preset's per-agent noise (e.g. privilege) when N is left as-is.
         ids = list(string.ascii_uppercase[:agents])
-        cfg = cfg.with_(agent_ids=ids, tau_by_agent=None)  # homogeneous when N changes
+        cfg = cfg.with_(agent_ids=ids, tau_by_agent=None)
 
     horizon = ov.pop("horizon", None)
     if horizon == "fixed":
@@ -183,11 +186,26 @@ def _run_job(job_id: str, meta: dict) -> None:
 # --------------------------------------------------------------------------- #
 # Routes                                                                       #
 # --------------------------------------------------------------------------- #
+def _preset_data() -> dict:
+    """Preset values used to pre-fill the form fields client-side."""
+    out = {}
+    for name, c in PRESETS.items():
+        out[name] = {
+            "agents": len(c.agent_ids), "tau": c.tau, "prior_sigma": c.prior_sigma,
+            "survival_cost": c.survival_cost, "n_rounds": c.n_rounds,
+            "measure_cost": c.measure_cost, "starting_credits": c.starting_credits,
+            "message_quota": c.message_quota, "max_ticks": c.max_ticks, "gamma": c.gamma,
+            "horizon": "fixed" if c.horizon_mode == "fixed" else "geometric",
+        }
+    return out
+
+
 @app.route("/")
 def index():
     return render_template_string(INDEX, css=_CSS, presets=sorted(PRESETS),
                                   policies_list=sorted(REGISTRY),
                                   default_policies=DEFAULT_POLICIES,
+                                  preset_data=json.dumps(_preset_data()),
                                   games=_all_games())
 
 
@@ -205,6 +223,7 @@ def new_game():
         "title": f.get("title", "").strip(),
         "overrides": parse_overrides(f),
     }
+    params["overrides"].setdefault("framing", "cooperative")  # cooperative by default
     if params["preset"] not in PRESETS:
         abort(400, "unknown preset")
     job_id = uuid.uuid4().hex[:10]
@@ -315,7 +334,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   </div>
 
   <div style="border-top:1px solid var(--line);margin:20px 0 4px;padding-top:14px">
-    <b>Simulator variables</b> <span class="m" style="color:var(--mut);font-size:12px">— blank = preset default</span>
+    <b>Simulator variables</b> <span class="m" style="color:var(--mut);font-size:12px">— prefilled from the preset; edit any value</span>
   </div>
   <div class="row">
     <div><label>Number of agents</label><input name="agents" type="number" min="2" max="12" placeholder="preset"></div>
@@ -336,11 +355,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <div><label>Rounds (max)</label><input name="n_rounds" type="number" min="1" max="30" placeholder="preset"></div>
   </div>
   <div class="row">
-    <div><label>Framing</label>
+    <div><label>Framing (default cooperative)</label>
       <select name="framing">
-        <option value="">preset</option>
+        <option value="cooperative" selected>cooperative</option>
         <option value="neutral">neutral</option>
-        <option value="cooperative">cooperative</option>
         <option value="competitive">competitive</option>
       </select></div>
     <div><label>Measurement cost (credits each)</label><input name="measure_cost" placeholder="preset"></div>
@@ -382,6 +400,24 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   </li>
 {% endfor %}
 </ul>
+
+<script>
+const AGORA_PRESETS = {{ preset_data|safe }};
+function fillPreset(){
+  var sel = document.querySelector('select[name=preset]'); if(!sel) return;
+  var p = AGORA_PRESETS[sel.value]; if(!p) return;
+  ['agents','tau','prior_sigma','survival_cost','n_rounds','measure_cost',
+   'starting_credits','message_quota','max_ticks','gamma'].forEach(function(k){
+    var el = document.querySelector('[name="'+k+'"]');
+    if(el && p[k]!==undefined && p[k]!==null) el.value = p[k];
+  });
+  var hz = document.querySelector('select[name="horizon"]'); if(hz && p.horizon) hz.value = p.horizon;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var sel = document.querySelector('select[name=preset]');
+  if(sel){ sel.addEventListener('change', fillPreset); fillPreset(); }
+});
+</script>
 """)
 
 WAIT = _SHELL.replace("{{ inner|safe }}", """

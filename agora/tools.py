@@ -181,10 +181,13 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str]) -> str:
     lines += [
         "  - submit_estimate(value): lock in your answer for the round.",
         "",
-        "Credits are your budget for measurements. At the end of a round your "
-        "score is |estimate - theta|; a smaller distance earns more reward "
-        "tokens, which become credits you keep for future rounds. If your "
-        "credits reach zero you are eliminated.",
+        "Credits are your only budget. Measuring and buying both cost credits; "
+        "with zero credits you can neither measure nor buy — you can only reason "
+        "from what you already know. Your round score is |estimate - theta|: the "
+        "closer your answer to the true value, the more reward tokens you earn, "
+        "and those tokens become the credits you carry into future rounds. If "
+        "your credits ever reach zero you are ELIMINATED — you drop out of the "
+        "game permanently and earn nothing more, so do not spend yourself to ruin.",
         "",
         "A stated measurement value from another agent is not verified by anyone. "
         "You cannot tell whether a number another agent sends you is real.",

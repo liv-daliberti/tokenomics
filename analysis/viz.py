@@ -284,18 +284,22 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
         end = next((e for e in evs if e["event"] == "round_end"), None)
         acts = _agent_actions(evs, agents)
 
+        res = end["result"] if end else None
         who = ""
         for a in agents:
             lines = acts.get(a, [])
-            alive = (not end) or end["result"]["alive"].get(a, True)
+            alive = (not res) or res["alive"].get(a, True)
+            budget = ""
+            if res:
+                budget = (f' <span class="priv">budget {_fnum(res["credits_start"].get(a))}'
+                          f' → {_fnum(res["credits_end"].get(a))}</span>')
             items = ("".join(f'<div class="ev"><span class="txt">{ln}</span></div>' for ln in lines)
                      or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
             who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
-                    f'{a}{" ☠" if not alive else ""}</div>{items}</div>')
+                    f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{items}</div>')
 
         rows = ""
-        if end:
-            res = end["result"]
+        if res:
             for a in agents:
                 est = res["estimates"].get(a)
                 err = res["errors"].get(a, float("nan"))
@@ -303,10 +307,12 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
                 rows += (f'<tr class="{"dead" if dead else ""}"><td>{a}</td>'
                          f'<td>{_fnum(est) if est is not None else "—"}</td>'
                          f'<td>{_fnum(err) if err == err else "—"}</td>'
-                         f'<td>{_fnum(res["rewards"].get(a,0),0)}</td></tr>')
+                         f'<td>{_fnum(res["rewards"].get(a,0),0)}</td>'
+                         f'<td>{_fnum(res["credits_start"].get(a))} → {_fnum(res["credits_end"].get(a))}</td>'
+                         f'</tr>')
         outcome = (f'<div class="tick">outcome — true value θ = {_fnum(start["truth"])}</div>'
-                   f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th></tr>'
-                   f'{rows}</table>') if end else ""
+                   f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th>'
+                   f'<th>credits</th></tr>{rows}</table>') if res else ""
 
         parts.append(
             f'<details class="round"{" open" if i == 0 else ""}><summary>'

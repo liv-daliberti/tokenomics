@@ -128,9 +128,11 @@ class Referee:
         cfg = self.cfg
         st = self.states[aid]
         peers = [a for a in cfg.agent_ids if a != aid and self.states[a].alive]
+        eliminated = [a for a in cfg.agent_ids if a != aid and not self.states[a].alive]
         pending = [t for t in self.market.trades.values()
                    if t.buyer == aid and t.status == "pending"]
-        obs = build_observation(st, cfg, self.round_index, tick, peers, pending, past_truths)
+        obs = build_observation(st, cfg, self.round_index, tick, peers, pending,
+                                past_truths, eliminated)
         st.inbox = []  # surfaced now; each message is shown once
         policy = self.policies[aid]
         policy.start_turn(render_observation(obs), obs)

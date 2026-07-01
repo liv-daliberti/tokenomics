@@ -17,14 +17,52 @@ from .config import GameConfig
 from .types import AgentState
 
 
+def noise_floor(cfg: GameConfig) -> float:
+    """Best error the group could achieve by pooling every affordable sample.
+
+    With N agents each able to buy `budget/cost` measurements of noise `tau`,
+    pooling them all gives a mean whose std is ~ tau / sqrt(N * budget). Floored
+    at 1% of the prior spread so the reward stays sane if measuring is free.
+    """
+    budget = cfg.starting_credits / max(cfg.measure_cost, 1e-9)
+    total = max(1.0, len(cfg.agent_ids) * budget)
+    floor = cfg.tau / math.sqrt(total)
+    return max(floor, 0.01 * cfg.prior_sigma)
+
+
 def quantized_reward(error: float, cfg: GameConfig, round_index: int = 0) -> float:
-    """Map an absolute estimation error to reward tokens."""
+    """Map an absolute estimation error to reward tokens (step function)."""
     steps = math.floor(abs(error) / cfg.bucket())
     reward = max(0, cfg.reward_max - steps)
+    return float(reward)
+
+
+def normalized_reward(error: float, cfg: GameConfig, round_index: int = 0) -> float:
+    """Scale-free reward tied to the spread (sigma) and the noise (tau).
+
+    frac = 1 when the error reaches the achievable noise floor (pooled optimum),
+    0 when it is as bad as the prior spread sigma (submitting the prior mean),
+    and interpolated on a log scale in between. reward = round(reward_max * frac).
+    """
+    sigma = cfg.prior_sigma
+    floor = noise_floor(cfg)
+    err = max(abs(error), floor)          # cannot score better than the floor
+    if sigma <= floor:                    # degenerate problem: no room to improve
+        frac = 1.0 if abs(error) <= floor else 0.0
+    else:
+        frac = (math.log(sigma) - math.log(err)) / (math.log(sigma) - math.log(floor))
+    frac = min(1.0, max(0.0, frac))
+    return float(int(cfg.reward_max * frac + 0.5))
+
+
+def reward_for(error: float, cfg: GameConfig, round_index: int = 0) -> float:
+    """Dispatch on the configured reward rule and apply any round-value scaling."""
+    rule = normalized_reward if cfg.reward_rule == "normalized" else quantized_reward
+    reward = rule(error, cfg, round_index)
     if cfg.round_value:
         idx = min(round_index, len(cfg.round_value) - 1)
         reward *= cfg.round_value[idx]
-    return float(reward)
+    return reward
 
 
 def settle_round(
@@ -54,7 +92,7 @@ def settle_round(
         # is scored on it (so silence is a choice with consequences, not a bug).
         estimate = st.estimate if st.estimate is not None else prior_mu
         error = abs(estimate - truth)
-        reward = quantized_reward(error, cfg, round_index)
+        reward = reward_for(error, cfg, round_index)
 
         credits_start = st.credits
         leftover = st.credits if cfg.carryover else 0.0

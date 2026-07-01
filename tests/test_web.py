@@ -79,6 +79,29 @@ def test_form_overrides_agents_and_noise():
     assert b"working together" in page  # cooperative framing preamble
 
 
+def test_build_config_preserves_privilege_and_switches_agents():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    from web.app import build_config
+    keep = build_config({"preset": "privilege", "seed": 0, "overrides": {}})
+    assert keep.tau_by_agent is not None                 # per-agent noise preserved
+    switched = build_config({"preset": "privilege", "seed": 0, "overrides": {"agents": 2}})
+    assert switched.tau_by_agent is None and len(switched.agent_ids) == 2
+
+
+def test_cooperative_is_default_framing():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.post("/new", data={"preset": "base", "backend": "scripted",
+                             "policies": "bayesian_solo", "seed": "2"})  # no framing sent
+    job_id = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, job_id) == "done"
+    import json as _json
+    meta = _json.load(open(os.path.join(os.environ["AGORA_RUNS"], f"{job_id}.json")))
+    assert meta["framing"] == "cooperative"
+
+
 def test_bad_policy_surfaces_error():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

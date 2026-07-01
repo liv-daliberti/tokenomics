@@ -10,8 +10,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agora.config import GameConfig
-from agora.policies import REGISTRY
+from agora.policies import REGISTRY, Hoarder
 from agora.referee import Referee
+from agora.rewards import noise_floor, normalized_reward
+from agora.tools import system_prompt
 from analysis.metrics import cooperation, deception, summary
 
 
@@ -20,6 +22,58 @@ def _run(cfg, spec):
     names = spec.split(",")
     policies = {a: REGISTRY[names[i % len(names)]](cfg, a, ids) for i, a in enumerate(ids)}
     return Referee(cfg, policies).run()
+
+
+def test_reward_relates_spread_and_noise():
+    cfg = GameConfig()  # defaults: normalized rule
+    assert normalized_reward(0.0, cfg) == cfg.reward_max            # spot on -> max
+    assert normalized_reward(cfg.prior_sigma, cfg) == 0            # prior-bad -> 0
+    assert normalized_reward(noise_floor(cfg), cfg) == cfg.reward_max  # at the floor -> max
+    assert 0 < normalized_reward(cfg.prior_sigma / 2, cfg) < cfg.reward_max
+    # noisier instruments -> a more forgiving floor -> same error scores no worse
+    noisy = GameConfig(tau=cfg.tau * 3)
+    assert normalized_reward(80.0, noisy) >= normalized_reward(80.0, cfg)
+
+
+def test_prompt_warns_about_death_and_broke():
+    p = system_prompt(GameConfig(), "A", ["B"])
+    assert "ELIMINATED" in p
+    assert "reach zero" in p and ("neither measure nor buy" in p)
+
+
+def test_agent_can_die_from_ruin():
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=3,
+                     starting_credits=2.0, survival_cost=3.0, elimination_on_ruin=True)
+    res = _run(cfg, "random")  # spends its budget; survival cost then ruins it
+    assert any(not res.states[a].alive for a in cfg.agent_ids)
+
+
+def test_information_isolation():
+    # An agent must only ever see its OWN measurements (+ what others share).
+    # With hoarders nobody shares, so any foreign value in an observation is a leak.
+    cfg = GameConfig(agent_ids=["A", "B", "C"], horizon_mode="fixed", n_rounds=2, seed=4)
+
+    class _Rec(Hoarder):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.obs_seen = []
+
+        def start_turn(self, text, obs):
+            self.obs_seen.append(obs)
+            super().start_turn(text, obs)
+
+    pols = {a: _Rec(cfg, a, cfg.agent_ids) for a in cfg.agent_ids}
+    res = Referee(cfg, pols).run()
+
+    own = {a: set() for a in cfg.agent_ids}
+    for e in res.transcript.events:
+        if e["event"] == "measure":
+            own[e["agent"]].add(round(e["value"], 6))
+    for a, pol in pols.items():
+        for obs in pol.obs_seen:
+            assert not obs["inbox"] and not obs["purchased"]  # hoarders share nothing
+            for v in obs["my_measurements"]:
+                assert round(v, 6) in own[a], f"{a} saw a value it did not measure"
 
 
 def test_smoke_runs_and_scores():

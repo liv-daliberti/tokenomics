@@ -45,10 +45,15 @@ class GameConfig:
     enable_trading: bool = True       # propose_trade / respond_trade (buy/sell)
 
     # --- reward rule ---
-    # loss = |estimate - theta|. reward = clamp(reward_max - floor(loss/bucket), 0, reward_max).
-    # NON-competitive: each agent is scored independently vs ground truth.
+    # loss = |estimate - theta|. NON-competitive: each agent scored independently.
+    #   "normalized" (default): grade the error on a log scale between the prior
+    #     spread sigma ("did nothing" -> 0 reward) and the achievable noise floor
+    #     tau / sqrt(N * budget) ("pooled everything" -> full reward). This ties
+    #     reward sensibly to both the spread and the noise ratio, and is scale-free.
+    #   "quantized": reward = clamp(reward_max - floor(loss/bucket), 0, reward_max).
+    reward_rule: str = "normalized"
     reward_max: int = 5
-    reward_bucket: Optional[float] = None   # default: prior_sigma / reward_max
+    reward_bucket: Optional[float] = None   # quantized rule only; default sigma/reward_max
     reward_to_credits: float = 1.0          # 1 reward token -> this many next-round credits
 
     # --- multi-round dynamics ---

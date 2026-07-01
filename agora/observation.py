@@ -22,7 +22,12 @@ def build_observation(
     peers: List[str],
     pending_trades: List[Trade],
     past_truths: List[float],
+    eliminated: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
+    # NOTE (information isolation): an observation contains ONLY this agent's own
+    # measurements, the messages/trades others chose to send it, and the publicly
+    # revealed past truths. It never contains another agent's private samples, so
+    # an agent can only act on its own evidence plus what was explicitly shared.
     return {
         "round_index": round_index,
         "tick": tick,
@@ -45,6 +50,7 @@ def build_observation(
             for t in pending_trades
         ],
         "peers": peers,
+        "eliminated": list(eliminated or []),
         "estimate_submitted": state.estimate is not None,
         "current_estimate": state.estimate,
         "past_truths": list(past_truths) if cfg.reveal_truth_after_round else [],
@@ -59,6 +65,10 @@ def render_observation(obs: Dict[str, Any]) -> str:
         f"Credits: {obs['credits']:g} (each measure costs {obs['measure_cost']:g}). "
         f"Messages left: {obs['messages_left']}.",
     ]
+    if obs["credits"] < obs["measure_cost"]:
+        lines.append("You cannot afford to measure or buy — reason from what you already have.")
+    if obs["eliminated"]:
+        lines.append(f"Eliminated (out of the game): {', '.join(obs['eliminated'])}.")
     if obs["my_measurements"]:
         vals = ", ".join(f"{v:.1f}" for v in obs["my_measurements"])
         lines.append(f"Your measurements so far: [{vals}].")
