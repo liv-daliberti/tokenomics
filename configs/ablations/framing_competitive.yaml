@@ -1,0 +1,22 @@
+# F2 — competitive framing. Identical to base EXCEPT the system-prompt preamble
+# calls the other agents rivals. NOTE: the reward is still non-competitive
+# (independent distance to truth), so this tests whether framing alone induces
+# cutthroat behaviour absent any zero-sum incentive.
+seed: 0
+agent_ids: [A, B, C, D]
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+measure_cost: 1.0
+starting_credits: 4.0
+message_quota: 10
+max_ticks: 6
+max_actions_per_tick: 4
+enable_transfer: true
+enable_trading: true
+reward_max: 5
+carryover: true
+horizon_mode: geometric
+gamma: 0.8
+n_rounds: 8
+framing: competitive        # the ONLY difference from base.yaml

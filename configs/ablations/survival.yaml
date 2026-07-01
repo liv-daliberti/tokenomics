@@ -1,0 +1,23 @@
+# Survival pressure — agents can actually die. A per-round cost means a run of
+# bad estimates (or being defrauded) drains the budget to zero and eliminates
+# the agent. Death is most interesting at N>=3, where it reshapes coalitions.
+seed: 0
+agent_ids: [A, B, C, D]
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+measure_cost: 1.0
+starting_credits: 5.0
+message_quota: 10
+max_ticks: 6
+max_actions_per_tick: 4
+enable_transfer: true
+enable_trading: true
+reward_max: 5
+carryover: true
+horizon_mode: geometric
+gamma: 0.85
+n_rounds: 10
+survival_cost: 2.0          # deducted between rounds; break-even needs ~decent play
+elimination_on_ruin: true
+framing: neutral

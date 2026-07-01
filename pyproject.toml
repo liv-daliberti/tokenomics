@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agora-market"
+version = "0.1.0"
+description = "A minimal multi-agent Measurement Market for studying emergent LLM behaviour"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Princeton" }]
+keywords = ["multi-agent", "llm", "game-theory", "cooperation", "deception", "qwen"]
+
+# The core harness + scripted baselines run on the standard library alone.
+# Optional extras below add the LLM backend, YAML configs, and analysis tools.
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["openai>=1.30"]         # drive local Qwen via the vLLM OpenAI endpoint
+yaml = ["pyyaml>=5.4"]         # read .yaml configs
+analysis = ["numpy", "pandas", "scipy"]  # downstream statistics
+serve = ["vllm>=0.23,<0.24"]   # serve Qwen3-32B locally (GPU node)
+dev = ["pytest>=7"]
+
+[project.scripts]
+agora = "agora.run:main"
+
+[tool.setuptools.packages.find]
+include = ["agora*", "analysis*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

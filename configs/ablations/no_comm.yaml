@@ -1,0 +1,20 @@
+# B1 — no-communication control. Isolates the value of talking at all.
+# Everything as base, but the message channel and market are disabled.
+seed: 0
+agent_ids: [A, B, C, D]
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+measure_cost: 1.0
+starting_credits: 4.0
+message_quota: 0
+max_ticks: 6
+max_actions_per_tick: 4
+enable_transfer: false
+enable_trading: false
+reward_max: 5
+carryover: true
+horizon_mode: geometric
+gamma: 0.8
+n_rounds: 8
+framing: neutral

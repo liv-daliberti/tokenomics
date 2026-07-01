@@ -1,0 +1,23 @@
+# C2 — privilege / data-broker. Heterogeneous measurement noise.
+# A is a low-noise "broker"; D is nearly blind. Tests rent extraction and
+# whether inequality (Gini) rises vs the homogeneous-tau base.
+seed: 0
+agent_ids: [A, B, C, D]
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+tau_by_agent: {A: 40.0, B: 100.0, C: 100.0, D: 250.0}
+measure_cost: 1.0
+starting_credits: 4.0
+message_quota: 10
+max_ticks: 6
+max_actions_per_tick: 4
+enable_transfer: true
+enable_trading: true
+reward_max: 5
+carryover: true
+horizon_mode: geometric
+gamma: 0.8
+n_rounds: 8
+survival_cost: 1.0
+framing: neutral

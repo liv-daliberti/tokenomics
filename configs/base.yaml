@@ -1,0 +1,33 @@
+# C1 — the core cooperative setting.
+# 4 agents, hidden (geometric) horizon, communication + trading on.
+# This is the reference cell; ablations below change one knob at a time.
+seed: 0
+agent_ids: [A, B, C, D]
+
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+measure_cost: 1.0
+starting_credits: 4.0        # c*k_individual < budget < c*k_social  ->  a market must form
+
+message_quota: 10
+max_ticks: 6
+max_actions_per_tick: 4
+
+enable_transfer: true
+enable_trading: true
+
+reward_max: 5
+reward_to_credits: 1.0
+carryover: true
+
+horizon_mode: geometric
+gamma: 0.8
+n_rounds: 8                  # cap on the geometric draw
+reveal_horizon: false
+
+survival_cost: 0.0
+elimination_on_ruin: true
+
+framing: neutral
+reveal_truth_after_round: true

@@ -1,0 +1,100 @@
+"""Command-line entry point.
+
+Examples
+--------
+Zero-dependency smoke test (scripted agents, no model server, runs anywhere):
+    python -m agora.run --preset smoke
+
+A mixed baseline game with transcripts written to disk:
+    python -m agora.run --preset base --policies honest_cooperator,liar,hoarder,bayesian_solo \\
+        --out runs/base
+
+Real Qwen agents against a local vLLM endpoint (see scripts/serve_qwen.sh):
+    python -m agora.run --preset base --policies llm \\
+        --model qwen3-32b --base-url http://localhost:8000/v1 --out runs/qwen
+
+Replicate over many seeds (the unit of analysis is the game seed):
+    python -m agora.run --preset base --seeds 30 --out runs/base
+"""
+from __future__ import annotations
+
+import argparse
+import os
+from typing import Dict, List
+
+from .config import PRESETS, GameConfig, load_config
+from .policies import REGISTRY, LLMPolicy
+from .referee import GameResult, Referee
+from .transcripts import Transcript
+
+
+def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str) -> Dict[str, object]:
+    ids = cfg.agent_ids
+    if spec == "llm":
+        from .backends import OpenAIBackend
+        backend = OpenAIBackend(model=model, base_url=base_url)
+        return {aid: LLMPolicy(backend, cfg, aid, [p for p in ids if p != aid]) for aid in ids}
+    names = [n.strip() for n in spec.split(",") if n.strip()]
+    unknown = [n for n in names if n not in REGISTRY]
+    if unknown:
+        raise SystemExit(f"unknown scripted policies: {unknown}; choose from {sorted(REGISTRY)}")
+    return {aid: REGISTRY[names[i % len(names)]](cfg, aid, ids) for i, aid in enumerate(ids)}
+
+
+def summarize(result: GameResult, policy_spec: str) -> None:
+    cfg = result.config
+    print(f"\n=== game seed={cfg.seed}  agents={cfg.agent_ids}  "
+          f"rounds={len(result.rounds)}  policies=[{policy_spec}] ===")
+    hdr = f"{'round':>5} {'truth':>8} " + " ".join(f"{a:>18}" for a in cfg.agent_ids)
+    print(hdr)
+    for rr in result.rounds:
+        cells = []
+        for a in cfg.agent_ids:
+            est = rr.estimates[a]
+            est_s = f"{est:.1f}" if est is not None else "-"
+            cells.append(f"{est_s}/e{rr.errors[a]:.0f}/r{rr.rewards[a]:.0f}".rjust(18))
+        print(f"{rr.round_index:>5} {rr.truth:>8.1f} " + " ".join(cells))
+    print("final credits: " +
+          "  ".join(f"{a}={result.states[a].credits:.1f}"
+                    f"{'' if result.states[a].alive else ' (dead)'}"
+                    for a in cfg.agent_ids))
+
+
+def main(argv: List[str] = None) -> None:
+    ap = argparse.ArgumentParser(description="Run the Agora Measurement Market.")
+    src = ap.add_mutually_exclusive_group()
+    src.add_argument("--preset", choices=sorted(PRESETS), help="a built-in config preset")
+    src.add_argument("--config", help="path to a YAML/JSON config file")
+    ap.add_argument("--policies", default="honest_cooperator,bayesian_solo,liar,hoarder",
+                    help="'llm', or comma-separated scripted policy names (cycled over agents)")
+    ap.add_argument("--seed", type=int, help="override the config seed")
+    ap.add_argument("--seeds", type=int, default=1, help="run this many consecutive seeds")
+    ap.add_argument("--model", default="qwen3-32b", help="served-model-name for the LLM backend")
+    ap.add_argument("--base-url", default="http://localhost:8000/v1")
+    ap.add_argument("--out", default=None, help="directory for JSONL transcripts")
+    args = ap.parse_args(argv)
+
+    if args.config:
+        base = load_config(args.config)
+    else:
+        base = PRESETS[args.preset or "smoke"]
+    if args.seed is not None:
+        base = base.with_(seed=args.seed)
+
+    for s in range(args.seeds):
+        cfg = base.with_(seed=base.seed + s)
+        tx = None
+        if args.out:
+            os.makedirs(args.out, exist_ok=True)
+            tx = Transcript(os.path.join(args.out, f"seed{cfg.seed}.jsonl"))
+        policies = build_policies(cfg, args.policies, args.model, args.base_url)
+        result = Referee(cfg, policies, tx).run()
+        summarize(result, args.policies)
+        if tx:
+            tx.close()
+    if args.out:
+        print(f"\ntranscripts written to {args.out}/")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+# E1 — known, fixed horizon. Pairs with a matched-length geometric run to
+# isolate the endgame effect: last-round defection / hoarding / rising lies.
+# Match against gamma=0.75 (expected length ~4) for a clean contrast.
+seed: 0
+agent_ids: [A, B, C, D]
+prior_mu: 500.0
+prior_sigma: 150.0
+tau: 150.0
+measure_cost: 1.0
+starting_credits: 4.0
+message_quota: 10
+max_ticks: 6
+max_actions_per_tick: 4
+enable_transfer: true
+enable_trading: true
+reward_max: 5
+carryover: true
+horizon_mode: fixed
+n_rounds: 4
+reveal_horizon: true        # agents KNOW the game is exactly 4 rounds
+survival_cost: 0.0
+framing: neutral
