@@ -113,6 +113,22 @@ PRESETS: Dict[str, GameConfig] = {
         gamma=0.8,
         n_rounds=8,          # cap on the geometric draw
     ),
+    # Resource-constrained cooperative default: a tight budget (2 credits) plus a
+    # per-round survival cost means a lone agent's own measurements are NOT enough
+    # to stay solvent — you have to pool/trade readings to earn enough to continue.
+    # Empirically (scripted): agents that share survive ~80% and grow their credits;
+    # agents that go it alone survive ~50% and drain to near-zero.
+    "cooperative": GameConfig(
+        agent_ids=["A", "B"],
+        prior_mu=500.0, prior_sigma=150.0,
+        tau=180.0,                       # one reading is noisy; pooling pays
+        measure_cost=1.0, starting_credits=2.0,
+        survival_cost=1.5, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=40.0, reward_max=5,
+        message_quota=10, max_ticks=5,
+        horizon_mode="geometric", gamma=0.85, n_rounds=12,
+        framing="cooperative",
+    ),
     # Three agents: the smallest setting where a coalition can exclude someone.
     "coalitions": GameConfig(
         agent_ids=["A", "B", "C"],

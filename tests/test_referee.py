@@ -105,6 +105,26 @@ def test_carryover_and_reward():
     assert any(r.rewards["A"] > 0 for r in res.rounds)
 
 
+def test_cooperative_preset_requires_collaboration():
+    # In the resource-constrained cooperative preset, agents that pool their
+    # readings should end far more solvent than agents that go it alone.
+    from agora.config import PRESETS
+    from agora.referee import run_match
+
+    def avg_end_credits(spec, seeds=6):
+        vals = []
+        for s in range(seeds):
+            cfg = PRESETS["cooperative"].with_(seed=s)
+            pols = {a: REGISTRY[spec](cfg, a, cfg.agent_ids) for a in cfg.agent_ids}
+            g = run_match(cfg, pols, 1).games[0]
+            vals += [g.states[a].credits for a in cfg.agent_ids]
+        return sum(vals) / len(vals)
+
+    coop = avg_end_credits("honest_cooperator")
+    solo = avg_end_credits("bayesian_solo")
+    assert coop > solo + 1.0, f"pooling should clearly beat solo ({coop:.1f} vs {solo:.1f})"
+
+
 def test_reasoning_is_logged():
     cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=1)
     res = _run(cfg, "honest_cooperator,bayesian_solo")

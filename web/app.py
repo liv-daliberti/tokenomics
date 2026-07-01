@@ -238,7 +238,7 @@ def new_game():
     except (ValueError, TypeError):
         games = 5
     params = {
-        "preset": f.get("preset", "base"),
+        "preset": f.get("preset", "cooperative"),
         "seed": seed,
         "games": games,
         "backend": f.get("backend", "scripted"),
@@ -332,7 +332,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <form class="panel" method="post" action="/new">
   <label>Setting (preset)</label>
   <select name="preset">
-    {% for p in presets %}<option value="{{p}}" {% if p=='base' %}selected{% endif %}>{{p}}</option>{% endfor %}
+    {% for p in presets %}<option value="{{p}}" {% if p=='cooperative' %}selected{% endif %}>{{p}}</option>{% endfor %}
   </select>
 
   <label>Agents</label>
@@ -488,10 +488,10 @@ def main() -> None:
     # Seed the gallery with one instant game so a first visit isn't empty.
     if not _all_games():
         jid = uuid.uuid4().hex[:10]
-        _start_job(jid, {"preset": "base", "seed": 7, "backend": "scripted",
-                         "policies": DEFAULT_POLICIES, "model": "qwen3-32b",
-                         "base_url": "http://localhost:8000/v1",
-                         "title": "base · scripted · seed 7 (example)"})
+        _start_job(jid, {"preset": "cooperative", "seed": 7, "games": 3,
+                         "backend": "scripted", "policies": DEFAULT_POLICIES,
+                         "model": "qwen3-32b", "base_url": "http://localhost:8000/v1",
+                         "overrides": {}, "title": "cooperative · 3 games · seed 7 (example)"})
     print(f"Agora web UI on http://{host}:{port}")
     app.run(host=host, port=port, threaded=True)
 
