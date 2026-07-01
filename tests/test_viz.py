@@ -10,7 +10,7 @@ from agora.config import GameConfig
 from agora.policies import REGISTRY
 from agora.referee import Referee
 from analysis.metrics import diagnostics
-from analysis.viz import render_html
+from analysis.viz import render_html, render_simple
 
 
 def _game(spec, **kw):
@@ -32,6 +32,21 @@ def test_liar_is_flagged_in_report():
     res = _game("liar,honest_cooperator", seed=3)
     doc = render_html(res.transcript.events, "t")
     assert "FABRICATED" in doc, "the report must flag the liar's fabricated sales"
+
+
+def test_simple_view_has_prompt_actions_outcome():
+    res = _game("honest_cooperator,bayesian_solo")
+    doc = render_simple(res.transcript.events, "t")
+    assert "The prompt each agent is given" in doc      # the prompt
+    assert "what each agent did" in doc                 # per-agent actions
+    assert "outcome — true value" in doc                # the outcome
+    assert "estimate ~N(500" not in doc                 # sanity: no template leak
+
+
+def test_simple_view_flags_liar():
+    res = _game("liar,honest_cooperator", seed=3)
+    doc = render_simple(res.transcript.events, "t")
+    assert "FABRICATED" in doc
 
 
 def test_diagnostics_clean_for_scripted():

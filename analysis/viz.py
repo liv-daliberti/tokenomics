@@ -224,6 +224,100 @@ def render_html(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
 
 
 # --------------------------------------------------------------------------- #
+# Simple view: the prompt -> what each agent did -> the outcome.               #
+# --------------------------------------------------------------------------- #
+def _agent_actions(evs: List[Dict[str, Any]], agents: List[str]) -> Dict[str, list]:
+    """Bucket a round's events by the agent that acted, in chronological order."""
+    acts: Dict[str, list] = {a: [] for a in agents}
+
+    def push(agent, html_line):
+        acts.setdefault(agent, []).append(html_line)
+
+    for e in evs:
+        t = e["event"]
+        if t == "measure":
+            push(e["agent"], f'<span class="tag t-measure">measure</span> saw <b>{_fnum(e["value"])}</b>')
+        elif t == "message":
+            push(e["sender"], f'<span class="tag t-message">say → {html.escape(str(e["to"]))}</span> '
+                              f'“{html.escape(e["text"])}”')
+        elif t == "propose_trade":
+            badge = ' <span class="tag lie">FABRICATED</span>' if _lie_flag(e) \
+                    else ' <span class="tag honest">truthful</span>'
+            push(e["seller"], f'<span class="tag t-trade">sell → {e["buyer"]}</span> '
+                              f'claims <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])}{badge}')
+        elif t == "respond_trade":
+            push(e["responder"], f'<span class="tag t-trade">trade {e["status"]}</span> {e["trade_id"]}')
+        elif t == "transfer":
+            push(e["src"], f'<span class="tag t-transfer">give → {e["dst"]}</span> {_fnum(e["amount"])}')
+        elif t == "submit_estimate":
+            push(e["agent"], f'<span class="tag t-submit">answer</span> <b>{_fnum(e["value"])}</b>')
+        elif t == "misaddressed":
+            push(e["agent"], '<span class="tag t-err">mis-addressed a message</span>')
+        elif t == "parse_fail":
+            push(e.get("agent", "?"), f'<span class="tag t-err">invalid tool call</span> '
+                                      f'({html.escape(str(e.get("tool")))})')
+    return acts
+
+
+def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
+    gs = next((e for e in events if e["event"] == "game_start"), {})
+    cfg = gs.get("config", {})
+    agents = cfg.get("agent_ids", [])
+    prompt = next((e["text"] for e in events if e["event"] == "agent_prompt"), None)
+
+    horizon = ("known %d-round" % cfg.get("n_rounds", 0)) if cfg.get("reveal_horizon") \
+        else "hidden (γ=%s)" % cfg.get("gamma", "—")
+    sub = (f'{len(agents)} agents · measurement noise τ={cfg.get("tau")} · '
+           f'θ~N({cfg.get("prior_mu")},{cfg.get("prior_sigma")}²) · '
+           f'horizon {horizon} · framing {cfg.get("framing","neutral")}')
+
+    parts = [f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>']
+
+    if prompt:
+        parts.append(
+            '<details class="round" open><summary><b>The prompt each agent is given</b>'
+            '<span class="chip">shared task</span></summary>'
+            f'<div class="body"><pre style="white-space:pre-wrap;margin:0;color:var(--fg)">'
+            f'{html.escape(prompt)}</pre></div></details>')
+
+    for i, (start, evs) in enumerate(_rounds(events)):
+        end = next((e for e in evs if e["event"] == "round_end"), None)
+        acts = _agent_actions(evs, agents)
+
+        who = ""
+        for a in agents:
+            lines = acts.get(a, [])
+            alive = (not end) or end["result"]["alive"].get(a, True)
+            items = ("".join(f'<div class="ev"><span class="txt">{ln}</span></div>' for ln in lines)
+                     or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
+            who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
+                    f'{a}{" ☠" if not alive else ""}</div>{items}</div>')
+
+        rows = ""
+        if end:
+            res = end["result"]
+            for a in agents:
+                est = res["estimates"].get(a)
+                err = res["errors"].get(a, float("nan"))
+                dead = not res["alive"].get(a, True)
+                rows += (f'<tr class="{"dead" if dead else ""}"><td>{a}</td>'
+                         f'<td>{_fnum(est) if est is not None else "—"}</td>'
+                         f'<td>{_fnum(err) if err == err else "—"}</td>'
+                         f'<td>{_fnum(res["rewards"].get(a,0),0)}</td></tr>')
+        outcome = (f'<div class="tick">outcome — true value θ = {_fnum(start["truth"])}</div>'
+                   f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th></tr>'
+                   f'{rows}</table>') if end else ""
+
+        parts.append(
+            f'<details class="round"{" open" if i == 0 else ""}><summary>'
+            f'<b>Round {start["round"]}</b>'
+            f'<span class="chip truth">θ = {_fnum(start["truth"])}</span></summary>'
+            f'<div class="body"><div class="tick">what each agent did</div>{who}{outcome}</div></details>')
+
+    return "".join(parts)
+
+
+# --------------------------------------------------------------------------- #
 def _write(in_path: str, out_path: str) -> None:
     events = load_events(in_path)
     title = f"Agora — {os.path.basename(in_path).replace('.jsonl','')}"

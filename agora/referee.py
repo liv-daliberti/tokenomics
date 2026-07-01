@@ -17,6 +17,7 @@ from .environment import Environment
 from .market import Market, MarketError
 from .observation import build_observation, render_observation
 from .rewards import settle_round
+from .tools import system_prompt
 from .transcripts import Transcript
 from .types import Action, ActionType, AgentState, Measurement, Message, RoundResult
 
@@ -58,6 +59,11 @@ class Referee:
         cfg = self.cfg
         horizon = self.env.horizon()
         self.tx.log("game_start", config=cfg, n_rounds_actual=len(horizon))
+        # Record the prompt each agent is given (the shared task framing), so a
+        # report can show "the prompt asked of the agents".
+        for aid in cfg.agent_ids:
+            peers = [a for a in cfg.agent_ids if a != aid]
+            self.tx.log("agent_prompt", agent=aid, text=system_prompt(cfg, aid, peers))
         past_truths: List[float] = []
         rounds: List[RoundResult] = []
 

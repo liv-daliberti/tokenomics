@@ -50,11 +50,33 @@ def test_scripted_game_runs_and_renders():
     assert r.status_code == 302
     job_id = r.headers["Location"].rstrip("/").split("/")[-1]
     assert _wait_done(c, job_id) == "done"
-    page = c.get(f"/game/{job_id}")
+    page = c.get(f"/game/{job_id}")           # default = simple view
     assert page.status_code == 200
-    assert b"Round 0" in page.data and b"deception rate" in page.data
+    assert b"Round 0" in page.data
+    assert b"what each agent did" in page.data
+    assert b"The prompt each agent is given" in page.data
+    # detailed view still available via the toggle
+    assert b"deception rate" in c.get(f"/game/{job_id}?view=detailed").data
     # it now appears on the index
     assert job_id.encode() in c.get("/").data
+
+
+def test_form_overrides_agents_and_noise():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.post("/new", data={"preset": "base", "backend": "scripted",
+                             "policies": "honest_cooperator,bayesian_solo",
+                             "agents": "3", "tau": "42", "framing": "cooperative",
+                             "horizon": "fixed", "n_rounds": "2", "seed": "1"})
+    job_id = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, job_id) == "done"
+    import json as _json
+    meta = _json.load(open(os.path.join(os.environ["AGORA_RUNS"], f"{job_id}.json")))
+    assert meta["n_agents"] == 3 and meta["tau"] == 42.0 and meta["framing"] == "cooperative"
+    # the prompt shown reflects the overridden framing + noise
+    page = c.get(f"/game/{job_id}").data
+    assert b"working together" in page  # cooperative framing preamble
 
 
 def test_bad_policy_surfaces_error():

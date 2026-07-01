@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import string
 import threading
 import time
 import uuid
@@ -23,12 +24,12 @@ from typing import Dict
 from flask import (Flask, abort, jsonify, redirect, render_template_string,
                    request, url_for)
 
-from agora.config import PRESETS
+from agora.config import PRESETS, GameConfig
 from agora.policies import REGISTRY, LLMPolicy
 from agora.referee import Referee
 from agora.transcripts import Transcript
 from analysis.metrics import load_events, summary as metric_summary
-from analysis.viz import _CSS, render_body
+from analysis.viz import _CSS, render_body, render_simple
 
 RUNS = os.environ.get("AGORA_RUNS",
                       os.path.join(os.path.dirname(__file__), "..", "runs", "web"))
@@ -39,6 +40,54 @@ JOBS: Dict[str, dict] = {}          # id -> {status, error} for in-flight runs
 LOCK = threading.Lock()
 
 DEFAULT_POLICIES = "honest_cooperator,bayesian_solo,liar,hoarder"
+
+# Simulator knobs the form may override (blank = keep the preset's value).
+_INT_KNOBS = {"agents": (2, 12), "message_quota": (0, 50), "max_ticks": (1, 20),
+              "n_rounds": (1, 30), "reward_max": (1, 20)}
+_FLOAT_KNOBS = {"tau": (0.0, 1e6), "prior_sigma": (0.0, 1e6), "prior_mu": (-1e9, 1e9),
+                "measure_cost": (0.0, 1e6), "starting_credits": (0.0, 1e6),
+                "gamma": (0.0, 0.99), "survival_cost": (0.0, 1e6)}
+
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def parse_overrides(form) -> dict:
+    """Read the (all-optional) simulator knobs from the form, clamped."""
+    ov: dict = {}
+    for k, (lo, hi) in _INT_KNOBS.items():
+        raw = form.get(k, "").strip()
+        if raw:
+            ov[k] = int(_clamp(int(float(raw)), lo, hi))
+    for k, (lo, hi) in _FLOAT_KNOBS.items():
+        raw = form.get(k, "").strip()
+        if raw:
+            ov[k] = _clamp(float(raw), lo, hi)
+    for k in ("framing", "horizon"):
+        raw = form.get(k, "").strip()
+        if raw:
+            ov[k] = raw
+    return ov
+
+
+def build_config(params: dict) -> GameConfig:
+    """Start from the chosen preset, then apply the form's overrides."""
+    cfg = PRESETS[params["preset"]]
+    ov = dict(params.get("overrides", {}))
+
+    agents = ov.pop("agents", None)
+    if agents:
+        ids = list(string.ascii_uppercase[:agents])
+        cfg = cfg.with_(agent_ids=ids, tau_by_agent=None)  # homogeneous when N changes
+
+    horizon = ov.pop("horizon", None)
+    if horizon == "fixed":
+        cfg = cfg.with_(horizon_mode="fixed", reveal_horizon=True)
+    elif horizon == "geometric":
+        cfg = cfg.with_(horizon_mode="geometric", reveal_horizon=False)
+
+    return cfg.with_(seed=params["seed"], **ov)
 
 
 # --------------------------------------------------------------------------- #
@@ -87,9 +136,12 @@ def _start_job(job_id: str, params: dict) -> None:
 def _run_job(job_id: str, meta: dict) -> None:
     params = meta
     try:
-        seed = params["seed"]
-        cfg = PRESETS[params["preset"]].with_(seed=seed)
+        cfg = build_config(params)
         ids = cfg.agent_ids
+        meta.update(n_agents=len(ids), tau=cfg.tau, framing=cfg.framing,
+                    survival_cost=cfg.survival_cost,
+                    horizon=("known %d-round" % cfg.n_rounds) if cfg.reveal_horizon
+                             else "hidden (γ=%.2f)" % cfg.gamma)
 
         if params["backend"] == "llm":
             from agora.backends import OpenAIBackend
@@ -145,12 +197,13 @@ def new_game():
     seed = f.get("seed", "").strip()
     params = {
         "preset": f.get("preset", "base"),
-        "seed": int(seed) if seed else random.randint(0, 999_999),
+        "seed": int(seed) if seed.lstrip("-").isdigit() else random.randint(0, 999_999),
         "backend": f.get("backend", "scripted"),
         "policies": f.get("policies", DEFAULT_POLICIES),
         "model": f.get("model", "qwen3-32b"),
         "base_url": f.get("base_url", "http://localhost:8000/v1"),
         "title": f.get("title", "").strip(),
+        "overrides": parse_overrides(f),
     }
     if params["preset"] not in PRESETS:
         abort(400, "unknown preset")
@@ -173,9 +226,11 @@ def game(job_id: str):
     if status == "error":
         return render_template_string(ERROR, css=_CSS, meta=meta)
 
+    view = request.args.get("view", "simple")
     events = load_events(os.path.join(RUNS, f"{job_id}.jsonl"))
-    body = render_body(events, meta.get("title", "Agora game"))
-    return render_template_string(GAME, css=_CSS, body=body, meta=meta)
+    title = meta.get("title", "Agora game")
+    body = render_body(events, title) if view == "detailed" else render_simple(events, title)
+    return render_template_string(GAME, css=_CSS, body=body, meta=meta, view=view)
 
 
 @app.route("/status/<job_id>")
@@ -259,7 +314,49 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       Start the server first: <code>scripts/serve_qwen.sh</code>. Runs in the background.</p>
   </div>
 
+  <div style="border-top:1px solid var(--line);margin:20px 0 4px;padding-top:14px">
+    <b>Simulator variables</b> <span class="m" style="color:var(--mut);font-size:12px">— blank = preset default</span>
+  </div>
   <div class="row">
+    <div><label>Number of agents</label><input name="agents" type="number" min="2" max="12" placeholder="preset"></div>
+    <div><label>Measurement noise τ — how far readings stray from the true value</label>
+      <input name="tau" placeholder="preset"></div>
+  </div>
+  <div class="row">
+    <div><label>Prior spread σ — how much the true value varies</label><input name="prior_sigma" placeholder="preset"></div>
+    <div><label>Survival cost / round — 0 = nobody dies</label><input name="survival_cost" placeholder="preset"></div>
+  </div>
+  <div class="row">
+    <div><label>Horizon</label>
+      <select name="horizon">
+        <option value="">preset</option>
+        <option value="fixed">fixed — agents know the number of rounds</option>
+        <option value="geometric">hidden — random end</option>
+      </select></div>
+    <div><label>Rounds (max)</label><input name="n_rounds" type="number" min="1" max="30" placeholder="preset"></div>
+  </div>
+  <div class="row">
+    <div><label>Framing</label>
+      <select name="framing">
+        <option value="">preset</option>
+        <option value="neutral">neutral</option>
+        <option value="cooperative">cooperative</option>
+        <option value="competitive">competitive</option>
+      </select></div>
+    <div><label>Measurement cost (credits each)</label><input name="measure_cost" placeholder="preset"></div>
+  </div>
+  <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mut);font-size:13px">more knobs…</summary>
+    <div class="row">
+      <div><label>Starting credits</label><input name="starting_credits" placeholder="preset"></div>
+      <div><label>Messages / round</label><input name="message_quota" type="number" placeholder="preset"></div>
+    </div>
+    <div class="row">
+      <div><label>Interaction ticks / round</label><input name="max_ticks" type="number" placeholder="preset"></div>
+      <div><label>Continuation prob γ (hidden horizon)</label><input name="gamma" placeholder="preset"></div>
+    </div>
+  </details>
+
+  <div class="row" style="margin-top:12px">
     <div><label>Seed (blank = random)</label><input name="seed" placeholder="random"></div>
     <div><label>Title (optional)</label><input name="title" placeholder="auto"></div>
   </div>
@@ -274,7 +371,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <li>
     <a href="/game/{{ g.id }}">{{ g.title }}</a>
     {% if g.status == 'done' %}
-      <span class="m">{{ g.rounds }} rounds</span>
+      <span class="m">{{ g.n_agents }} agents · {{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
       {% if g.deception_rate is defined and g.deception_rate == g.deception_rate %}
         <span class="pill {{ 'bad' if g.deception_rate>0 else 'ok' }}">deception {{ '%.2f'|format(g.deception_rate) }}</span>{% endif %}
       <span class="pill">survivors {{ g.survivors }}/{{ g.n_agents }}</span>
@@ -306,7 +403,12 @@ and install the client with <code>pip install openai</code>.</p>{% endif %}</div
 """)
 
 GAME = _SHELL.replace("{{ inner|safe }}", """
-<a class="back" href="/">← all games</a>
+<div style="display:flex;justify-content:space-between;align-items:center">
+  <a class="back" href="/">← all games</a>
+  <div class="m" style="color:var(--mut);font-size:13px">view:
+    <a href="?view=simple" style="{{ 'font-weight:700;text-decoration:none' if view=='simple' else '' }}">simple</a> ·
+    <a href="?view=detailed" style="{{ 'font-weight:700;text-decoration:none' if view=='detailed' else '' }}">detailed</a></div>
+</div>
 {{ body|safe }}
 """)
 
