@@ -113,6 +113,23 @@ value every round) and **broker_and_death** (heterogeneous privilege + a
 survival cost drives three of four agents to ruin). Regenerate with
 `python scripts/make_samples.py`.
 
+### Web UI — run games from a button
+
+A small Flask app ([web/app.py](web/app.py)) lets you launch games from the
+browser and read them as reports. Pick a preset, choose the backend — **scripted**
+(instant, no GPU) or **Qwen via vLLM** (real agents; runs in the background and
+the page auto-refreshes) — and hit **Run new game**.
+
+```bash
+pip install flask          # or: pip install -e '.[web]'
+scripts/serve_web.sh       # -> http://127.0.0.1:5000   (HOST/PORT override)
+```
+
+The gallery lists every game with its deception rate and survivor count; click
+one to open the full tick-by-tick report. Games are saved under `runs/web/`.
+For the Qwen backend, start [scripts/serve_qwen.sh](scripts/serve_qwen.sh) first
+and `pip install openai`.
+
 ## What you can vary
 
 Everything is one knob in a config ([configs/](configs)) or a preset:

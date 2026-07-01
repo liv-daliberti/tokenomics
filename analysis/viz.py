@@ -171,7 +171,10 @@ def _render_round(start: Dict[str, Any], evs: List[Dict[str, Any]], is_first: bo
             f'<div class="body">{"".join(body)}{table}</div></details>')
 
 
-def render_html(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
+def render_body(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
+    """The inner report (stats + rounds + legend), without the html/head shell.
+
+    Reused by both the standalone file (render_html) and the Flask app."""
     s = summary(events)
     gs = next((e for e in events if e["event"] == "game_start"), {})
     cfg = gs.get("config", {})
@@ -209,11 +212,15 @@ def render_html(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
               'the measuring agent; the parenthetical "actually observed" is '
               'referee-only bookkeeping, never shown to agents.</div>')
 
+    return (f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>'
+            f'<div class="grid">{stats}</div>{rounds_html}{legend}')
+
+
+def render_html(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
     return (f'<!doctype html><html><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<title>{html.escape(title)}</title><style>{_CSS}</style></head><body><div class="wrap">'
-            f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>'
-            f'<div class="grid">{stats}</div>{rounds_html}{legend}</div></body></html>')
+            f'<title>{html.escape(title)}</title><style>{_CSS}</style></head><body>'
+            f'<div class="wrap">{render_body(events, title)}</div></body></html>')
 
 
 # --------------------------------------------------------------------------- #

@@ -19,6 +19,7 @@ dependencies = []
 [project.optional-dependencies]
 llm = ["openai>=1.30"]         # drive local Qwen via the vLLM OpenAI endpoint
 yaml = ["pyyaml>=5.4"]         # read .yaml configs
+web = ["flask>=3"]             # the browser UI (web/app.py)
 analysis = ["numpy", "pandas", "scipy"]  # downstream statistics
 serve = ["vllm>=0.23,<0.24"]   # serve Qwen3-32B locally (GPU node)
 dev = ["pytest>=7"]
@@ -27,7 +28,7 @@ dev = ["pytest>=7"]
 agora = "agora.run:main"
 
 [tool.setuptools.packages.find]
-include = ["agora*", "analysis*"]
+include = ["agora*", "analysis*", "web*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
