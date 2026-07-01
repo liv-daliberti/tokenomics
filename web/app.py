@@ -364,7 +364,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <b>Simulator variables</b> <span class="m" style="color:var(--mut);font-size:12px">— prefilled from the preset; edit any value</span>
   </div>
   <div class="row">
-    <div><label>Number of agents</label><input name="agents" type="number" min="2" max="12" placeholder="preset"></div>
+    <div><label>Number of agents</label><input name="agents" type="number" min="2" max="12" value="2"></div>
     <div><label>Measurement noise τ — how far readings stray from the true value</label>
       <input name="tau" placeholder="preset"></div>
   </div>
@@ -433,7 +433,7 @@ const AGORA_PRESETS = {{ preset_data|safe }};
 function fillPreset(){
   var sel = document.querySelector('select[name=preset]'); if(!sel) return;
   var p = AGORA_PRESETS[sel.value]; if(!p) return;
-  ['agents','tau','prior_sigma','survival_cost','n_rounds','measure_cost',
+  ['tau','prior_sigma','survival_cost','n_rounds','measure_cost',
    'starting_credits','message_quota','max_ticks','gamma'].forEach(function(k){
     var el = document.querySelector('[name="'+k+'"]');
     if(el && p[k]!==undefined && p[k]!==null) el.value = p[k];
