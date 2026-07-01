@@ -59,6 +59,19 @@ def summarize(result: GameResult, policy_spec: str) -> None:
                     f"{'' if result.states[a].alive else ' (dead)'}"
                     for a in cfg.agent_ids))
 
+    # Data-quality diagnostics: a noisy tool-driver invalidates behavioural
+    # claims, so surface parse-fail / mis-address rates on every run.
+    from analysis.metrics import cooperation, deception, diagnostics
+    ev = result.transcript.events
+    dg = diagnostics(ev)
+    dec = deception(ev)
+    co = cooperation(ev)
+    print(f"diagnostics: parse_fail={dg['parse_fail_rate']:.1%} "
+          f"misaddress={dg['misaddress_rate']:.1%} "
+          f"no_estimate={dg['rounds_without_estimate']}  |  "
+          f"deception={dec['deception_rate']:.2f} ({dec['lies']}/{dec['offers']})  "
+          f"cooperation={co['cooperation_index']:.2f}")
+
 
 def main(argv: List[str] = None) -> None:
     ap = argparse.ArgumentParser(description="Run the Agora Measurement Market.")

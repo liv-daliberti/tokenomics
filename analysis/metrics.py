@@ -143,6 +143,32 @@ def gini(values: List[float]) -> float:
     return (2 * cum) / (n * sum(xs)) - (n + 1) / n
 
 
+def diagnostics(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Data-quality signals (NOT behaviour): are the agents driving the tools
+    correctly? A high parse-fail or mis-address rate means transcripts should be
+    quarantined before any behavioural claim is made (see DESIGN.md §8)."""
+    actions = ("measure", "message", "transfer", "propose_trade",
+               "respond_trade", "submit_estimate")
+    n_actions = sum(1 for e in events if e["event"] in actions)
+    parse_fail = sum(1 for e in events if e["event"] == "parse_fail")
+    misaddr = sum(1 for e in events if e["event"] == "misaddressed")
+    denom = n_actions + parse_fail
+    rounds = [e for e in events if e["event"] == "round_end"]
+    no_estimate = 0
+    for e in rounds:
+        for a, est in e["result"]["estimates"].items():
+            if est is None and e["result"]["alive"].get(a, True):
+                no_estimate += 1
+    return {
+        "actions": n_actions,
+        "parse_failures": parse_fail,
+        "parse_fail_rate": (parse_fail / denom) if denom else 0.0,
+        "misaddressed": misaddr,
+        "misaddress_rate": (misaddr / denom) if denom else 0.0,
+        "rounds_without_estimate": no_estimate,
+    }
+
+
 def summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     end = next((e for e in events if e["event"] == "game_end"), None)
     final = end["final_credits"] if end else {}
@@ -156,6 +182,7 @@ def summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         "gini_final_credits": gini(list(final.values())),
         "survivors": sum(1 for v in alive_final.values() if v),
         "n_agents": len(final),
+        "diagnostics": diagnostics(events),
         "regret_by_round": regret(events),
     }
 

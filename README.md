@@ -94,6 +94,25 @@ toggle, VRAM footprints) is baked into `scripts/serve_qwen.sh` and
 
 ---
 
+## Seeing a game (the interface)
+
+Every run writes a JSONL transcript; `analysis/viz.py` turns one into a
+**standalone, shareable HTML report** — no server, no dependencies — laying the
+game out tick by tick with measurements, messages, trades (fabricated sales
+flagged in red via the ground-truth lie detector), and per-round results.
+
+```bash
+python -m agora.run --preset base --seed 7 --out runs/base
+python -m analysis.viz runs/base/seed7.jsonl        # -> runs/base/seed7.html
+python -m analysis.viz runs/base/ -o report/         # a whole directory -> index.html
+```
+
+Two rendered samples (real engine output, viewable in any browser) live in
+[docs/samples/](docs/samples): **cooperation_and_fraud** (a liar sells a phantom
+value every round) and **broker_and_death** (heterogeneous privilege + a
+survival cost drives three of four agents to ruin). Regenerate with
+`python scripts/make_samples.py`.
+
 ## What you can vary
 
 Everything is one knob in a config ([configs/](configs)) or a preset:

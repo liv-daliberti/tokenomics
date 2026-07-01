@@ -11,8 +11,10 @@ env/
 
 # Experiment outputs (transcripts, runs) — regenerate; do not commit
 runs/
+report/
 *.jsonl
 !tests/**/*.jsonl
+!docs/samples/**        # committed sample game + rendered report (viewable on GitHub)
 
 # Tooling
 .pytest_cache/
