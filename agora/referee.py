@@ -140,8 +140,12 @@ class Referee:
             st.messages_left = self.cfg.message_quota
             st.estimate = None
             st.measurements = []
-            st.inbox = []
             st.purchased = []
+            # NB: st.inbox is deliberately NOT cleared here — unseen messages
+            # (e.g. one delivered on the last tick after the recipient's final
+            # turn) carry into the next round's first observation so they are
+            # never silently dropped. Seen messages are already cleared in
+            # _take_turn once surfaced.
             self.policies[a].reset_round(round_index)
         self.market.trades.clear()
 

@@ -39,6 +39,7 @@ class ScriptedPolicy(Policy):
     shares_values = False
     sells_fabricated = False
     accepts_trades = False
+    submit_late = False      # if True, wait until the last tick so all shared readings are pooled
 
     def __init__(self, cfg: GameConfig, agent_id: str, peers: List[str]):
         self.cfg = cfg
@@ -51,11 +52,13 @@ class ScriptedPolicy(Policy):
         self._shared: set = set()
         self._call_n = 0
         self._rationale: Optional[str] = None
+        self._received: List[float] = []
 
     def reset_round(self, round_index: int) -> None:
         self._submitted = False
         self._offered = False
         self._shared = set()
+        self._received: List[float] = []   # readings others broadcast to me this round
 
     def _inv(self, action: Action) -> ToolInvocation:
         self._call_n += 1
@@ -63,13 +66,10 @@ class ScriptedPolicy(Policy):
 
     # --- pooled evidence available to this agent right now ------------------
     def _known_values(self, obs: Dict[str, Any]) -> List[float]:
-        vals = list(obs["my_measurements"])
-        vals += [p["claimed_value"] for p in obs["purchased"]]
-        for m in obs["inbox"]:
-            found = _NUM.search(m["text"])
-            if found:
-                vals.append(float(found.group(1)))
-        return vals
+        # own measurements + bought values + everything broadcast to me so far.
+        return (list(obs["my_measurements"])
+                + [p["claimed_value"] for p in obs["purchased"]]
+                + list(self._received))
 
     def _estimate(self, obs: Dict[str, Any]) -> float:
         if self.shares_values or self.accepts_trades:
@@ -84,6 +84,13 @@ class ScriptedPolicy(Policy):
 
     # --- the per-tick plan -------------------------------------------------
     def start_turn(self, observation_text: str, obs: Dict[str, Any]) -> None:
+        # Accumulate readings others broadcast to me (the inbox is cleared each
+        # tick, so a memory-less policy would otherwise forget earlier shares).
+        for m in obs["inbox"]:
+            found = _NUM.search(m["text"])
+            if found:
+                self._received.append(float(found.group(1)))
+
         plan: List[Action] = []
         msgs_left = obs["messages_left"]
 
@@ -121,8 +128,13 @@ class ScriptedPolicy(Policy):
         if can_measure and n_measured < self.measure_target:
             plan.append(Action(ActionType.MEASURE))
 
-        # 5) submit once done gathering (also enables early round termination)
-        done = (n_measured >= self.measure_target) or (not can_measure) or (obs["ticks_left"] <= 1)
+        # 5) submit once done gathering (also enables early round termination).
+        # A "submit_late" cooperator waits until the last tick so it has pooled
+        # every reading the others broadcast, rather than answering on its own.
+        if self.submit_late:
+            done = (obs["ticks_left"] <= 1) or (not can_measure and not obs["inbox"])
+        else:
+            done = (n_measured >= self.measure_target) or (not can_measure) or (obs["ticks_left"] <= 1)
         if done and not self._submitted:
             plan.append(Action(ActionType.SUBMIT_ESTIMATE, {"value": self._estimate(obs)}))
             self._submitted = True
@@ -167,7 +179,8 @@ class BayesianSolo(ScriptedPolicy):
 class HonestCooperator(ScriptedPolicy):
     shares_values = True
     accepts_trades = True
-    measure_target = 2  # relies on pooling rather than measuring a lot alone
+    submit_late = True   # wait for everyone's broadcasts before answering
+    measure_target = 2   # relies on pooling rather than measuring a lot alone
 
 
 class Hoarder(ScriptedPolicy):

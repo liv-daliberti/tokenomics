@@ -95,6 +95,23 @@ pooling still pays.
 | Rich-get-richer runaway | top reward is free money | keep `reward_max ≲ c·k` so accuracy is rewarded, not net-positive |
 | Premature death | survival cost too high | break-even for median play; income floor / round-1 subsidy |
 
+### 2.3 Making cooperation mandatory
+
+The `cooperation_required` preset tightens the budget + survival cost until a
+lone agent's own readings earn too little to stay solvent, while agents that pool
+survive. Empirically (scripted baselines, 25 seeds): **a solo strategy survives
+~9%, a cooperating strategy ~90%.** A key limit: pooling only improves accuracy
+by `sqrt(N)`, so **two agents cannot enforce this** (the √2 edge is too small — a
+survival cost that kills solos also kills cooperators); you need `N ≥ 3–4`. The
+reciprocation channel itself is verified end-to-end in
+[tests/test_reciprocation.py](../tests/test_reciprocation.py): messages deliver
+both ways and reach the prompt, trade offers are visible and acceptable with
+escrow settling, and cooperators fold received readings into their answers. So
+when an LLM agent *declines* to reciprocate, that is a model choice, not a bug.
+(An adversarial audit did surface and fix one real edge: a message delivered on a
+round's last tick, after the recipient's final turn, is now carried into the next
+round rather than dropped.)
+
 ---
 
 ## 3. Hypotheses

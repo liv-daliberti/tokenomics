@@ -129,6 +129,23 @@ PRESETS: Dict[str, GameConfig] = {
         horizon_mode="geometric", gamma=0.85, n_rounds=12,
         framing="cooperative",
     ),
+    # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a
+    # ~2x accuracy edge (sqrt(N)); combined with a per-round survival cost this
+    # means a lone agent's own readings earn too little to stay solvent — it dies,
+    # while agents that pool survive. Empirically (scripted, 25 seeds): solo agents
+    # survive ~9%, cooperators ~90%. (Two agents can't enforce this — the pooling
+    # edge is only sqrt(2); you need N>=3-4.)
+    "cooperation_required": GameConfig(
+        agent_ids=["A", "B", "C", "D"],
+        prior_mu=500.0, prior_sigma=150.0,
+        tau=180.0,
+        measure_cost=1.0, starting_credits=2.0,
+        survival_cost=2.0, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=40.0, reward_max=5,
+        message_quota=12, max_ticks=8,
+        horizon_mode="fixed", n_rounds=10, reveal_horizon=False,
+        framing="cooperative",
+    ),
     # Three agents: the smallest setting where a coalition can exclude someone.
     "coalitions": GameConfig(
         agent_ids=["A", "B", "C"],
