@@ -128,6 +128,19 @@ def test_blank_policies_falls_back_to_default():
     assert _wait_done(c, job_id) == "done"  # not "error" (no ZeroDivisionError)
 
 
+def test_raw_transcript_is_downloadable():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.post("/new", data={"preset": "smoke", "backend": "scripted",
+                             "policies": "honest_cooperator", "seed": "1"})
+    jid = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, jid) == "done"
+    t = c.get(f"/transcript/{jid}")
+    assert t.status_code == 200
+    assert b"round_end" in t.data and b"message" in t.data  # full events present
+
+
 def test_bad_policy_surfaces_error():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

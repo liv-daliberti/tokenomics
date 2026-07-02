@@ -286,6 +286,17 @@ def status(job_id: str):
     return jsonify({"status": st})
 
 
+@app.route("/transcript/<job_id>")
+def transcript(job_id: str):
+    """Serve the raw JSONL transcript — every event, verbatim, for full inspection."""
+    path = os.path.abspath(os.path.join(RUNS, f"{job_id}.jsonl"))
+    if not os.path.exists(path):
+        abort(404)
+    from flask import send_file
+    return send_file(path, mimetype="application/x-ndjson", as_attachment=True,
+                     download_name=f"agora_{job_id}.jsonl")
+
+
 @app.route("/delete/<job_id>", methods=["POST"])
 def delete(job_id: str):
     for ext in (".json", ".jsonl"):
@@ -476,7 +487,8 @@ GAME = _SHELL.replace("{{ inner|safe }}", """
   <a class="back" href="/">← all games</a>
   <div class="m" style="color:var(--mut);font-size:13px">view:
     <a href="?view=simple" style="{{ 'font-weight:700;text-decoration:none' if view=='simple' else '' }}">simple</a> ·
-    <a href="?view=detailed" style="{{ 'font-weight:700;text-decoration:none' if view=='detailed' else '' }}">detailed</a></div>
+    <a href="?view=detailed" style="{{ 'font-weight:700;text-decoration:none' if view=='detailed' else '' }}">detailed</a>
+    · <a href="/transcript/{{ meta.id }}">raw transcript ⬇</a></div>
 </div>
 {{ body|safe }}
 """)

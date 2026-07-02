@@ -26,3 +26,6 @@ report/
 *.safetensors
 *.bin
 hf_cache/
+
+# local HF model cache
+.hf_cache/
