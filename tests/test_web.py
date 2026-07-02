@@ -141,6 +141,27 @@ def test_raw_transcript_is_downloadable():
     assert b"round_end" in t.data and b"message" in t.data  # full events present
 
 
+def test_create_tab_has_the_form_and_index_does_not():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    assert b'action="/new"' in c.get("/create").data       # form lives on its own tab
+    assert b'action="/new"' not in c.get("/").data          # main page is gallery-only
+
+
+def test_delete_all_clears_the_gallery():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.post("/new", data={"preset": "smoke", "backend": "scripted",
+                             "policies": "bayesian_solo", "seed": "1"})
+    jid = r.headers["Location"].rstrip("/").split("/")[-1]
+    assert _wait_done(c, jid) == "done"
+    assert jid.encode() in c.get("/").data
+    c.post("/delete_all")
+    assert jid.encode() not in c.get("/").data
+
+
 def test_bad_policy_surfaces_error():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

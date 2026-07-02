@@ -160,10 +160,14 @@ _SAMPLE_RUNS = [
 
 
 def seed_samples() -> None:
-    """Populate the gallery from the committed sample transcripts (idempotent).
+    """Populate the gallery from the committed sample transcripts, ONCE.
 
-    Runs at import so a fresh, ephemeral deploy (e.g. Render) shows the Qwen and
-    demo games without any prior state."""
+    A `.seeded` marker means we have seeded before, so a deliberate "Delete all"
+    is not resurrected on restart. A fresh, ephemeral deploy (e.g. Render) has no
+    marker and gets the curated samples."""
+    marker = os.path.join(RUNS, ".seeded")
+    if os.path.exists(marker):
+        return
     for rel, title in _SAMPLE_RUNS:
         src = os.path.join(_REPO, rel)
         jid = "sample-" + re.sub(r"[^a-zA-Z0-9]", "-", os.path.basename(rel).replace(".jsonl", ""))
@@ -188,6 +192,10 @@ def seed_samples() -> None:
             _write_meta(meta)
         except Exception:  # a bad sample must never take down the app
             continue
+    try:
+        open(marker, "w").close()
+    except OSError:
+        pass
 
 
 def _run_job(job_id: str, meta: dict) -> None:
@@ -261,13 +269,33 @@ def _preset_data() -> dict:
     return out
 
 
+def _page_ctx(page: str) -> dict:
+    return dict(css=_CSS, page=page, presets=sorted(PRESETS),
+                policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
+                preset_data=json.dumps(_preset_data()))
+
+
 @app.route("/")
 def index():
-    return render_template_string(INDEX, css=_CSS, presets=sorted(PRESETS),
-                                  policies_list=sorted(REGISTRY),
-                                  default_policies=DEFAULT_POLICIES,
-                                  preset_data=json.dumps(_preset_data()),
-                                  games=_all_games())
+    return render_template_string(INDEX, games=_all_games(), **_page_ctx("games"))
+
+
+@app.route("/create")
+def create():
+    return render_template_string(INDEX, games=[], **_page_ctx("create"))
+
+
+@app.route("/delete_all", methods=["POST"])
+def delete_all():
+    """Clear the whole gallery (does not resurrect on restart — see seed marker)."""
+    for f in os.listdir(RUNS):
+        if (f.endswith(".json") or f.endswith(".jsonl")) and not f.startswith("."):
+            try:
+                os.remove(os.path.join(RUNS, f))
+            except OSError:
+                pass
+    JOBS.clear()
+    return redirect(url_for("index"))
 
 
 @app.route("/new", methods=["POST"])
@@ -371,16 +399,25 @@ button.ghost{background:#20242e;color:var(--fg);}
 .pill.bad{background:#3a1c1a;color:var(--red);} .pill.ok{background:#1c3a24;color:var(--green);}
 .back{color:var(--blue);text-decoration:none;font-size:14px;}
 .hide{display:none;}
+.nav{display:flex;gap:4px;margin:0 0 22px;border-bottom:1px solid var(--line);}
+.nav a{padding:11px 18px;text-decoration:none;color:var(--mut);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;}
+.nav a.active{color:var(--fg);border-bottom-color:var(--blue);}
 </style></head><body><div class="wrap">{{ inner|safe }}</div>
 <script>
-function toggleBackend(){var b=document.querySelector('input[name=backend]:checked').value;
- document.getElementById('scripted-opts').classList.toggle('hide', b!=='scripted');
- document.getElementById('llm-opts').classList.toggle('hide', b!=='llm');}
+function toggleBackend(){var el=document.querySelector('input[name=backend]:checked'); if(!el) return;
+ var b=el.value, s=document.getElementById('scripted-opts'), l=document.getElementById('llm-opts');
+ if(s) s.classList.toggle('hide', b!=='scripted'); if(l) l.classList.toggle('hide', b!=='llm');}
 document.addEventListener('DOMContentLoaded',function(){var r=document.querySelectorAll('input[name=backend]');
- r.forEach(function(x){x.addEventListener('change',toggleBackend);});toggleBackend&&toggleBackend();});
+ r.forEach(function(x){x.addEventListener('change',toggleBackend);});toggleBackend();});
 </script></body></html>"""
 
 INDEX = _SHELL.replace("{{ inner|safe }}", """
+<div class="nav">
+  <a href="/" class="{{ 'active' if page != 'create' else '' }}">Games</a>
+  <a href="/create" class="{{ 'active' if page == 'create' else '' }}">＋ Run new game</a>
+</div>
+
+{% if page != 'create' %}
 <h1>Agora — the Measurement Market</h1>
 <p class="sub">Watch AI agents cooperate, deceive, hoard, and go bust while estimating a hidden number.</p>
 
@@ -401,11 +438,37 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <span class="tag lie">FABRICATED</span> tag marks a sold value that doesn’t match what the seller actually
     measured. The <b>Scoreboard</b> at the top of a run gives a quick who-won / who-survived summary.</p>
     <p style="margin:0"><b>The headline run is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model
-    playing the cooperative setup. You can also run new games here with scripted baseline agents
-    (instant, no GPU).</p>
+    playing the cooperative setup. Hit <a href="/create">Run new game</a> to try one yourself with scripted
+    baseline agents (instant, no GPU).</p>
   </div>
 </details>
 
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:28px">
+  <h2 style="font-size:20px;margin:0">Games</h2>
+  {% if games %}<form method="post" action="/delete_all" style="margin:0"
+      onsubmit="return confirm('Delete ALL games? This cannot be undone.')">
+    <button class="ghost" style="margin:0;padding:6px 12px;font-size:12px">Delete all</button></form>{% endif %}
+</div>
+{% if not games %}<p class="sub">No games yet — <a href="/create">run one</a>.</p>{% endif %}
+<ul class="games">
+{% for g in games %}
+  <li>
+    <a href="/game/{{ g.id }}">{{ g.title }}</a>
+    {% if g.status == 'done' %}
+      <span class="m">{{ g.n_agents }} agents · {% if g.n_games and g.n_games > 1 %}{{ g.n_games }} games · {% endif %}{{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
+      {% if g.deception_rate is defined and g.deception_rate == g.deception_rate %}
+        <span class="pill {{ 'bad' if g.deception_rate>0 else 'ok' }}">deception {{ '%.2f'|format(g.deception_rate) }}</span>{% endif %}
+      <span class="pill">survivors {{ g.survivors }}/{{ g.n_agents }}</span>
+    {% elif g.status == 'running' %}<span class="pill">running…</span>
+    {% else %}<span class="pill bad">error</span>{% endif %}
+    <form method="post" action="/delete/{{ g.id }}" onsubmit="return confirm('Delete this game?')">
+      <button class="ghost" style="margin:0;padding:5px 10px;font-size:12px">✕</button></form>
+  </li>
+{% endfor %}
+</ul>
+
+{% else %}
+<h1>Run a new game</h1>
 <form class="panel" method="post" action="/new">
   <label>Setting (preset)</label>
   <select name="preset">
@@ -492,25 +555,6 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <button type="submit">▶ Run new game</button>
 </form>
 
-<h1 style="font-size:20px;margin-top:34px">Games</h1>
-{% if not games %}<p class="sub">No games yet — run one above.</p>{% endif %}
-<ul class="games">
-{% for g in games %}
-  <li>
-    <a href="/game/{{ g.id }}">{{ g.title }}</a>
-    {% if g.status == 'done' %}
-      <span class="m">{{ g.n_agents }} agents · {% if g.n_games and g.n_games > 1 %}{{ g.n_games }} games · {% endif %}{{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
-      {% if g.deception_rate is defined and g.deception_rate == g.deception_rate %}
-        <span class="pill {{ 'bad' if g.deception_rate>0 else 'ok' }}">deception {{ '%.2f'|format(g.deception_rate) }}</span>{% endif %}
-      <span class="pill">survivors {{ g.survivors }}/{{ g.n_agents }}</span>
-    {% elif g.status == 'running' %}<span class="pill">running…</span>
-    {% else %}<span class="pill bad">error</span>{% endif %}
-    <form method="post" action="/delete/{{ g.id }}" onsubmit="return confirm('Delete this game?')">
-      <button class="ghost" style="margin:0;padding:5px 10px;font-size:12px">✕</button></form>
-  </li>
-{% endfor %}
-</ul>
-
 <script>
 const AGORA_PRESETS = {{ preset_data|safe }};
 function fillPreset(){
@@ -528,6 +572,7 @@ document.addEventListener('DOMContentLoaded', function(){
   if(sel){ sel.addEventListener('change', fillPreset); fillPreset(); }
 });
 </script>
+{% endif %}
 """)
 
 WAIT = _SHELL.replace("{{ inner|safe }}", """
