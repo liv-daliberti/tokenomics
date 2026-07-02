@@ -27,16 +27,22 @@ MODEL = os.environ.get("MODEL", "qwen3-32b")
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8765/v1")
 PRESET = os.environ.get("PRESET", "cooperative")
 GAMES = int(os.environ.get("GAMES", "2"))
-ROUNDS = int(os.environ.get("ROUNDS", "3"))
-MAXTICKS = int(os.environ.get("MAXTICKS", "4"))
 SEED = int(os.environ.get("SEED", "0"))
 OUT = os.environ.get("OUT", "runs/qwen/match")
 
-cfg = PRESETS[PRESET].with_(seed=SEED, horizon_mode="fixed", n_rounds=ROUNDS,
-                            reveal_horizon=False, max_ticks=MAXTICKS)
+# By default use the preset AS DEFINED (its n_rounds, reveal_horizon, max_ticks),
+# so a rerun reflects the real game. ROUNDS / MAXTICKS only override if set.
+_base = PRESETS[PRESET]
+_overrides = {"seed": SEED, "horizon_mode": "fixed"}
+if os.environ.get("ROUNDS"):
+    _overrides["n_rounds"] = int(os.environ["ROUNDS"])
+if os.environ.get("MAXTICKS"):
+    _overrides["max_ticks"] = int(os.environ["MAXTICKS"])
+cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
 print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} games={GAMES} "
-      f"rounds={ROUNDS} ticks={MAXTICKS} url={BASE_URL} -> {OUT}", flush=True)
+      f"rounds={cfg.n_rounds} ticks={cfg.max_ticks} reveal_horizon={cfg.reveal_horizon} "
+      f"url={BASE_URL} -> {OUT}", flush=True)
 
 backend = OpenAIBackend(model=MODEL, base_url=BASE_URL)
 policies = {a: LLMPolicy(backend, cfg, a, [p for p in ids if p != a], n_games=GAMES)

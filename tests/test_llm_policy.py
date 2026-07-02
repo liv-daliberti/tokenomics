@@ -87,6 +87,41 @@ def test_llm_parse_failure_is_counted():
     assert any(e["event"] == "parse_fail" for e in res.transcript.events)
 
 
+def test_agent_memories_are_isolated():
+    # Each agent keeps its OWN conversation. Sharing one (stateless) backend must
+    # NOT let one agent's system prompt, observations, or generated output leak
+    # into another agent's history — A only ever sees A's memory, B only B's.
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=1, seed=0)
+
+    def script(messages, tools, _cfg):
+        # the backend only ever receives the CALLING agent's own history
+        who = "A" if "You are agent A" in messages[0]["content"] else "B"
+        n = sum(1 for m in messages if m["role"] == "assistant")
+        if n == 0:
+            return LLMResponse(content=f"SECRET-{who}",
+                               tool_calls=[RawToolCall("m", "measure", {})])
+        return LLMResponse(content=f"SECRET-{who}", tool_calls=[
+            RawToolCall("s", "submit_estimate", {"value": 500.0}),
+            RawToolCall("e", "end_turn", {})])
+
+    backend = MockBackend(script)                      # ONE backend, shared (as in production)
+    policies = {a: LLMPolicy(backend, cfg, a, [p for p in cfg.agent_ids if p != a])
+                for a in cfg.agent_ids}
+    # independent history objects from the very start (no shared mutable default)
+    assert policies["A"].messages is not policies["B"].messages
+
+    Referee(cfg, policies).run()
+    a_hist = "\n".join(str(m.get("content", "")) for m in policies["A"].messages)
+    b_hist = "\n".join(str(m.get("content", "")) for m in policies["B"].messages)
+
+    # each agent's system prompt addresses only itself
+    assert "You are agent A" in a_hist and "You are agent B" not in a_hist
+    assert "You are agent B" in b_hist and "You are agent A" not in b_hist
+    # generated content never crosses over
+    assert "SECRET-A" in a_hist and "SECRET-A" not in b_hist
+    assert "SECRET-B" in b_hist and "SECRET-B" not in a_hist
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
