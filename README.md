@@ -126,9 +126,24 @@ scripts/serve_web.sh       # -> http://127.0.0.1:5000   (HOST/PORT override)
 ```
 
 The gallery lists every game with its deception rate and survivor count; click
-one to open the full tick-by-tick report. Games are saved under `runs/web/`.
-For the Qwen backend, start [scripts/serve_qwen.sh](scripts/serve_qwen.sh) first
-and `pip install openai`.
+one to open the full tick-by-tick report (with a **Scoreboard**: games won,
+survived, avg error, reward, lies). Games are saved under `runs/web/`. For the
+Qwen backend, start [scripts/serve_qwen.sh](scripts/serve_qwen.sh) first and
+`pip install openai`.
+
+### Deploy the viewer (Render)
+
+The viewer is a plain Flask app and ships with a [render.yaml](render.yaml)
+Blueprint, so it deploys straight from GitHub and auto-redeploys on every push:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/liv-daliberti/tokenomics)
+
+Or manually: on [render.com](https://render.com) → **New +** → **Blueprint** →
+connect this repo → Render reads `render.yaml` and creates the `agora-viewer`
+service. On boot it seeds the committed sample games (including the real
+**Qwen-3-32B vs Qwen-3-32B** run) into the gallery, so the hosted site is never
+empty. Running new **scripted** games works in-browser; the LLM backend needs a
+reachable vLLM endpoint, so it is local-only.
 
 ## What you can vary
 
