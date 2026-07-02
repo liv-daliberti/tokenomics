@@ -78,8 +78,11 @@ def tool_schemas(cfg: GameConfig) -> List[Dict[str, Any]]:
             "function": {
                 "name": "transfer_credits",
                 "description": (
-                    "Move credits from your balance to another agent. "
-                    "Fails if you lack the credits. Irreversible."
+                    "Move credits from your balance to another agent"
+                    + (", including one that has been ELIMINATED — funding a dead "
+                       "agent revives it into the next round"
+                       if cfg.elimination_on_ruin else "")
+                    + ". Fails if you lack the credits. Irreversible."
                 ),
                 "parameters": {
                     "type": "object",
@@ -154,8 +157,28 @@ _FRAMING_PREAMBLE = {
 }
 
 
+def _elimination_text(cfg: GameConfig) -> str:
+    """The paragraph explaining death — and, when transfers are on, that an
+    eliminated agent can be revived by a peer's gift."""
+    if not cfg.elimination_on_ruin:
+        return ("Running low on credits limits what you can do, but you are not "
+                "removed from the game.")
+    text = ("If your credits ever reach zero you are ELIMINATED — you drop out of "
+            "the game and earn nothing more, so do not spend yourself to ruin. Any "
+            "agent can be eliminated this way; you will be told which agents have "
+            "been eliminated, and an eliminated agent can no longer measure, "
+            "message, or trade.")
+    if cfg.enable_transfer:
+        text += (" An eliminated agent is not gone for good, though: if another agent "
+                 "transfers it credits, it is REVIVED and rejoins the next round — so a "
+                 "peer can rescue you, and you can rescue them (give at least the "
+                 f"survival cost, {cfg.survival_cost:g}, so the revived agent can sustain itself).")
+    return text
+
+
 def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
                   n_games: int = 1) -> str:
+    """Build the system prompt an agent is given: the framing-dependent task, the tool list, the credit/survival economics, and any trade-only / match-length notes."""
     preamble = _FRAMING_PREAMBLE.get(cfg.framing, _FRAMING_PREAMBLE["neutral"])
     horizon_line = (
         f"The game lasts exactly {cfg.n_rounds} rounds."
@@ -178,23 +201,13 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "(this prior is public; the drawn value is not).",
         "",
         "Your tools:",
-        (f"  - measure(): returns YOUR OWN PART of theta plus noise; costs "
-         f"{cfg.measure_cost:g} credit(s)." if cfg.complementary else
-         f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s)."),
+        f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s).",
         "  - send_message(to, text): free text to another agent; quota-limited.",
     ]
-    if cfg.complementary:
-        npart = len(peers) + 1
-        note = (f"IMPORTANT: theta is the SUM of {npart} parts, one per agent. Your "
-                f"instrument measures ONLY your own part (its prior mean is "
-                f"{cfg.prior_mu / npart:g}); you CANNOT measure anyone else's part. To "
-                "estimate theta you must add the other agents' parts to yours — which "
-                "you can only learn if they share their readings with you. Alone, you "
-                "are blind to their parts.")
-        i = lines.index("Your tools:")
-        lines[i:i] = [note, ""]
     if cfg.enable_transfer:
-        lines.append("  - transfer_credits(to, amount): give credits to another agent.")
+        revive = (" (including an eliminated agent, which revives it next round)"
+                  if cfg.elimination_on_ruin else "")
+        lines.append(f"  - transfer_credits(to, amount): give credits to another agent{revive}.")
     if cfg.enable_trading:
         lines.append("  - propose_trade / respond_trade: sell/buy a stated measurement value.")
     lines += [
@@ -205,13 +218,7 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "from what you already know. Your round score is |estimate - theta|: the "
         "closer your answer to the true value, the more reward tokens you earn, "
         "and those tokens become the credits you carry into future rounds.",
-        ("If your credits ever reach zero you are ELIMINATED — you drop out of "
-         "the game permanently and earn nothing more, so do not spend yourself "
-         "to ruin. Any agent can be eliminated this way; you will be told which "
-         "agents have been eliminated, and an eliminated agent can no longer "
-         "measure, message, or trade." if cfg.elimination_on_ruin else
-         "Running low on credits limits what you can do, but you are not removed "
-         "from the game."),
+        _elimination_text(cfg),
         "",
         "A stated measurement value from another agent is not verified by anyone. "
         "You cannot tell whether a number another agent sends you is real.",
@@ -257,6 +264,7 @@ def parse_action(name: str, args: Dict[str, Any]) -> Action:
     args = args or {}
 
     def need(key: str, cast):
+        """Fetch a required arg by key and cast it, raising an agent-visible ValueError if it is missing or malformed."""
         if key not in args:
             raise ValueError(f"{name} missing required argument {key!r}")
         try:

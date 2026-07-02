@@ -117,26 +117,21 @@ reserve-keeping).
   ~57%, reckless solo ~5%, lie ~12%** — going it alone or deceiving is
   self-destructive and cooperation is the best strategy. The one loophole tuning
   can't close is a **passive hoarder** (~52%) that measures almost nothing and
-  coasts on its reserve.
+  coasts on its reserve — an accepted limitation of the two-equal-agents setting.
 
-- **`complementary` (N=2, true wall).** `theta = X + Y`; agent A's instrument
-  reads only `X`, B's only `Y` (`complementary: true`). Alone, each is
-  *structurally* blind to the other's part — its error is floored by that part's
-  prior no matter how much it measures — so a lone agent cannot clear the reward
-  bar. This is a categorical benefit, not `√2`, and the **hoarder loophole is
-  closed** because passivity no longer helps. It also forces information through
-  the **market** (`values_via_trade_only`): numbers written in free messages are
-  redacted, so to hand a partner a reading you must `propose_trade` it (price can
-  be 0) — chat is negotiation-only. Scripted, 40 seeds (sharing via trade):
-  **cooperate ~76%, solo ~0%, hoard ~1%, lie ~0%.** This is your original
-  "different agents, different tools" idea. The catch is a new failure mode: if
-  only one agent shares, the sharer is blind to the other's part and dies while
-  the non-sharer free-rides, so *mutual* sharing is required.
+The task itself is always the plain **"pick a number"** game: every agent
+estimates the *same* hidden `theta`. Cooperation is made worthwhile by the
+economics above, never by splitting the target into per-agent parts.
 
-Two round-structure knobs support all of the above and default on:
-`final_answer_pass` gives every agent a last turn to commit its estimate *after*
-all exchange (so it can always update its guess with what it received), and
-`values_via_trade_only` routes readings through trades instead of free chat.
+**Rescue.** With `enable_transfer`, `transfer_credits` may target an *eliminated*
+agent, and any dead agent a peer has funded above zero is **revived** at the next
+round boundary (see [protocol.md](protocol.md)). Agents are told this in their
+prompt, so keeping a partner alive — or bringing one back — is an available move.
+
+Two round-structure knobs support the above and default on: `final_answer_pass`
+gives every agent a last turn to commit its estimate *after* all exchange (so it
+can always update its guess with what it received), and `values_via_trade_only`
+(optional) routes readings through trades instead of free chat.
 
 The reciprocation channel itself is verified end-to-end in
 [tests/test_reciprocation.py](../tests/test_reciprocation.py): messages deliver

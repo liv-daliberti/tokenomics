@@ -42,6 +42,7 @@ class ScriptedPolicy(Policy):
     submit_late = False      # if True, wait until the last tick so all shared readings are pooled
 
     def __init__(self, cfg: GameConfig, agent_id: str, peers: List[str]):
+        """Initialise per-round bookkeeping and a deterministic per-agent RNG."""
         self.cfg = cfg
         self.agent_id = agent_id
         self.peers = peers
@@ -55,50 +56,35 @@ class ScriptedPolicy(Policy):
         self._received: List[float] = []
 
     def reset_round(self, round_index: int) -> None:
+        """Clear per-round flags: submitted, offered, shared indices, and received readings."""
         self._submitted = False
         self._offered = False
         self._shared = set()
         self._received: List[float] = []   # readings others broadcast to me this round
 
     def _inv(self, action: Action) -> ToolInvocation:
+        """Wrap an Action as a ToolInvocation with a synthetic call id."""
         self._call_n += 1
         return ToolInvocation(f"{self.agent_id}-{self._call_n}", action.type.value, action)
 
     # --- pooled evidence available to this agent right now ------------------
     def _known_values(self, obs: Dict[str, Any]) -> List[float]:
         # own measurements + bought values + everything broadcast to me so far.
+        """All evidence this agent has: its own measurements + bought values + everything broadcast to it this round."""
         return (list(obs["my_measurements"])
                 + [p["claimed_value"] for p in obs["purchased"]]
                 + [v for _, v in self._received])
 
     def _estimate(self, obs: Dict[str, Any]) -> float:
-        if obs.get("complementary"):
-            return self._complementary_estimate(obs)
+        """Posterior-mean estimate of theta from the evidence this agent has."""
         if self.shares_values or self.accepts_trades:
             vals = self._known_values(obs)
         else:
             vals = list(obs["my_measurements"]) + [p["claimed_value"] for p in obs["purchased"]]
         return posterior_mean(vals, obs["prior_mu"], obs["prior_sigma"], self.cfg.tau)
 
-    def _complementary_estimate(self, obs: Dict[str, Any]) -> float:
-        # theta = my part + the other agents' parts. I estimate my part from my own
-        # measurements, and each other agent's part from what THEY shared/sold me
-        # (falling back to that part's prior mean if they shared nothing -> blind).
-        mu_c, sig_c = obs["component_prior_mu"], obs["component_prior_sigma"]
-        tau = self.cfg.tau
-        by_sender: Dict[str, List[float]] = {}
-        for s, v in self._received:
-            by_sender.setdefault(s, []).append(v)
-        for p in obs["purchased"]:
-            by_sender.setdefault(p["seller"], []).append(p["claimed_value"])
-        total = posterior_mean(list(obs["my_measurements"]), mu_c, sig_c, tau)
-        for other in self.peers:
-            if other == self.agent_id:
-                continue
-            total += posterior_mean(by_sender.get(other, []), mu_c, sig_c, tau)
-        return total
-
     def _pick_peer(self) -> Optional[str]:
+        """Pick a random other agent (used by the liar to choose a mark)."""
         others = [p for p in self.peers if p != self.agent_id]
         return self.rng.choice(others) if others else None
 
@@ -106,6 +92,7 @@ class ScriptedPolicy(Policy):
     def start_turn(self, observation_text: str, obs: Dict[str, Any]) -> None:
         # Accumulate readings others broadcast to me (the inbox is cleared each
         # tick, so a memory-less policy would otherwise forget earlier shares).
+        """Plan this tick: harvest received readings, respond to trade offers, share/measure/sell per the policy, and submit an estimate once done."""
         for m in obs["inbox"]:
             found = _NUM.search(m["text"])
             if found:
@@ -174,6 +161,7 @@ class ScriptedPolicy(Policy):
         self._queue = [self._inv(a) for a in plan]
 
     def _describe(self, obs: Dict[str, Any], plan: List[Action]) -> str:
+        """Compose a short natural-language rationale for the planned actions (shown as the agent's reasoning)."""
         kinds = [a.type for a in plan]
         bits = []
         if ActionType.RESPOND_TRADE in kinds:
@@ -191,22 +179,27 @@ class ScriptedPolicy(Policy):
         return "; ".join(bits) if bits else "holding this tick"
 
     def next_actions(self) -> List[ToolInvocation]:
+        """Return the whole planned tick at once, then empty on subsequent calls."""
         queue, self._queue = self._queue, []
         return queue
 
     def last_reasoning(self) -> Optional[str]:
+        """Return, once, the rationale for this turn."""
         r, self._rationale = self._rationale, None
         return r
 
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
+        """No-op: scripted policies do not react to tool results mid-tick."""
         pass
 
 
 class BayesianSolo(ScriptedPolicy):
+    """Baseline: self-measure only, no communication; submit the posterior mean."""
     pass
 
 
 class HonestCooperator(ScriptedPolicy):
+    """Baseline: measure a share, broadcast/trade its real readings, pool everything, and answer late after pooling."""
     shares_values = True
     accepts_trades = True
     submit_late = True   # wait for everyone's broadcasts before answering
@@ -214,15 +207,18 @@ class HonestCooperator(ScriptedPolicy):
 
 
 class Hoarder(ScriptedPolicy):
+    """Baseline: measure minimally, never share, conserve credits."""
     measure_target = 1
 
 
 class Liar(ScriptedPolicy):
+    """Baseline: self-measure for its own answer, but sell fabricated values to others."""
     sells_fabricated = True
     measure_target = 3
 
 
 class RandomAgent(ScriptedPolicy):
+    """Baseline: measure until broke, then submit the raw mean."""
     measure_target = 999  # measure until broke
 
 

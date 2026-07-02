@@ -28,7 +28,9 @@ class MarketError(Exception):
 
 
 class Market:
+    """The credit ledger and escrow. Every credit movement goes through here, so the contract invariants (no overdraft, conservation, atomic settlement, no double-spend) hold by construction. It guarantees payment, never information quality."""
     def __init__(self, states: Dict[str, AgentState], counter: Callable[[], str]):
+        """Bind the ledger to the shared agent-state map and a unique-trade-id counter."""
         self.states = states
         self._counter = counter                # supplies unique trade ids
         self.trades: Dict[str, Trade] = {}
@@ -37,11 +39,13 @@ class Market:
     # --- primitives --------------------------------------------------------
     def _record(self, kind: str, src: Optional[str], dst: Optional[str],
                 amount: float, **extra) -> None:
+        """Append one entry to the audit ledger."""
         entry = {"kind": kind, "src": src, "dst": dst, "amount": amount}
         entry.update(extra)
         self.ledger.append(entry)
 
     def _live(self, agent_id: str) -> AgentState:
+        """Return an agent's state, raising if it is unknown or already eliminated."""
         st = self.states.get(agent_id)
         if st is None:
             raise MarketError(f"unknown agent {agent_id!r}")
@@ -49,11 +53,22 @@ class Market:
             raise MarketError(f"agent {agent_id!r} is not alive")
         return st
 
-    def _move(self, src: str, dst: str, amount: float) -> None:
-        """Atomic credit transfer. Enforces I1 and (via single deduction) I4."""
+    def _move(self, src: str, dst: str, amount: float,
+              allow_dead_dst: bool = False) -> None:
+        """Atomic credit transfer. Enforces I1 and (via single deduction) I4.
+
+        ``allow_dead_dst`` lets a gift target an ELIMINATED agent, so a peer can
+        fund it back into the game (the referee revives a funded agent at the
+        next round boundary). Trades never set this — you cannot pay a dead
+        agent for a value it can no longer deliver."""
         if amount < 0:
             raise MarketError("amount must be non-negative")
-        s, d = self._live(src), self._live(dst)
+        s = self._live(src)
+        d = self.states.get(dst)
+        if d is None:
+            raise MarketError(f"unknown agent {dst!r}")
+        if not allow_dead_dst and not d.alive:
+            raise MarketError(f"agent {dst!r} is not alive")
         if not s.can_afford(amount):
             raise MarketError(
                 f"{src} cannot afford {amount} (has {s.credits})"
@@ -63,6 +78,7 @@ class Market:
 
     # --- spend (measurement cost, survival cost: credits leave the economy) --
     def spend(self, agent_id: str, amount: float, kind: str) -> None:
+        """Deduct credits that leave the economy (measurement or survival cost); raises on overdraft."""
         st = self._live(agent_id)
         if not st.can_afford(amount):
             raise MarketError(f"{agent_id} cannot afford {amount} (has {st.credits})")
@@ -71,14 +87,18 @@ class Market:
 
     # --- transfer_credits (gifts / cost-splitting) -------------------------
     def transfer(self, src: str, dst: str, amount: float) -> None:
+        """Atomically move credits from one agent to another (a gift / cost-split);
+        the destination MAY be an eliminated agent, so a peer can fund it back
+        into the game. Raises on overdraft or self-transfer."""
         if src == dst:
             raise MarketError("cannot transfer to self")
-        self._move(src, dst, amount)
+        self._move(src, dst, amount, allow_dead_dst=True)
         self._record("transfer", src, dst, amount)
 
     # --- trading: propose / respond (escrowed, atomic) ---------------------
     def propose_trade(self, seller: str, buyer: str, price: float,
                       claimed_value: float, tick: int) -> Trade:
+        """Record a pending offer to sell a (claimed) value from seller to buyer and return the Trade."""
         self._live(seller)
         self._live(buyer)
         if seller == buyer:
@@ -97,6 +117,7 @@ class Market:
         return trade
 
     def respond_trade(self, responder: str, trade_id: str, accept: bool) -> Trade:
+        """Let the buyer accept (atomic pay + deliver) or reject a pending trade; raises if the responder is not the buyer or it is already resolved."""
         trade = self.trades.get(trade_id)
         if trade is None:
             raise MarketError(f"unknown trade {trade_id!r}")
@@ -127,4 +148,5 @@ class Market:
         return trade
 
     def total_credits(self) -> float:
+        """Sum of all agents' balances (used to assert conservation)."""
         return sum(st.credits for st in self.states.values())

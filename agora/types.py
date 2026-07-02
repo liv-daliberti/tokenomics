@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 
 class ActionType(str, Enum):
+    """The tool actions an agent may emit during its turn (measure, send_message, transfer_credits, propose_trade, respond_trade, submit_estimate, end_turn)."""
     MEASURE = "measure"
     SEND_MESSAGE = "send_message"
     TRANSFER = "transfer_credits"
@@ -29,11 +30,13 @@ class Action:
     args: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return a plain {type, args} dict for logging/serialisation."""
         return {"type": self.type.value, "args": self.args}
 
 
 @dataclass
 class Message:
+    """One message in an agent's inbox: sender, recipient ('all' = broadcast), text, and the tick it was sent."""
     sender: str
     recipient: str  # an agent id, or "all" for a broadcast
     text: str
@@ -72,6 +75,7 @@ class Measurement:
 
 @dataclass
 class AgentState:
+    """The mutable per-agent state the referee tracks within a game: credits, private noise tau, remaining message quota, alive flag, current estimate, private measurement log, unseen inbox, and purchased (bought) values."""
     agent_id: str
     credits: float
     tau: float                         # private measurement-noise std
@@ -84,11 +88,13 @@ class AgentState:
     purchased: List[Dict[str, Any]] = field(default_factory=list)
 
     def can_afford(self, amount: float) -> bool:
+        """True if the agent holds at least `amount` credits (with a tiny epsilon for float slop)."""
         return self.credits >= amount - 1e-9
 
 
 @dataclass
 class RoundResult:
+    """Per-round outcome for every agent: the truth, estimates, absolute errors, rewards, start/end credits, and alive flags."""
     round_index: int
     truth: float
     estimates: Dict[str, Optional[float]]

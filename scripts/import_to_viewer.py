@@ -20,6 +20,7 @@ from analysis.metrics import load_events, summary
 
 
 def main() -> None:
+    """Import a transcript JSONL into the web app's gallery (copy it in and write the computed metadata)."""
     src = sys.argv[1]
     title = sys.argv[2] if len(sys.argv) > 2 else os.path.basename(src).replace(".jsonl", "")
     runs = os.environ.get("AGORA_RUNS", os.path.join(REPO, "runs", "web"))

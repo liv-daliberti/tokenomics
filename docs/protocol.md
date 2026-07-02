@@ -16,6 +16,7 @@ and is the only component that mutates it.
 
 ```
 for r in horizon():                       # geometric (hidden) or fixed (known)
+    revive any dead agent a peer funded   # credits>0 while dead -> back in the game
     theta_r ~ Normal(mu, sigma^2)         # drawn by the referee, never revealed
     reset per-round agent state           # messages_left, estimate, measurements, inbox, purchased
     for tick in 0 .. max_ticks-1:
@@ -29,10 +30,9 @@ for r in horizon():                       # geometric (hidden) or fixed (known)
     settle(r)                             # score, carry over, apply survival cost, eliminate
 ```
 
-Two optional modes change what happens above:
-- **`complementary`** — `theta_r = X_A + X_B + ...`, one part per agent drawn so
-  the parts sum to the public `theta` prior. An agent's `measure()` returns only
-  *its own* part; to estimate `theta` it must obtain the others' parts.
+Every agent estimates the **same** hidden `theta_r` ("pick a number").
+
+One optional mode changes what happens above:
 - **`values_via_trade_only`** — numeric tokens in `send_message` text are redacted
   on delivery, so a reading can only be handed over via `propose_trade`
   (chat is negotiation-only).
@@ -49,7 +49,7 @@ on `end_turn`, on an empty step, or at the action cap.
 |---|---|---|---|
 | `measure()` | returns `x ~ Normal(theta, tau_i^2)`, logged with the true `x` | `c` credits | insufficient credits |
 | `send_message(to, text)` | deliver text to an agent or `all` | 1 of `message_quota`; free of credits | quota exhausted; unknown/dead recipient (mis-address) |
-| `transfer_credits(to, amount)` | atomic gift / cost-split | ≤ current balance | overdraft; self-transfer |
+| `transfer_credits(to, amount)` | atomic gift / cost-split; **may target an eliminated agent to revive it** | ≤ current balance | overdraft; self-transfer |
 | `propose_trade(to, price, claimed_value)` | offer to sell a *stated* value | — | unknown agent; self |
 | `respond_trade(trade_id, accept)` | buyer settles: pays `price`, receives `claimed_value` | ≤ buyer balance | not the buyer; already resolved; overdraft |
 | `submit_estimate(value)` | lock the round answer (last write wins, logged) | — | — |
@@ -98,6 +98,12 @@ if budget_i(r+1) <= 0 and elimination_on_ruin:  agent i is eliminated ("dead")
 An agent that never submits is scored on the public prior mean `mu` (silence is
 a choice with consequences, not a crash).
 
+**Revival.** Elimination clamps a dead agent's credits to 0, so it stays out —
+*unless* another agent `transfer_credits` into it (the only credit move allowed
+to target a dead agent). At the start of the next round any eliminated agent with
+credits `> 0` is **revived** and rejoins the game with a fresh per-round state.
+So death is permanent only if no peer chooses to fund a rescue.
+
 ## Horizon
 
 - **geometric** (default, hidden): continue after each round with probability
@@ -117,13 +123,14 @@ Event types and key fields (see [agora/transcripts.py](../agora/transcripts.py))
 - `tick_start` `{round, tick, order}`
 - `prompt` `{agent, round, tick, final, text}` (the observation shown to the agent each turn)
 - `reasoning` `{agent, tick, text}` (the agent's stated reasoning for that step)
-- `measure` `{agent, tick, value, truth, tau, cost, credits_after}` (in complementary mode, `truth` is the agent's own part)
+- `measure` `{agent, tick, value, truth, tau, cost, credits_after}`
 - `message` `{sender, to, text, tick}` · `misaddressed` `{agent, to, tick}`
 - `transfer` `{src, dst, amount, tick}`
 - `propose_trade` `{trade_id, seller, buyer, price, claimed_value, seller_observed, tick}`
 - `respond_trade` `{trade_id, responder, accept, status, tick}`
 - `submit_estimate` `{agent, value, tick}`
 - `elimination` `{agent, round, game_index}` (an agent hit zero credits)
+- `revival` `{agent, round, game_index, credits}` (a peer funded a dead agent back into the game)
 - `parse_fail` `{agent, tool, error}`
 
 The `truth` and `seller_observed` fields are referee-only bookkeeping that make

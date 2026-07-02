@@ -52,6 +52,7 @@ _FLOAT_KNOBS = {"tau": (0.0, 1e6), "prior_sigma": (0.0, 1e6), "prior_mu": (-1e9,
 
 
 def _clamp(v, lo, hi):
+    """Clamp a value to the [lo, hi] range."""
     return max(lo, min(hi, v))
 
 
@@ -109,12 +110,14 @@ def build_config(params: dict) -> GameConfig:
 # Job execution                                                               #
 # --------------------------------------------------------------------------- #
 def _meta_path(job_id: str) -> str:
+    """Path to a job's metadata JSON in the runs dir."""
     return os.path.join(RUNS, f"{job_id}.json")
 
 
 def _write_meta(meta: dict) -> None:
     # Atomic: write to a temp file then rename, so a concurrent reader (the
     # status poll on another thread) never sees a half-written file.
+    """Atomically write a job's metadata (temp file + rename) so a concurrent reader never sees a partial file."""
     path = _meta_path(meta["id"])
     tmp = path + ".tmp"
     with open(tmp, "w") as fh:
@@ -123,11 +126,13 @@ def _write_meta(meta: dict) -> None:
 
 
 def _load_meta(job_id: str) -> dict:
+    """Read a job's metadata JSON."""
     with open(_meta_path(job_id)) as fh:
         return json.load(fh)
 
 
 def _all_games() -> list:
+    """Load every game's metadata, newest first."""
     games = []
     for f in os.listdir(RUNS):
         if f.endswith(".json"):
@@ -150,7 +155,6 @@ def _start_job(job_id: str, params: dict) -> None:
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SAMPLE_RUNS = [
-    ("docs/samples/qwen3-32b_complementary_5games.jsonl", "Qwen3-32B vs Qwen3-32B — complementary tools, 5 games (must trade to survive)"),
     ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — 5 games, shared memory (co-evolution)"),
     ("docs/samples/qwen3-32b_slowbleed.jsonl", "Qwen3-32B vs Qwen3-32B — long cooperative (slow bleed)"),
     ("docs/samples/qwen3-32b_3games_1round.jsonl", "Qwen3-32B vs Qwen3-32B — 3 games × 1 round"),
@@ -198,6 +202,7 @@ def seed_samples() -> None:
 
 
 def _run_job(job_id: str, meta: dict) -> None:
+    """Run one match (build config + policies, play it, write the transcript) and update the job's metadata/status; any failure is surfaced to the UI."""
     params = meta
     try:
         cfg = build_config(params)
@@ -269,6 +274,7 @@ def _preset_data() -> dict:
 
 
 def _page_ctx(page: str) -> dict:
+    """Shared template context (presets, policy names, preset-fill data) for the Games / Create tabs."""
     return dict(css=_CSS, page=page, presets=sorted(PRESETS),
                 policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
                 preset_data=json.dumps(_preset_data()))
@@ -276,11 +282,13 @@ def _page_ctx(page: str) -> dict:
 
 @app.route("/")
 def index():
+    """The Games tab: the About panel and the gallery of past runs."""
     return render_template_string(INDEX, games=_all_games(), **_page_ctx("games"))
 
 
 @app.route("/create")
 def create():
+    """The Run-new-game tab: the configuration form."""
     return render_template_string(INDEX, games=[], **_page_ctx("create"))
 
 
@@ -299,6 +307,7 @@ def delete_all():
 
 @app.route("/new", methods=["POST"])
 def new_game():
+    """Parse the form, start a background job, and redirect to its game page."""
     f = request.form
     try:
         seed = int(f.get("seed", "").strip())
@@ -332,6 +341,7 @@ def new_game():
 
 @app.route("/game/<job_id>")
 def game(job_id: str):
+    """Render a finished game (simple or detailed view), or a running/error placeholder."""
     if not os.path.exists(_meta_path(job_id)):
         abort(404)
     meta = _load_meta(job_id)
@@ -351,6 +361,7 @@ def game(job_id: str):
 
 @app.route("/status/<job_id>")
 def status(job_id: str):
+    """JSON status of a job, for the game page's auto-refresh poll."""
     if not os.path.exists(_meta_path(job_id)):
         abort(404)
     st = JOBS.get(job_id, {}).get("status") or _load_meta(job_id).get("status", "done")
@@ -370,6 +381,7 @@ def transcript(job_id: str):
 
 @app.route("/delete/<job_id>", methods=["POST"])
 def delete(job_id: str):
+    """Delete one game's files and drop it from the gallery."""
     for ext in (".json", ".jsonl"):
         p = os.path.join(RUNS, f"{job_id}{ext}")
         if os.path.exists(p):
@@ -597,6 +609,7 @@ seed_samples()
 
 
 def main() -> None:
+    """Launch the dev server (seeding the sample gallery first)."""
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
     print(f"Agora web UI on http://{host}:{port}")

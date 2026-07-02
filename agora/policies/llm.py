@@ -17,8 +17,10 @@ from .base import Policy, ToolInvocation
 
 
 class LLMPolicy(Policy):
+    """Drives an agent with a chat model, keeping ONE growing conversation across the whole match (system prompt once, an observation per turn, assistant/tool messages within a turn) — the 'co-evolving within a context window' setting."""
     def __init__(self, backend, cfg: GameConfig, agent_id: str, peers: List[str],
                  n_games: int = 1):
+        """Build the tool schemas and seed the history with the system prompt (which announces the match length)."""
         self.backend = backend
         self.cfg = cfg
         self.agent_id = agent_id
@@ -36,6 +38,7 @@ class LLMPolicy(Policy):
         # Keep the whole conversation; just mark the boundary so the agent knows a
         # fresh game has begun (and prepend it to the next observation to avoid
         # two consecutive user turns).
+        """Mark a new-game boundary in the persisted history — memory is kept, not cleared."""
         if game_index > 0:
             total = max(n_games, self.n_games)
             self._game_prefix = (
@@ -46,12 +49,14 @@ class LLMPolicy(Policy):
             )
 
     def start_turn(self, observation_text: str, observation: Dict[str, Any]) -> None:
+        """Append this turn's observation (prefixed with any pending game-boundary note) as a user message."""
         if self._game_prefix:
             observation_text = f"{self._game_prefix}\n\n{observation_text}"
             self._game_prefix = ""
         self.messages.append({"role": "user", "content": observation_text})
 
     def next_actions(self) -> List[ToolInvocation]:
+        """Call the model once, capture its reasoning, append the assistant turn, and return the parsed tool calls (empty list = done)."""
         resp = self.backend.generate(self.messages, self.tools, self.cfg)
 
         # Capture the model's reasoning for this step: its <think> content (only
@@ -88,10 +93,12 @@ class LLMPolicy(Policy):
         return invocations
 
     def last_reasoning(self) -> Optional[str]:
+        """Return, once, the reasoning captured for the most recent model step."""
         thought, self._thought = self._thought, None
         return thought
 
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
+        """Append one tool-result message per executed call so the next model step sees the outcomes."""
         for call_id, result in results:
             self.messages.append(
                 {"role": "tool", "tool_call_id": call_id, "content": result}

@@ -16,7 +16,9 @@ from .types import to_jsonable
 
 
 class Transcript:
+    """Append-only JSONL event log (one JSON object per line) — the substrate for all analysis, optionally streamed to a file as the game runs."""
     def __init__(self, path: Optional[str] = None):
+        """Open the log, optionally to a file path (creating parent dirs)."""
         self.path = path
         self.events: List[Dict[str, Any]] = []
         self._fh = None
@@ -25,6 +27,7 @@ class Transcript:
             self._fh = open(path, "w")
 
     def log(self, event_type: str, **fields: Any) -> None:
+        """Record one event (type plus fields), converting dataclasses/enums to plain JSON."""
         event = {"event": event_type}
         event.update({k: to_jsonable(v) for k, v in fields.items()})
         self.events.append(event)
@@ -33,12 +36,15 @@ class Transcript:
             self._fh.flush()
 
     def close(self) -> None:
+        """Close the underlying file, if any."""
         if self._fh:
             self._fh.close()
             self._fh = None
 
     def __enter__(self) -> "Transcript":
+        """Context-manager entry; returns self."""
         return self
 
     def __exit__(self, *exc) -> None:
+        """Context-manager exit; closes the file."""
         self.close()

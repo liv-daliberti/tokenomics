@@ -21,6 +21,7 @@ from .config import GameConfig
 
 @dataclass
 class RawToolCall:
+    """A parsed tool call from the model: its id, function name, and decoded arguments."""
     id: str
     name: str
     arguments: Dict[str, Any]
@@ -28,6 +29,7 @@ class RawToolCall:
 
 @dataclass
 class LLMResponse:
+    """A normalised model reply: spoken `content`, parsed `tool_calls`, and (thinking mode) `reasoning`."""
     content: Optional[str]
     tool_calls: List[RawToolCall] = field(default_factory=list)
     reasoning: Optional[str] = None
@@ -45,12 +47,14 @@ class OpenAIBackend:
     def __init__(self, model: str = "qwen3-32b",
                  base_url: str = "http://localhost:8000/v1",
                  api_key: str = "EMPTY"):
+        """Create an OpenAI-compatible client pointed at the local vLLM server."""
         from openai import OpenAI  # lazy: only needed for real runs
         self.model = model
         self.client = OpenAI(base_url=base_url, api_key=api_key)
 
     def generate(self, messages: List[Dict[str, Any]],
                  tools: List[Dict[str, Any]], cfg: GameConfig) -> LLMResponse:
+        """Call the chat endpoint (non-streaming, tool_choice=auto, temperature>0) and return a normalised LLMResponse."""
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -83,7 +87,9 @@ class MockBackend:
     """
 
     def __init__(self, script: Callable[..., LLMResponse]):
+        """Wrap a scripted (messages, tools, cfg) -> LLMResponse callable."""
         self.script = script
 
     def generate(self, messages, tools, cfg) -> LLMResponse:
+        """Return the scripted response (for tests, no server)."""
         return self.script(messages, tools, cfg)

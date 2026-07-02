@@ -32,6 +32,7 @@ from .types import Action, ActionType, AgentState, Measurement, Message, RoundRe
 
 @dataclass
 class GameResult:
+    """The result of one game: the config, final agent states, per-round results, and the transcript."""
     config: GameConfig
     states: Dict[str, AgentState]
     rounds: List[RoundResult]
@@ -40,6 +41,7 @@ class GameResult:
 
 @dataclass
 class MatchResult:
+    """The result of a match of N games: the config, game count, per-game results, and the shared transcript."""
     config: GameConfig
     n_games: int
     games: List[GameResult]
@@ -70,9 +72,11 @@ def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
 
 
 class Referee:
+    """The authoritative game loop. Owns the world (RNG, ledger, states, transcript), schedules turns, executes every action, enforces quotas/escrow, and logs everything."""
     def __init__(self, cfg: GameConfig, policies: Dict[str, object],
                  transcript: Optional[Transcript] = None, game_index: int = 0,
                  n_games: int = 1):
+        """Build fresh agent states (starting credits, per-agent noise) and the market for one game."""
         self.cfg = cfg
         self.policies = policies
         self.game_index = game_index
@@ -90,14 +94,36 @@ class Referee:
         self.round_index = 0
 
     def _next_trade_id(self) -> str:
+        """Return a fresh unique trade id (T1, T2, ...)."""
         self._trade_seq += 1
         return f"T{self._trade_seq}"
 
     def _alive(self) -> List[str]:
+        """The ids of agents still in the game."""
         return [a for a in self.cfg.agent_ids if self.states[a].alive]
+
+    def _revive_funded(self) -> List[str]:
+        """Revive any eliminated agent a peer has funded back above zero.
+
+        Elimination clamps a dead agent's credits to 0, so a positive balance
+        can only mean another agent chose to ``transfer_credits`` into it — a
+        deliberate rescue. Such agents rejoin the game this round (a fresh
+        per-round state is set up by ``_reset_round``). This is the only way a
+        dead agent returns mid-game; at a game boundary everyone resets anyway.
+        Returns the ids revived (for logging)."""
+        if not (self.cfg.elimination_on_ruin and self.cfg.enable_transfer):
+            return []
+        revived = []
+        for aid in self.cfg.agent_ids:
+            st = self.states[aid]
+            if not st.alive and st.credits > 1e-9:
+                st.alive = True
+                revived.append(aid)
+        return revived
 
     # ----------------------------------------------------------------- run --
     def run(self) -> GameResult:
+        """Play the game round by round to the horizon, settling rewards and deaths each round, and return the GameResult."""
         cfg = self.cfg
         horizon = self.env.horizon()
         self.tx.log("game_start", game_index=self.game_index, config=cfg,
@@ -112,14 +138,22 @@ class Referee:
         rounds: List[RoundResult] = []
 
         for r, _ in enumerate(horizon):
+            self.round_index = r
+            revived = self._revive_funded()   # a peer may have funded a dead agent
             if not self._alive():
                 break
-            self.round_index = r
             self.truth = self.env.draw_truth(r)
             self._reset_round(r)
+            # Credits each agent holds at the START of the round, before it spends
+            # anything measuring/trading. This is the honest "budget you began with"
+            # for the report — distinct from settle_round's pre-scoring balance.
+            credits_open = {a: self.states[a].credits for a in cfg.agent_ids}
             self.tx.log("round_start", game_index=self.game_index, round=r,
                         truth=self.truth, alive=self._alive(),
                         credits={a: self.states[a].credits for a in self._alive()})
+            for aid in revived:               # log AFTER round_start so it buckets here
+                self.tx.log("revival", game_index=self.game_index, round=r,
+                            agent=aid, credits=self.states[aid].credits)
 
             self._run_ticks(past_truths)
 
@@ -131,7 +165,7 @@ class Referee:
                 estimates={a: self.states[a].estimate for a in cfg.agent_ids},
                 errors={a: scored[a]["error"] for a in cfg.agent_ids},
                 rewards={a: scored[a]["reward"] for a in cfg.agent_ids},
-                credits_start={a: scored[a]["credits_start"] for a in cfg.agent_ids},
+                credits_start=credits_open,
                 credits_end={a: scored[a]["credits_end"] for a in cfg.agent_ids},
                 alive={a: self.states[a].alive for a in cfg.agent_ids},
             )
@@ -147,6 +181,7 @@ class Referee:
         return GameResult(cfg, self.states, rounds, self.tx)
 
     def _reset_round(self, round_index: int) -> None:
+        """Reset per-round agent state (quota, estimate, measurements, purchases) for a new round; unseen inbox messages are deliberately kept."""
         for a in self._alive():
             st = self.states[a]
             st.messages_left = self.cfg.message_quota
@@ -162,6 +197,7 @@ class Referee:
         self.market.trades.clear()
 
     def _run_ticks(self, past_truths: List[float]) -> None:
+        """Run one round's interaction ticks (agents act in a seeded-shuffled order), then the optional final-answer pass."""
         cfg = self.cfg
         for tick in range(cfg.max_ticks):
             order = list(self._alive())
@@ -184,6 +220,7 @@ class Referee:
 
     def _take_turn(self, aid: str, tick: int, past_truths: List[float],
                    final: bool = False) -> bool:
+        """Run one agent's turn: build and log its observation, then loop its tool calls (executing each, logging reasoning) up to the per-tick action cap. Returns whether anything substantive happened."""
         cfg = self.cfg
         st = self.states[aid]
         peers = [a for a in cfg.agent_ids if a != aid and self.states[a].alive]
@@ -239,11 +276,9 @@ class Referee:
             if not st.can_afford(cfg.measure_cost):
                 return "ERROR: insufficient credits to measure", True, False
             self.market.spend(aid, cfg.measure_cost, "measure")
-            # complementary mode: an agent's instrument reads only its own component
-            target = self.env.components[aid] if cfg.complementary else self.truth
-            x = self.env.measure(target, st.tau)
-            st.measurements.append(Measurement(aid, x, target, st.tau, tick, cfg.measure_cost))
-            self.tx.log("measure", agent=aid, tick=tick, value=x, truth=target,
+            x = self.env.measure(self.truth, st.tau)
+            st.measurements.append(Measurement(aid, x, self.truth, st.tau, tick, cfg.measure_cost))
+            self.tx.log("measure", agent=aid, tick=tick, value=x, truth=self.truth,
                         tau=st.tau, cost=cfg.measure_cost, credits_after=st.credits)
             return f"measured {x:.4f}", True, False
 

@@ -29,6 +29,7 @@ def build_observation(
     # measurements, the messages/trades others chose to send it, and the publicly
     # revealed past truths. It never contains another agent's private samples, so
     # an agent can only act on its own evidence plus what was explicitly shared.
+    """Assemble the complete information an agent has when it acts: its own measurements, inbox, pending trades, budget and the public prior (plus the final-answer flag). It never contains another agent's private samples."""
     obs = {
         "round_index": round_index,
         "tick": tick,
@@ -54,16 +55,12 @@ def build_observation(
         ],
         "peers": peers,
         "eliminated": list(eliminated or []),
+        "can_revive": cfg.enable_transfer and cfg.elimination_on_ruin,
         "estimate_submitted": state.estimate is not None,
         "current_estimate": state.estimate,
         "past_truths": list(past_truths) if cfg.reveal_truth_after_round else [],
-        "complementary": cfg.complementary,
         "final_answer": final_answer,
     }
-    if cfg.complementary:
-        n = max(1, len(cfg.agent_ids))
-        obs["component_prior_mu"] = cfg.prior_mu / n
-        obs["component_prior_sigma"] = cfg.prior_sigma / (n ** 0.5)
     return obs
 
 
@@ -88,16 +85,19 @@ def render_observation(obs: Dict[str, Any]) -> str:
         lines.append("You cannot afford to measure or buy — reason from what you already have.")
     if obs["eliminated"]:
         who = ", ".join(obs["eliminated"])
-        lines.append(
-            f"⚠ ELIMINATED — {who} ran out of credits and {'is' if len(obs['eliminated'])==1 else 'are'} "
-            "out of the game for good: they can no longer measure, message, or trade, so do not wait on "
-            "them or count on their help.")
-    if obs.get("complementary"):
-        lines.append(
-            "Your instrument measures ONLY your own part of the hidden value; the "
-            "true value is the SUM of every agent's part. Your measurements below "
-            "are of your part. To estimate the total you must add the other agents' "
-            "parts, which you can only learn if they share their readings with you.")
+        isare = "is" if len(obs["eliminated"]) == 1 else "are"
+        itthem = "it" if len(obs["eliminated"]) == 1 else "them"
+        if obs.get("can_revive"):
+            lines.append(
+                f"⚠ ELIMINATED — {who} ran out of credits and {isare} currently out of the game "
+                "(cannot measure, message, or trade). You CAN bring an eliminated agent back: "
+                f"transfer_credits to {itthem} and {itthem} rejoin next round — give at least the "
+                f"survival cost ({sc:g}) so {itthem} can sustain itself.")
+        else:
+            lines.append(
+                f"⚠ ELIMINATED — {who} ran out of credits and {isare} "
+                "out of the game for good: they can no longer measure, message, or trade, so do not wait on "
+                "them or count on their help.")
     if obs["my_measurements"]:
         vals = ", ".join(f"{v:.1f}" for v in obs["my_measurements"])
         lines.append(f"Your measurements so far: [{vals}].")

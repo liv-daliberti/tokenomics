@@ -21,6 +21,7 @@ OUT = os.path.join(os.path.dirname(__file__), "..", "docs", "samples")
 
 
 def make(name, cfg, spec, title):
+    """Run one scripted game with the given policies and write its transcript + rendered HTML into docs/samples."""
     os.makedirs(OUT, exist_ok=True)
     ids = cfg.agent_ids
     names = spec.split(",")

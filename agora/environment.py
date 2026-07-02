@@ -14,31 +14,18 @@ from .config import GameConfig
 
 
 class Environment:
+    """Owns all game randomness via one seeded RNG: draws the ground truth, the noisy measurements, and the (possibly hidden) horizon."""
     def __init__(self, cfg: GameConfig):
+        """Seed the RNG from the config and initialise per-round bookkeeping."""
         self.cfg = cfg
         self.rng = random.Random(cfg.seed)
         self._round_truths: List[float] = []
-        # complementary mode: per-agent component truth; theta = sum of components
-        self.components: dict = {}
-
-    def component_prior(self):
-        """(mu, sigma) of a single agent's component, so the N components sum to
-        the public theta prior Normal(prior_mu, prior_sigma^2)."""
-        n = max(1, len(self.cfg.agent_ids))
-        return self.cfg.prior_mu / n, self.cfg.prior_sigma / (n ** 0.5)
 
     def draw_truth(self, round_index: int) -> float:
-        """Ground truth for a round.
+        """Ground truth for a round: theta ~ Normal(prior_mu, prior_sigma^2).
 
-        Scalar mode: theta ~ Normal(prior_mu, prior_sigma^2).
-        Complementary mode: each agent gets a private component ~ Normal(mu/N,
-        (sigma/sqrt(N))^2); theta is their sum (same marginal prior on theta)."""
-        if self.cfg.complementary:
-            mu_c, sig_c = self.component_prior()
-            self.components = {a: self.rng.gauss(mu_c, sig_c) for a in self.cfg.agent_ids}
-            theta = sum(self.components.values())
-        else:
-            theta = self.rng.gauss(self.cfg.prior_mu, self.cfg.prior_sigma)
+        Every agent estimates this same hidden number ("pick a number")."""
+        theta = self.rng.gauss(self.cfg.prior_mu, self.cfg.prior_sigma)
         # keep the log dense-indexed even if rounds are drawn out of order
         while len(self._round_truths) <= round_index:
             self._round_truths.append(float("nan"))

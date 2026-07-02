@@ -108,8 +108,8 @@ def test_carryover_and_reward():
 def test_cooperative_preset_punishes_going_it_alone():
     # The 2-agent cooperative preset is a long slow-bleed: over many rounds,
     # reckless solo play and lying are self-destructive, while cooperation is the
-    # best survival strategy. (A passive hoarder can still partly free-ride — that
-    # loophole needs complementary tools; see DESIGN §2.3.)
+    # best survival strategy. (A passive hoarder can still partly free-ride on
+    # readings others choose to share.)
     from agora.config import PRESETS
 
     def survival(spec, seeds=30):

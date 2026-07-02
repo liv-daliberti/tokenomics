@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 @dataclass
 class GameConfig:
     # --- identity / reproducibility ---
+    """Every knob that, with a seed and the agent policies, fully determines a game. Each field is a dial so ablations are one-line changes; the PRESETS below set them."""
     seed: int = 0
     agent_ids: List[str] = field(default_factory=lambda: ["A", "B"])
 
@@ -30,12 +31,6 @@ class GameConfig:
     tau: float = 150.0
     tau_by_agent: Optional[Dict[str, float]] = None
     measure_cost: float = 1.0
-
-    # Complementary tools: the hidden value theta is the SUM of N parts, one per
-    # agent, and each agent's instrument measures ONLY its own part. Alone, an
-    # agent is structurally blind to the other parts (error floored by the prior),
-    # so cooperation is genuinely required — even a passive hoarder cannot survive.
-    complementary: bool = False
 
     # --- budgets & communication ---
     # Target the market-forcing regime:  c*k_individual < budget < c*k_social.
@@ -98,16 +93,19 @@ class GameConfig:
     temperature: float = 0.4
 
     def bucket(self) -> float:
+        """Reward-bucket width for the quantized rule (defaults to prior_sigma / reward_max)."""
         if self.reward_bucket is not None:
             return self.reward_bucket
         return self.prior_sigma / max(1, self.reward_max)
 
     def tau_for(self, agent_id: str) -> float:
+        """Measurement-noise std for one agent: the per-agent override if set, else the shared `tau`."""
         if self.tau_by_agent and agent_id in self.tau_by_agent:
             return self.tau_by_agent[agent_id]
         return self.tau
 
     def with_(self, **kwargs) -> "GameConfig":
+        """Return a copy of this config with the given fields replaced."""
         return replace(self, **kwargs)
 
 
@@ -134,8 +132,8 @@ PRESETS: Dict[str, GameConfig] = {
     # pooling your readings) is what refills the tank. Over many rounds this makes
     # the failure modes self-destructive. Empirically (scripted, 60 seeds):
     #   cooperate (pool) ~57% survive  ·  reckless solo (over-measure) ~5%  ·
-    #   lie ~12%  ·  passive hoard ~52% (the one free-ride tuning can't kill —
-    #   that needs complementary tools; see docs/DESIGN.md §2.3).
+    #   lie ~12%  ·  passive hoard ~52% (a passive hoarder can still partly
+    #   free-ride on the readings others choose to share).
     # So: going it alone or deceiving is fatal, and cooperation is the best bet.
     "cooperative": GameConfig(
         agent_ids=["A", "B"],
@@ -163,27 +161,6 @@ PRESETS: Dict[str, GameConfig] = {
         reward_rule="quantized", reward_bucket=40.0, reward_max=5,
         message_quota=12, max_ticks=8,
         horizon_mode="fixed", n_rounds=10, reveal_horizon=False,
-        framing="cooperative",
-    ),
-    # A TRUE 2-agent cooperation wall via COMPLEMENTARY TOOLS: theta = X + Y, and
-    # agent A's instrument reads only X while B's reads only Y. Alone, each is
-    # structurally blind to the other's part (error floored by that part's prior),
-    # so NO solo strategy — not even passive hoarding — survives. Information must
-    # travel through the MARKET (values_via_trade_only): you cannot just chat a
-    # reading, you must trade it (price can be 0). And a final-answer pass lets each
-    # agent commit its estimate after all exchange. Empirically (scripted, 40 seeds,
-    # sharing via trade): cooperate ~76%, solo ~0%, hoard ~1%, lie ~0%.
-    "complementary": GameConfig(
-        agent_ids=["A", "B"],
-        complementary=True,
-        values_via_trade_only=True,
-        prior_mu=500.0, prior_sigma=150.0,
-        tau=25.0,                          # your own part is measurable; the other's is not
-        measure_cost=1.0, starting_credits=4.0,
-        survival_cost=2.0, elimination_on_ruin=True,
-        reward_rule="quantized", reward_bucket=18.0, reward_max=5,
-        message_quota=12, max_ticks=8,
-        horizon_mode="fixed", n_rounds=12, reveal_horizon=False,
         framing="cooperative",
     ),
     # Three agents: the smallest setting where a coalition can exclude someone.

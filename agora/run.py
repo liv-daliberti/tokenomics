@@ -29,6 +29,7 @@ from .transcripts import Transcript
 
 
 def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str) -> Dict[str, object]:
+    """Build the per-agent policy map from a spec: 'llm' -> LLMPolicy on a local vLLM endpoint, otherwise scripted baseline policies cycled over the agents."""
     ids = cfg.agent_ids
     if spec == "llm":
         from .backends import OpenAIBackend
@@ -42,6 +43,7 @@ def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str) -> Dic
 
 
 def summarize(result: GameResult, policy_spec: str) -> None:
+    """Print a compact per-round table (truth, each agent's estimate/error/reward), final credits, and a data-quality + deception/cooperation line."""
     cfg = result.config
     print(f"\n=== game seed={cfg.seed}  agents={cfg.agent_ids}  "
           f"rounds={len(result.rounds)}  policies=[{policy_spec}] ===")
@@ -74,6 +76,7 @@ def summarize(result: GameResult, policy_spec: str) -> None:
 
 
 def main(argv: List[str] = None) -> None:
+    """CLI entry point: parse args, build the config and policies, run one or more seeds, and write transcripts."""
     ap = argparse.ArgumentParser(description="Run the Agora Measurement Market.")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--preset", choices=sorted(PRESETS), help="a built-in config preset")

@@ -229,47 +229,104 @@ def test_values_via_trade_only_redacts_chat_numbers():
     assert got.strip(), "the message should still be delivered (minus the number)"
 
 
-def test_complementary_preset_is_a_true_two_agent_wall():
-    # With complementary tools (theta = X + Y, each agent reads only its part),
-    # NO solo strategy survives — not even passive hoarding — because a lone agent
-    # is structurally blind to the other's part. Only cooperation survives.
-    from agora.config import PRESETS
+def test_transfer_can_fund_a_dead_agent_and_referee_revives_it():
+    # A live agent can gift credits to an ELIMINATED one (the only way to revive
+    # it); the referee then brings a funded dead agent back at the round boundary.
+    from agora.market import Market, MarketError
+    from agora.types import AgentState
+    states = {
+        "A": AgentState(agent_id="A", credits=5.0, tau=1.0, messages_left=3, alive=True),
+        "B": AgentState(agent_id="B", credits=0.0, tau=1.0, messages_left=3, alive=False),
+    }
+    seq = {"n": 0}
+    m = Market(states, lambda: (seq.__setitem__("n", seq["n"] + 1), f"T{seq['n']}")[1])
+    m.transfer("A", "B", 4.0)                       # gift to a DEAD agent is allowed
+    assert states["B"].credits == 4.0 and states["A"].credits == 1.0
+    # but you still cannot SELL to a dead agent (trades need both alive)
+    try:
+        m.propose_trade("A", "B", 1.0, 42.0, tick=0)
+        assert False, "should not be able to trade with a dead agent"
+    except MarketError:
+        pass
 
-    def survival(spec, seeds=30):
-        cfg0 = PRESETS["complementary"]
-        ids = cfg0.agent_ids
-        alive = tot = 0
-        for s in range(seeds):
-            cfg = cfg0.with_(seed=s)
-            pols = {x: REGISTRY[spec](cfg, x, ids) for x in ids}
-            g = Referee(cfg, pols).run()
-            for x in ids:
-                alive += int(g.states[x].alive)
-                tot += 1
-        return alive / tot
-
-    coop = survival("honest_cooperator")
-    solo = survival("bayesian_solo")
-    hoard = survival("hoarder")
-    liar = survival("liar")
-    assert coop > 0.7, f"cooperators must survive (got {coop:.0%})"
-    assert solo < 0.1, f"solo must be blind and die (got {solo:.0%})"
-    assert hoard < 0.2, f"even a hoarder must die (got {hoard:.0%})"
-    assert liar < 0.1, f"lying must die (got {liar:.0%})"
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=1,
+                     enable_transfer=True, elimination_on_ruin=True, seed=0)
+    ref = Referee(cfg, {a: REGISTRY["bayesian_solo"](cfg, a, cfg.agent_ids)
+                        for a in cfg.agent_ids})
+    ref.states["B"].alive = False
+    ref.states["B"].credits = 0.0
+    assert ref._revive_funded() == []               # 0 credits -> stays dead
+    ref.states["B"].credits = 3.0                    # a peer funded it
+    assert ref._revive_funded() == ["B"] and ref.states["B"].alive
+    # gated off when the mechanic is disabled
+    cfg_off = cfg.with_(enable_transfer=False)
+    ref2 = Referee(cfg_off, {a: REGISTRY["bayesian_solo"](cfg_off, a, cfg_off.agent_ids)
+                             for a in cfg_off.agent_ids})
+    ref2.states["B"].alive = False
+    ref2.states["B"].credits = 3.0
+    assert ref2._revive_funded() == [] and not ref2.states["B"].alive
 
 
-def test_complementary_measurement_returns_own_component():
-    # A's measurements should center on its component (~mu/N), not on theta.
-    from agora.referee import Referee
-    cfg = GameConfig(agent_ids=["A", "B"], complementary=True, horizon_mode="fixed",
-                     n_rounds=1, tau=1.0, prior_mu=500.0, prior_sigma=150.0, seed=0)
-    res = Referee(cfg, {a: REGISTRY["bayesian_solo"](cfg, a, cfg.agent_ids)
-                        for a in cfg.agent_ids}).run()
+def test_dead_agent_is_revived_end_to_end():
+    # B spends itself to death in round 0; A funds the dead B in round 1; B is
+    # revived and plays again in round 2 (a `revival` event is logged).
+    class Suicide(Policy):
+        def reset_round(self, r): pass
+
+        def start_turn(self, text, obs):
+            n = int(obs["credits"] // obs["measure_cost"])
+            acts = [Action(ActionType.MEASURE) for _ in range(n)]
+            acts += [Action(ActionType.SUBMIT_ESTIMATE, {"value": 0.0}),
+                     Action(ActionType.END_TURN)]
+            self._q = [ToolInvocation(f"c{i}", a.type.value, a) for i, a in enumerate(acts)]
+
+        def next_actions(self):
+            q, self._q = self._q, []
+            return q
+
+        def observe_results(self, results): pass
+
+    class Rescuer(Policy):
+        def reset_round(self, r): pass
+
+        def start_turn(self, text, obs):
+            acts = [Action(ActionType.TRANSFER, {"to": d, "amount": 3.0})
+                    for d in obs["eliminated"]]
+            acts += [Action(ActionType.SUBMIT_ESTIMATE, {"value": obs["prior_mu"]}),
+                     Action(ActionType.END_TURN)]
+            self._q = [ToolInvocation(f"c{i}", a.type.value, a) for i, a in enumerate(acts)]
+
+        def next_actions(self):
+            q, self._q = self._q, []
+            return q
+
+        def observe_results(self, results): pass
+
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=3, max_ticks=2,
+                     starting_credits=6.0, measure_cost=3.0, survival_cost=0.0,
+                     base_stipend=0.0, carryover=True, enable_transfer=True,
+                     elimination_on_ruin=True, prior_mu=500.0, prior_sigma=150.0, seed=1)
+    res = Referee(cfg, {"A": Rescuer(), "B": Suicide()}).run()
     ev = res.transcript.events
-    truth = next(e["truth"] for e in ev if e["event"] == "round_start")
-    a_meas = [e["value"] for e in ev if e["event"] == "measure" and e["agent"] == "A"]
-    # A's readings are of its component (~250), far below the total theta (~500).
-    assert a_meas and all(abs(v) < 0.9 * truth for v in a_meas), "A seems to measure the whole theta"
+    assert any(e["event"] == "elimination" and e["agent"] == "B" for e in ev), "B should have died"
+    assert any(e["event"] == "revival" and e["agent"] == "B" for e in ev), "B should be revived by A's gift"
+    # B is alive again in a later round after the rescue
+    r2 = [e for e in ev if e["event"] == "round_start" and e["round"] == 2]
+    assert r2 and "B" in r2[0]["alive"], "revived B should rejoin a later round"
+
+
+def test_prompt_and_observation_explain_revival():
+    from agora.tools import system_prompt
+    from agora.observation import build_observation, render_observation
+    from agora.types import AgentState
+    cfg = GameConfig(agent_ids=["A", "B"], enable_transfer=True, elimination_on_ruin=True)
+    sp = system_prompt(cfg, "A", ["B"]).lower()
+    assert "revive" in sp and "transfer" in sp, "system prompt must explain reviving a peer"
+
+    st = AgentState(agent_id="A", credits=5.0, tau=cfg.tau, messages_left=cfg.message_quota)
+    obs = build_observation(st, cfg, 0, 0, ["B"], [], [], eliminated=["B"])
+    txt = render_observation(obs).lower()
+    assert "transfer_credits" in txt and "rejoin" in txt, "obs must tell A it can revive B"
 
 
 if __name__ == "__main__":
