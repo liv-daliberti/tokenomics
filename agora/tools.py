@@ -101,16 +101,26 @@ def tool_schemas(cfg: GameConfig) -> List[Dict[str, Any]]:
             "function": {
                 "name": "propose_trade",
                 "description": (
-                    "Offer to sell a measurement value to another agent for a price. "
-                    "The value you state is delivered verbatim if they accept; it is "
-                    "not checked against anything."
+                    "Offer to sell a measurement value to another agent. YOU set the "
+                    "price: the buyer pays you that many credits if they accept. The "
+                    "price can be 0 (a gift) or any positive amount — you decide what "
+                    "your information is worth. The value you state is delivered "
+                    "verbatim if they accept; it is not checked against anything."
                 ),
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "to": {"type": "string"},
-                        "price": {"type": "number"},
-                        "claimed_value": {"type": "number"},
+                        "to": {"type": "string", "description": "the buyer's agent id"},
+                        "price": {
+                            "type": "number",
+                            "description": ("credits the buyer pays YOU if they accept; "
+                                            "you choose it (0 = give it away, any "
+                                            "positive number = charge for the info)"),
+                        },
+                        "claimed_value": {
+                            "type": "number",
+                            "description": "the measurement value you are offering to sell",
+                        },
                     },
                     "required": ["to", "price", "claimed_value"],
                 },
@@ -209,7 +219,9 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
                   if cfg.elimination_on_ruin else "")
         lines.append(f"  - transfer_credits(to, amount): give credits to another agent{revive}.")
     if cfg.enable_trading:
-        lines.append("  - propose_trade / respond_trade: sell/buy a stated measurement value.")
+        lines.append("  - propose_trade / respond_trade: sell/buy a measurement value. "
+                     "The SELLER sets the price (in credits) the buyer pays on accept — "
+                     "0 to give it away, or any positive amount to charge for the info.")
     lines += [
         "  - submit_estimate(value): lock in your answer for the round.",
         "",
@@ -236,10 +248,11 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
                   "cover the survival cost plus whatever you spend."]
     if cfg.values_via_trade_only:
         lines += ["",
-                  "To give another agent one of your readings you MUST trade it: use "
-                  "propose_trade (the price can be 0). Numbers you write in free "
+                  "To hand another agent one of your readings you MUST trade it: use "
+                  "propose_trade and set the price yourself — 0 to give it away, or any "
+                  "positive number of credits to charge for it. Numbers you write in free "
                   "messages are HIDDEN from the recipient, so messages are only for "
-                  "negotiating — the actual value travels through a trade."]
+                  "negotiating the price/terms — the actual value travels through a trade."]
     if match_line:
         lines += ["", match_line]
     return "\n".join(lines)

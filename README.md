@@ -107,10 +107,10 @@ python -m analysis.viz runs/base/seed7.jsonl        # -> runs/base/seed7.html
 python -m analysis.viz runs/base/ -o report/         # a whole directory -> index.html
 ```
 
-Rendered samples of real **Qwen-3-32B vs Qwen-3-32B** matches (viewable in any
-browser) live in [docs/samples/](docs/samples) — including the shared-memory
-5-game match and the long `cooperative` slow-bleed. The scripted baselines are
-used for testing and as comparison anchors, not as a headline;
+A rendered sample of a real **Qwen-3-32B vs Qwen-3-32B** match (viewable in any
+browser) lives in [docs/samples/](docs/samples) — a shared-memory **5-game
+match** where the agents co-evolve across games. The scripted baselines are used
+for testing and as comparison anchors, not as a headline;
 `python scripts/make_samples.py` renders a couple of scripted demos locally if
 you want them.
 
