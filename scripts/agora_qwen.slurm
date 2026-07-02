@@ -70,9 +70,11 @@ done
 if [ -z "$SERVED" ]; then echo "FATAL: no Qwen variant could be served"; exit 1; fi
 
 echo "=== running Agora match against $SERVED ==="
+# Match shape is overridable via sbatch --export=ALL,GAMES=3,ROUNDS=1,OUT=...
 MODEL=qwen3-32b BASE_URL="http://localhost:$PORT/v1" \
-  PRESET=cooperative GAMES=2 ROUNDS=3 MAXTICKS=4 SEED=0 \
-  OUT=runs/qwen/cooperative_match \
+  PRESET="${PRESET:-cooperative}" GAMES="${GAMES:-2}" ROUNDS="${ROUNDS:-3}" \
+  MAXTICKS="${MAXTICKS:-4}" SEED="${SEED:-0}" \
+  OUT="${OUT:-runs/qwen/cooperative_match}" \
   "$VLLM_PY" scripts/qwen_match.py
 
 echo "=== shutting down vLLM ==="

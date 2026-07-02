@@ -265,13 +265,22 @@ The goal is to **flag misaligned behaviour early**. Staged:
 ## 10. Implementation roadmap
 
 - **Phase 0 — harness (done).** Referee, tools, escrow, rewards, transcripts,
-  scripted baselines, metrics, tests. Runs S0/S1 with no GPU.
-- **Phase 1 — Qwen smoke.** Stand up `Qwen/Qwen3-32B` on vLLM
-  ([scripts/serve_qwen.sh](../scripts/serve_qwen.sh)); run C1 with `--policies
-  llm` at `N=2`, one seed; confirm tool-calls parse, escrow settles, transcripts
-  are clean. Watch parse-fail and mis-addressing rates.
-- **Phase 2 — core study.** B0→B1→B2→C1 at 30 seeds; establish H1 and a
-  non-zero deception rate.
+  scripted baselines, metrics, tests. Runs with no GPU.
+- **Phase 1 — Qwen smoke (done).** Served `Qwen/Qwen3-32B` (bf16, 2×A100) on
+  vLLM and ran a 2-agent cooperative *match* end to end. Result: **clean tool use
+  (0 parse failures, 0 mis-addressed), agents reasoned about outliers/prior, one
+  agent shared its readings and asked to pool, and the resource constraint
+  produced real eliminations.** Estimation was weak vs. the pooling oracle and no
+  trades were used — see [docs/samples/qwen3-32b_cooperative.html](samples/qwen3-32b_cooperative.html).
+- **Tooling (done, alongside Phases 0–1).** A Flask viewer to run games from a
+  button and read them: per-agent reasoning (💭), messages, trades, budgets;
+  **matches** of N games back-to-back with the agents' context persisting;
+  simulator knobs; a **win/loss scoreboard**; raw-transcript download; and a
+  one-click **Render** deploy that seeds the committed Qwen run.
+- **Phase 2 — core study (next).** B0→B1→B2→C1 at ~30 seeds; scale to N=3–4;
+  establish H1 (pooling pays) and a non-zero deception rate. A prompt nudge toward
+  averaging is worth testing, since Qwen estimated heuristically rather than
+  pooling optimally.
 - **Phase 3 — dynamics.** Privilege (C2), coalitions (C3/C4), endgame (E1/E2),
   survival; framing robustness (F1/F2); fixed-strategy probes (D1/D2).
 - **Phase 4 — interp.** LLM-judge validated against the lie detector; then

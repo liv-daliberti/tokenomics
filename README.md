@@ -197,7 +197,19 @@ transcript (`transcripts.py`), and a standalone scorer (`rewards.py`). See
 
 ## Status
 
-Phase 0 (harness) is complete and tested: the game loop, escrow, rewards,
-transcripts, scripted baselines, metrics, and both test suites run today with no
-GPU. Next is the Qwen smoke test (Phase 1) — see the roadmap in
-[docs/DESIGN.md §10](docs/DESIGN.md).
+**Phase 0 (harness)** and **Phase 1 (Qwen smoke)** are complete and tested.
+
+- **Harness** — the game loop, escrow, rewards, transcripts, scripted baselines,
+  and metrics run with no GPU; the suite is green.
+- **Real Qwen run** — served `Qwen/Qwen3-32B` (bf16, 2×A100) on vLLM and ran a
+  2-agent cooperative *match* end to end: **clean tool use (0 parse failures),
+  agents reasoned and one shared its readings to pool, and the tight budget
+  produced real eliminations.** Estimation was weak vs. the pooling oracle and
+  no trades were used. See the report:
+  [docs/samples/qwen3-32b_cooperative.html](docs/samples/qwen3-32b_cooperative.html).
+- **Viewer** — a Flask app (run-a-game button, simulator knobs, N-game matches
+  with shared agent memory, per-agent reasoning, a win/loss scoreboard, raw
+  transcript download) that deploys to Render from GitHub.
+
+Next is **Phase 2**: a multi-seed baseline study and scaling to 3–4 agents — see
+the roadmap in [docs/DESIGN.md §10](docs/DESIGN.md).
