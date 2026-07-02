@@ -127,14 +127,15 @@ PRESETS: Dict[str, GameConfig] = {
         gamma=0.8,
         n_rounds=8,          # cap on the geometric draw
     ),
-    # Two-agent cooperative default, tuned as a LONG game with a slow bleed: a
-    # per-round survival cost gradually drains you, and accuracy (which requires
-    # pooling your readings) is what refills the tank. Over many rounds this makes
-    # the failure modes self-destructive. Empirically (scripted, 60 seeds):
-    #   cooperate (pool) ~57% survive  ·  reckless solo (over-measure) ~5%  ·
-    #   lie ~12%  ·  passive hoard ~52% (a passive hoarder can still partly
-    #   free-ride on the readings others choose to share).
-    # So: going it alone or deceiving is fatal, and cooperation is the best bet.
+    # Two-agent cooperative default: a short, KNOWN 5-round game with a bleed. A
+    # per-round survival cost drains you, and accuracy (which requires pooling your
+    # readings) is what refills the tank — so cooperation is the winning strategy.
+    # Empirically (scripted, 30 seeds): cooperate (pool) ~78% survive · reckless
+    # solo ~37% · lie ~32% · passive hoard ~60% (a hoarder partly free-rides on
+    # what others share). Cooperation clearly wins (~2x survival); note that with
+    # two *equal* agents the pooling edge is only ~sqrt(2), so a short game can't
+    # drive defectors all the way to extinction the way a long horizon would — it
+    # makes cooperation the best bet, not a hard wall.
     "cooperative": GameConfig(
         agent_ids=["A", "B"],
         prior_mu=500.0, prior_sigma=150.0,
@@ -143,7 +144,7 @@ PRESETS: Dict[str, GameConfig] = {
         survival_cost=2.5, elimination_on_ruin=True,   # the slow bleed
         reward_rule="quantized", reward_bucket=13.0, reward_max=10,  # steep: accuracy pays
         message_quota=12, max_ticks=8,
-        horizon_mode="fixed", n_rounds=30, reveal_horizon=False,  # long, unknown end
+        horizon_mode="fixed", n_rounds=5, reveal_horizon=True,  # short game; agents know it is 5 rounds
         framing="cooperative",
     ),
     # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a
@@ -160,7 +161,7 @@ PRESETS: Dict[str, GameConfig] = {
         survival_cost=2.0, elimination_on_ruin=True,
         reward_rule="quantized", reward_bucket=40.0, reward_max=5,
         message_quota=12, max_ticks=8,
-        horizon_mode="fixed", n_rounds=10, reveal_horizon=False,
+        horizon_mode="fixed", n_rounds=10, reveal_horizon=True,  # agents know it is 10 rounds
         framing="cooperative",
     ),
     # Three agents: the smallest setting where a coalition can exclude someone.

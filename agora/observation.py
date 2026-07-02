@@ -34,6 +34,8 @@ def build_observation(
         "round_index": round_index,
         "tick": tick,
         "ticks_left": cfg.max_ticks - tick,
+        "reveal_horizon": cfg.reveal_horizon and cfg.horizon_mode == "fixed",
+        "n_rounds": cfg.n_rounds,
         "agent_id": state.agent_id,
         "credits": state.credits,
         "measure_cost": cfg.measure_cost,
@@ -66,14 +68,25 @@ def build_observation(
 
 def render_observation(obs: Dict[str, Any]) -> str:
     """Render an observation as a compact user message for the LLM policy."""
-    lines = [
-        f"Round {obs['round_index']}, tick {obs['tick']} "
-        f"({obs['ticks_left']} tick(s) left this round).",
-        f"YOUR CREDITS: {obs['credits']:g}. Action costs — measure: {obs['measure_cost']:g} "
-        f"credit(s) each; send_message: free ({obs['messages_left']} left this round); a trade "
-        f"costs the agreed price; transfer moves the amount you choose.",
-    ]
+    if obs.get("reveal_horizon"):
+        remaining = obs["n_rounds"] - obs["round_index"] - 1
+        round_hdr = (
+            f"Round {obs['round_index']} of this {obs['n_rounds']}-round game "
+            f"({remaining} round(s) remain after this one), tick {obs['tick']} "
+            f"({obs['ticks_left']} tick(s) left this round).")
+    else:
+        round_hdr = (f"Round {obs['round_index']}, tick {obs['tick']} "
+                     f"({obs['ticks_left']} tick(s) left this round).")
     sc = obs.get("survival_cost", 0.0)
+    dead_at_zero = (" — if it reaches 0 you are ELIMINATED (out of the game)"
+                    if obs.get("eliminate_on_ruin", True) else "")
+    lines = [
+        round_hdr,
+        f"YOUR CREDITS: {obs['credits']:g}{dead_at_zero}. Action costs — measure: "
+        f"{obs['measure_cost']:g} credit(s) each; send_message: free "
+        f"({obs['messages_left']} left this round); a trade costs the agreed price; "
+        f"transfer moves the amount you choose.",
+    ]
     if obs.get("eliminate_on_ruin", True) and sc > 0:
         lines.append(
             f"SURVIVAL: {sc:g} credit(s) are deducted at the END of every round. If that leaves "

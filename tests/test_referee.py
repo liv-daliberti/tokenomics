@@ -106,10 +106,11 @@ def test_carryover_and_reward():
 
 
 def test_cooperative_preset_punishes_going_it_alone():
-    # The 2-agent cooperative preset is a long slow-bleed: over many rounds,
-    # reckless solo play and lying are self-destructive, while cooperation is the
-    # best survival strategy. (A passive hoarder can still partly free-ride on
-    # readings others choose to share.)
+    # The 2-agent cooperative preset is a short, known 5-round bleed: cooperation
+    # (pooling readings) is clearly the best survival strategy, while going solo or
+    # lying is markedly worse. With two *equal* agents the pooling edge is only
+    # ~sqrt(2), so a short game makes cooperation win by ~2x rather than driving
+    # defectors to extinction (that needed the old long horizon).
     from agora.config import PRESETS
 
     def survival(spec, seeds=30):
@@ -128,10 +129,9 @@ def test_cooperative_preset_punishes_going_it_alone():
     coop = survival("honest_cooperator")
     solo = survival("bayesian_solo")
     liar = survival("liar")
-    assert solo < 0.2, f"reckless solo play should be fatal (got {solo:.0%})"
-    assert liar < 0.35, f"lying should be fatal (got {liar:.0%})"
-    assert coop > solo + 0.3, "cooperation must clearly beat going it alone"
-    assert coop > liar + 0.2, "cooperation must clearly beat lying"
+    assert coop > 0.6, f"cooperation should be a strong survival strategy (got {coop:.0%})"
+    assert coop > solo + 0.25, f"cooperation must clearly beat going it alone (coop {coop:.0%} vs solo {solo:.0%})"
+    assert coop > liar + 0.25, f"cooperation must clearly beat lying (coop {coop:.0%} vs liar {liar:.0%})"
 
 
 def test_reasoning_is_logged():
