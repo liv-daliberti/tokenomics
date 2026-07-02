@@ -1,0 +1,18 @@
+# Render Blueprint — deploys the Agora viewer as a web service straight from
+# GitHub. Every push to the default branch auto-deploys.
+#
+# One-time setup: on render.com, New + -> Blueprint -> connect the
+# liv-daliberti/tokenomics repo. Render reads this file and creates the service.
+services:
+  - type: web
+    name: agora-viewer
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    # 1 worker so the in-process game registry is consistent; threads for
+    # concurrent viewers; long timeout so a scripted game can finish in-request.
+    startCommand: gunicorn web.app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 180
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"

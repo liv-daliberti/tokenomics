@@ -16,7 +16,7 @@ import html
 import os
 from typing import Any, Dict, List
 
-from .metrics import load_events, summary
+from .metrics import load_events, scoreboard, summary
 
 _CSS = """
 :root { --bg:#0f1115; --card:#171a21; --line:#252a34; --fg:#e6e9ef; --mut:#9aa4b2;
@@ -112,6 +112,30 @@ def _games(events: List[Dict[str, Any]]):
     if cur is not None:
         games.append(cur)
     return games
+
+
+def _scoreboard_html(events: List[Dict[str, Any]]) -> str:
+    """A compact win/loss leaderboard across the games in a match."""
+    sb = scoreboard(events)
+    if not sb:
+        return ""
+    order = sorted(sb.items(), key=lambda kv: (-kv[1]["won"], -kv[1]["total_reward"]))
+    n_games = order[0][1]["games"]
+    rows = ""
+    for i, (a, s) in enumerate(order):
+        crown = " 👑" if i == 0 and s["won"] > 0 else ""
+        lies = f'<span class="tag lie">{s["lies"]}</span>' if s["lies"] else "0"
+        rows += (f'<tr><td>{a}{crown}</td>'
+                 f'<td>{s["won"]}/{s["games"]}</td>'
+                 f'<td>{s["survived"]}/{s["games"]}</td>'
+                 f'<td>{_fnum(s["mean_error"]) if s["mean_error"] is not None else "—"}</td>'
+                 f'<td>{_fnum(s["total_reward"], 0)}</td>'
+                 f'<td>{lies}</td></tr>')
+    return (f'<details class="round" open><summary><b>Scoreboard</b>'
+            f'<span class="chip">{n_games} game(s)</span></summary>'
+            f'<div class="body"><table><tr><th>agent</th><th>games won</th>'
+            f'<th>survived</th><th>avg error</th><th>total reward</th>'
+            f'<th>lies told</th></tr>{rows}</table></div></details>')
 
 
 def _render_event(e: Dict[str, Any]) -> str:
@@ -244,7 +268,7 @@ def render_body(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
               'referee-only bookkeeping, never shown to agents.</div>')
 
     return (f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>'
-            f'<div class="grid">{stats}</div>{rounds_html}{legend}')
+            f'<div class="grid">{stats}</div>{_scoreboard_html(events)}{rounds_html}{legend}')
 
 
 def render_html(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
@@ -351,10 +375,11 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
         sub += f' · {n_games} games in a row (agents keep their memory across games)'
 
     parts = [f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>']
+    parts.append(_scoreboard_html(events))
 
     if prompt:
         parts.append(
-            '<details class="round" open><summary><b>The prompt each agent is given</b>'
+            '<details class="round"><summary><b>The prompt each agent is given</b>'
             '<span class="chip">shared task</span></summary>'
             f'<div class="body"><pre style="white-space:pre-wrap;margin:0;color:var(--fg)">'
             f'{html.escape(prompt)}</pre></div></details>')

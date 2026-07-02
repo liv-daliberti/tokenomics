@@ -159,6 +159,54 @@ def regret(events: List[Dict[str, Any]]) -> Dict[Any, Any]:
     return per_round
 
 
+def scoreboard(events: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Per-agent win/loss stats across all games in a match — a quick 'who did
+    what' summary. A game is 'won' by the agent with the highest total reward
+    that game (accuracy proxy); ties share the win. Non-competitive, so this is a
+    friendly ranking, not zero-sum."""
+    gstart = next((e for e in events if e["event"] == "game_start"), None)
+    agents = gstart["config"]["agent_ids"] if gstart else []
+    st = {a: {"won": 0, "survived": 0, "games": 0, "reward": 0.0, "errs": []} for a in agents}
+
+    for gevs in _games(events):
+        greward = {a: 0.0 for a in agents}
+        last_alive: Dict[str, bool] = {}
+        saw_round = False
+        for _, revs in _round_groups(gevs):
+            end = next((e for e in revs if e["event"] == "round_end"), None)
+            if not end:
+                continue
+            saw_round = True
+            res = end["result"]
+            for a in agents:
+                greward[a] += res["rewards"].get(a, 0.0)
+                st[a]["reward"] += res["rewards"].get(a, 0.0)
+                er = res["errors"].get(a, float("nan"))
+                if er == er:
+                    st[a]["errs"].append(er)
+            last_alive = res["alive"]
+        if not saw_round:
+            continue
+        best = max(greward.values()) if greward else 0.0
+        for a in agents:
+            st[a]["games"] += 1
+            if last_alive.get(a, True):
+                st[a]["survived"] += 1
+            if best > 0 and abs(greward[a] - best) < 1e-9:
+                st[a]["won"] += 1
+
+    lies = deception(events)["per_seller"]
+    return {
+        a: {
+            "won": st[a]["won"], "survived": st[a]["survived"], "games": st[a]["games"],
+            "total_reward": st[a]["reward"],
+            "mean_error": (sum(st[a]["errs"]) / len(st[a]["errs"])) if st[a]["errs"] else None,
+            "lies": lies.get(a, {}).get("lies", 0),
+        }
+        for a in agents
+    }
+
+
 def gini(values: List[float]) -> float:
     xs = sorted(v for v in values if v == v)
     n = len(xs)

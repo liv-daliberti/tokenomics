@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
+import shutil
 import string
 import threading
 import time
@@ -144,6 +146,45 @@ def _start_job(job_id: str, params: dict) -> None:
     with LOCK:
         JOBS[job_id] = {"status": "running", "error": None}
     threading.Thread(target=_run_job, args=(job_id, meta), daemon=True).start()
+
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SAMPLE_RUNS = [
+    ("docs/samples/qwen3-32b_cooperative.jsonl", "Qwen3-32B vs Qwen3-32B — cooperative"),
+    ("docs/samples/cooperation_and_fraud.jsonl", "Scripted demo — cost-sharing & fraud"),
+    ("docs/samples/broker_and_death.jsonl", "Scripted demo — privilege & death"),
+]
+
+
+def seed_samples() -> None:
+    """Populate the gallery from the committed sample transcripts (idempotent).
+
+    Runs at import so a fresh, ephemeral deploy (e.g. Render) shows the Qwen and
+    demo games without any prior state."""
+    for rel, title in _SAMPLE_RUNS:
+        src = os.path.join(_REPO, rel)
+        jid = "sample-" + re.sub(r"[^a-zA-Z0-9]", "-", os.path.basename(rel).replace(".jsonl", ""))
+        if not os.path.exists(src) or os.path.exists(_meta_path(jid)):
+            continue
+        try:
+            ev = load_events(src)
+            s = metric_summary(ev)
+            cfg = next(e for e in ev if e["event"] == "game_start")["config"]
+            meta = {
+                "id": jid, "status": "done", "title": title,
+                "created": os.path.getmtime(src), "backend": "llm", "preset": "(sample)",
+                "n_agents": len(cfg.get("agent_ids", [])), "tau": cfg.get("tau"),
+                "framing": cfg.get("framing"), "n_games": s.get("n_games"),
+                "rounds": len([e for e in ev if e["event"] == "round_end"]),
+                "deception_rate": s["deception"]["deception_rate"],
+                "cooperation": s["cooperation"]["cooperation_index"],
+                "survivors": s["survivors"], "gini": s["gini_final_credits"],
+                "welfare": s["welfare"], "parse_fail_rate": s["diagnostics"]["parse_fail_rate"],
+            }
+            shutil.copy(src, os.path.join(RUNS, jid + ".jsonl"))
+            _write_meta(meta)
+        except Exception:  # a bad sample must never take down the app
+            continue
 
 
 def _run_job(job_id: str, meta: dict) -> None:
@@ -338,7 +379,29 @@ document.addEventListener('DOMContentLoaded',function(){var r=document.querySele
 
 INDEX = _SHELL.replace("{{ inner|safe }}", """
 <h1>Agora — the Measurement Market</h1>
-<p class="sub">Run a game of agents estimating a hidden value; watch cooperation, fraud, and ruin.</p>
+<p class="sub">Watch AI agents cooperate, deceive, hoard, and go bust while estimating a hidden number.</p>
+
+<details class="panel" open>
+  <summary style="cursor:pointer;font-weight:600">What am I looking at?</summary>
+  <div style="color:var(--mut);font-size:14px;line-height:1.65;margin-top:12px">
+    <p style="margin:0 0 10px"><b>Agora</b> is a small testbed for how AI agents behave when they must
+    cooperate under scarcity. Each round a hidden number is drawn (think “cars per hour on a highway”),
+    and every agent tries to <b>estimate it</b>. An agent can spend <b>credits</b> to take a noisy
+    <b>measurement</b>, <b>message</b> the other agents, and <b>buy/sell</b> measurements from them.</p>
+    <p style="margin:0 0 10px">The twist: budgets are tight, so no agent can nail the answer alone — they have
+    to <b>pool their readings</b> to do well. But a shared number <b>can’t be verified</b>, so an agent could
+    lie. Score is how close the guess is to the truth; good scores earn credits to keep playing, and
+    <b>running out means elimination</b>. We watch whether they cooperate, deceive, hoard, or go bust.</p>
+    <p style="margin:0 0 10px"><b>How to read a game:</b> it is split into rounds. Per agent you see its
+    💭 <b>reasoning</b>, the <b>measurements</b> it took, the <b>messages</b> it sent, and any <b>trades</b> —
+    then the <b>outcome</b> (true value, each agent’s answer, its error, reward, and credit balance). A
+    <span class="tag lie">FABRICATED</span> tag marks a sold value that doesn’t match what the seller actually
+    measured. The <b>Scoreboard</b> at the top of a run gives a quick who-won / who-survived summary.</p>
+    <p style="margin:0"><b>The headline run is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model
+    playing the cooperative setup. You can also run new games here with scripted baseline agents
+    (instant, no GPU).</p>
+  </div>
+</details>
 
 <form class="panel" method="post" action="/new">
   <label>Setting (preset)</label>
@@ -490,20 +553,20 @@ GAME = _SHELL.replace("{{ inner|safe }}", """
     <a href="?view=detailed" style="{{ 'font-weight:700;text-decoration:none' if view=='detailed' else '' }}">detailed</a>
     · <a href="/transcript/{{ meta.id }}">raw transcript ⬇</a></div>
 </div>
+<p class="sub" style="font-size:13px;margin:10px 0 4px">Each round shows what each agent did — its
+💭 reasoning, measurements, messages, and trades — then the outcome. The <b>Scoreboard</b> summarizes
+who won and who survived. <a href="/">What is this?</a></p>
 {{ body|safe }}
 """)
+
+
+# Populate the gallery at import so a fresh (ephemeral) deploy is never empty.
+seed_samples()
 
 
 def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
-    # Seed the gallery with one instant game so a first visit isn't empty.
-    if not _all_games():
-        jid = uuid.uuid4().hex[:10]
-        _start_job(jid, {"preset": "cooperative", "seed": 7, "games": 3,
-                         "backend": "scripted", "policies": DEFAULT_POLICIES,
-                         "model": "qwen3-32b", "base_url": "http://localhost:8000/v1",
-                         "overrides": {}, "title": "cooperative · 3 games · seed 7 (example)"})
     print(f"Agora web UI on http://{host}:{port}")
     app.run(host=host, port=port, threaded=True)
 
