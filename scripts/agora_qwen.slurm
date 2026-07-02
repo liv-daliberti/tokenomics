@@ -44,7 +44,7 @@ serve_and_wait() {
     --enable-auto-tool-choice \
     --tool-call-parser hermes \
     --reasoning-parser qwen3 \
-    --max-model-len 16384 \
+    --max-model-len "${MAX_MODEL_LEN:-16384}" \
     --gpu-memory-utilization 0.92 \
     --disable-log-requests \
     --port "$PORT" > runs/qwen/vllm.log 2>&1 &
