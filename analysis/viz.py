@@ -528,7 +528,8 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
            f'θ~N({cfg.get("prior_mu")},{cfg.get("prior_sigma")}²) · '
            f'horizon {horizon} · framing {cfg.get("framing","neutral")}')
     if n_games > 1:
-        sub += f' · {n_games} games in a row (agents keep their memory across games)'
+        sub += (f' · {n_games} games in a row (each agent keeps its OWN private memory '
+                'across games — A never sees B\'s memory)')
 
     parts = [f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>']
     parts.append(_scoreboard_html(events))

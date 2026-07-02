@@ -445,6 +445,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     then the <b>outcome</b> (true value, each agent’s answer, its error, reward, and credit balance). A
     <span class="tag lie">FABRICATED</span> tag marks a sold value that doesn’t match what the seller actually
     measured. The <b>Scoreboard</b> at the top of a run gives a quick who-won / who-survived summary.</p>
+    <p style="margin:0 0 10px"><b>Each agent has its own private memory.</b> Agent A only ever sees
+    <b>A’s</b> own conversation — its system prompt, its own measurements, the messages sent to it, and
+    its own reasoning — and B only sees <b>B’s</b>. They never read each other’s thoughts or memory; the
+    <i>only</i> way anything crosses between them is when an agent <b>chooses</b> to message or trade.
+    Across a multi-game match each agent keeps <i>its own</i> growing memory, so “co-evolution” is each
+    agent learning privately, never a shared mind.</p>
     <p style="margin:0"><b>Every run here is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model.
     Hit <a href="/create">Run new game</a> to pit two of them against each other (this needs a local
     vLLM endpoint serving the model).</p>
