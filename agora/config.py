@@ -76,6 +76,16 @@ class GameConfig:
     survival_cost: float = 0.0        # credits deducted at the start of each round
     elimination_on_ruin: bool = True  # a zero-budget agent is removed from the game
 
+    # --- interaction structure ---
+    # After the interaction ticks, give every alive agent one FINAL turn to submit
+    # its best estimate using everything the others shared — so an agent always has
+    # the chance to update its guess with received information.
+    final_answer_pass: bool = True
+    # Force information through the MARKET: redact numbers from free messages so an
+    # agent cannot simply chat its readings — to hand over a value it must trade it
+    # (propose_trade, price can be ~0). Messages become negotiation-only.
+    values_via_trade_only: bool = False
+
     # --- framing & reputation (experiment controls) ---
     # NEUTRAL by default: tools are described mechanically, with no words that
     # prime cooperation/competition. Framing is a first-class ablation: if an
@@ -158,11 +168,15 @@ PRESETS: Dict[str, GameConfig] = {
     # A TRUE 2-agent cooperation wall via COMPLEMENTARY TOOLS: theta = X + Y, and
     # agent A's instrument reads only X while B's reads only Y. Alone, each is
     # structurally blind to the other's part (error floored by that part's prior),
-    # so NO solo strategy — not even passive hoarding — survives. Empirically
-    # (scripted, 60 seeds): cooperate ~95%, solo ~0%, hoard ~2%, lie ~0%.
+    # so NO solo strategy — not even passive hoarding — survives. Information must
+    # travel through the MARKET (values_via_trade_only): you cannot just chat a
+    # reading, you must trade it (price can be 0). And a final-answer pass lets each
+    # agent commit its estimate after all exchange. Empirically (scripted, 40 seeds,
+    # sharing via trade): cooperate ~76%, solo ~0%, hoard ~1%, lie ~0%.
     "complementary": GameConfig(
         agent_ids=["A", "B"],
         complementary=True,
+        values_via_trade_only=True,
         prior_mu=500.0, prior_sigma=150.0,
         tau=25.0,                          # your own part is measurable; the other's is not
         measure_cost=1.0, starting_credits=4.0,

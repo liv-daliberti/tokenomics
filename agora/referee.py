@@ -9,8 +9,16 @@ moves only.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _redact_numbers(text: str) -> str:
+    """Hide numeric tokens so a value can't be conveyed in free chat."""
+    return _NUM_RE.sub("[#]", text)
 
 from .config import GameConfig
 from .environment import Environment
@@ -164,7 +172,14 @@ class Referee:
             if all_submitted and not substantive:
                 break
 
-    def _take_turn(self, aid: str, tick: int, past_truths: List[float]) -> bool:
+        # Final-answer pass: everyone gets one last turn to commit their best
+        # estimate using all information exchanged this round.
+        if cfg.final_answer_pass:
+            for aid in list(self._alive()):
+                self._take_turn(aid, cfg.max_ticks, past_truths, final=True)
+
+    def _take_turn(self, aid: str, tick: int, past_truths: List[float],
+                   final: bool = False) -> bool:
         cfg = self.cfg
         st = self.states[aid]
         peers = [a for a in cfg.agent_ids if a != aid and self.states[a].alive]
@@ -172,7 +187,7 @@ class Referee:
         pending = [t for t in self.market.trades.values()
                    if t.buyer == aid and t.status == "pending"]
         obs = build_observation(st, cfg, self.round_index, tick, peers, pending,
-                                past_truths, eliminated)
+                                past_truths, eliminated, final_answer=final)
         st.inbox = []  # surfaced now; each message is shown once
         policy = self.policies[aid]
         policy.start_turn(render_observation(obs), obs)
@@ -233,11 +248,14 @@ class Referee:
                 self.tx.log("misaddressed", agent=aid, to=to, tick=tick)
                 return f"ERROR: no such live agent {to!r}", True, False
             st.messages_left -= 1
+            # values-via-trade-only: strip numbers so chat can't convey a reading
+            delivered = _redact_numbers(text) if cfg.values_via_trade_only else text
             recipients = [x for x in self._alive() if x != aid] if to == "all" else [to]
             for r in recipients:
-                self.states[r].inbox.append(Message(aid, to, text, tick))
-            self.tx.log("message", sender=aid, to=to, text=text, tick=tick)
-            return "sent", True, False
+                self.states[r].inbox.append(Message(aid, to, delivered, tick))
+            self.tx.log("message", sender=aid, to=to, text=delivered, tick=tick)
+            note = " (numbers hidden — trade to share a value)" if cfg.values_via_trade_only else ""
+            return f"sent{note}", True, False
 
         if action.type is ActionType.TRANSFER:
             try:

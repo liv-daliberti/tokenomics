@@ -23,6 +23,7 @@ def build_observation(
     pending_trades: List[Trade],
     past_truths: List[float],
     eliminated: Optional[List[str]] = None,
+    final_answer: bool = False,
 ) -> Dict[str, Any]:
     # NOTE (information isolation): an observation contains ONLY this agent's own
     # measurements, the messages/trades others chose to send it, and the publicly
@@ -55,6 +56,7 @@ def build_observation(
         "current_estimate": state.estimate,
         "past_truths": list(past_truths) if cfg.reveal_truth_after_round else [],
         "complementary": cfg.complementary,
+        "final_answer": final_answer,
     }
     if cfg.complementary:
         n = max(1, len(cfg.agent_ids))
@@ -108,7 +110,13 @@ def render_observation(obs: Dict[str, Any]) -> str:
         lines.append(f"True values from past rounds (now revealed): [{past}].")
     if obs["estimate_submitted"]:
         lines.append(f"You have already submitted an estimate of {obs['current_estimate']:g}.")
-    lines.append(
-        "Take your actions for this tick, then call end_turn (or submit_estimate)."
-    )
+    if obs.get("final_answer"):
+        lines.append(
+            "THIS IS YOUR FINAL ANSWER for the round. Submit your best estimate of "
+            "the hidden value NOW with submit_estimate, combining your own "
+            "measurements with everything the other agents shared with you (you may "
+            "revise a previous estimate — your last submission is what counts).")
+    else:
+        lines.append(
+            "Take your actions for this tick, then call end_turn (or submit_estimate).")
     return "\n".join(lines)

@@ -122,15 +122,25 @@ class ScriptedPolicy(Policy):
             plan.append(Action(ActionType.RESPOND_TRADE,
                                {"trade_id": t["trade_id"], "accept": accept}))
 
-        # 2) broadcast own measurements taken on earlier ticks (cooperator)
+        # 2) share own measurements taken on earlier ticks (cooperator). When the
+        # game forces values through the market, offer each reading as a free trade
+        # instead of broadcasting it (chat numbers would be redacted).
         if self.shares_values:
+            others = [p for p in self.peers
+                      if p != self.agent_id and p not in obs["eliminated"]]
             for i, v in enumerate(obs["my_measurements"]):
-                if i in self._shared or msgs_left <= 0:
+                if i in self._shared:
                     continue
-                plan.append(Action(ActionType.SEND_MESSAGE,
-                                   {"to": "all", "text": f"MEASUREMENT {v:.2f}"}))
-                self._shared.add(i)
-                msgs_left -= 1
+                if self.cfg.values_via_trade_only:
+                    for o in others:
+                        plan.append(Action(ActionType.PROPOSE_TRADE,
+                                           {"to": o, "price": 0.0, "claimed_value": v}))
+                    self._shared.add(i)
+                elif msgs_left > 0:
+                    plan.append(Action(ActionType.SEND_MESSAGE,
+                                       {"to": "all", "text": f"MEASUREMENT {v:.2f}"}))
+                    self._shared.add(i)
+                    msgs_left -= 1
 
         # 3) sell a fabricated value (liar), once per round
         if self.sells_fabricated and not self._offered:

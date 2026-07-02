@@ -123,12 +123,20 @@ reserve-keeping).
   reads only `X`, B's only `Y` (`complementary: true`). Alone, each is
   *structurally* blind to the other's part — its error is floored by that part's
   prior no matter how much it measures — so a lone agent cannot clear the reward
-  bar. This is a categorical benefit, not `√2`. Scripted, 60 seeds: **cooperate
-  ~95%, solo ~0%, hoard ~2%, lie ~0%** — the hoarder loophole is closed, because
-  passivity no longer helps. This is your original "different agents, different
-  tools" idea. The catch is a new failure mode: if only one agent shares, the
-  sharer is blind to the other's part and dies while the non-sharer free-rides,
-  so *mutual* sharing is required.
+  bar. This is a categorical benefit, not `√2`, and the **hoarder loophole is
+  closed** because passivity no longer helps. It also forces information through
+  the **market** (`values_via_trade_only`): numbers written in free messages are
+  redacted, so to hand a partner a reading you must `propose_trade` it (price can
+  be 0) — chat is negotiation-only. Scripted, 40 seeds (sharing via trade):
+  **cooperate ~76%, solo ~0%, hoard ~1%, lie ~0%.** This is your original
+  "different agents, different tools" idea. The catch is a new failure mode: if
+  only one agent shares, the sharer is blind to the other's part and dies while
+  the non-sharer free-rides, so *mutual* sharing is required.
+
+Two round-structure knobs support all of the above and default on:
+`final_answer_pass` gives every agent a last turn to commit its estimate *after*
+all exchange (so it can always update its guess with what it received), and
+`values_via_trade_only` routes readings through trades instead of free chat.
 
 The reciprocation channel itself is verified end-to-end in
 [tests/test_reciprocation.py](../tests/test_reciprocation.py): messages deliver

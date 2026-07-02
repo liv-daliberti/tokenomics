@@ -123,7 +123,7 @@ def test_cooperator_incorporates_received_values():
         "my_measurements": [400.0], "purchased": [],
         "inbox": [{"from": "B", "to": "all", "text": "MEASUREMENT 600.00", "tick": 0}],
         "pending_trades": [], "messages_left": 5, "ticks_left": 1, "credits": 2.0,
-        "prior_mu": 500.0, "prior_sigma": 150.0,
+        "prior_mu": 500.0, "prior_sigma": 150.0, "eliminated": [],
     }
     coop.start_turn("", obs)                 # harvests the broadcast into memory
     assert any(abs(v - 600.0) < 1e-6 for _, v in coop._received), "did not remember the shared reading"
@@ -183,6 +183,50 @@ def test_cooperation_required_preset_kills_solos():
     assert solo < 0.25, f"a solo strategy should almost never survive (got {solo:.0%})"
     assert coop > 0.6, f"cooperators should usually survive (got {coop:.0%})"
     assert coop > solo + 0.4, "cooperation must clearly beat going it alone"
+
+
+def test_final_answer_pass_lets_agent_update_its_guess():
+    # An agent submits an early guess, then the final-answer turn lets it revise;
+    # the revised value is what is scored.
+    class Updater(Policy):
+        def reset_round(self, r):
+            pass
+
+        def start_turn(self, text, obs):
+            val = 222.0 if obs.get("final_answer") else 111.0
+            self._q = [
+                ToolInvocation("s", "submit_estimate",
+                               Action(ActionType.SUBMIT_ESTIMATE, {"value": val})),
+                ToolInvocation("e", "end_turn", Action(ActionType.END_TURN)),
+            ]
+
+        def next_actions(self):
+            q, self._q = self._q, []
+            return q
+
+        def observe_results(self, results):
+            pass
+
+    cfg = GameConfig(agent_ids=["A"], horizon_mode="fixed", n_rounds=1, max_ticks=2,
+                     final_answer_pass=True)
+    res = Referee(cfg, {"A": Updater()}).run()
+    assert res.rounds[0].estimates["A"] == 222.0, "final-answer pass must allow a revision"
+
+    cfg_off = cfg.with_(final_answer_pass=False)
+    res_off = Referee(cfg_off, {"A": Updater()}).run()
+    assert res_off.rounds[0].estimates["A"] == 111.0, "without the pass, no final revision"
+
+
+def test_values_via_trade_only_redacts_chat_numbers():
+    # In trade-only mode, a number sent in a message is hidden from the recipient.
+    cfg = GameConfig(agent_ids=["A", "B"], horizon_mode="fixed", n_rounds=1,
+                     max_ticks=3, values_via_trade_only=True)
+    A = Scripted([[Action(ActionType.SEND_MESSAGE, {"to": "B", "text": "my reading is 617.5"})]])
+    B = Scripted([[]])
+    Referee(cfg, {"A": A, "B": B}).run()
+    got = " ".join(B.received_texts())
+    assert "617" not in got, "trade-only must hide numbers in chat"
+    assert got.strip(), "the message should still be delivered (minus the number)"
 
 
 def test_complementary_preset_is_a_true_two_agent_wall():

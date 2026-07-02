@@ -219,6 +219,12 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "",
         horizon_line,
     ]
+    if cfg.values_via_trade_only:
+        lines += ["",
+                  "To give another agent one of your readings you MUST trade it: use "
+                  "propose_trade (the price can be 0). Numbers you write in free "
+                  "messages are HIDDEN from the recipient, so messages are only for "
+                  "negotiating — the actual value travels through a trade."]
     if match_line:
         lines += ["", match_line]
     return "\n".join(lines)
