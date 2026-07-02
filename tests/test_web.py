@@ -54,7 +54,7 @@ def test_scripted_game_runs_and_renders():
     assert page.status_code == 200
     assert b"Round 0" in page.data
     assert b"what each agent did" in page.data
-    assert b"The prompt each agent is given" in page.data
+    assert b"System prompt" in page.data
     # detailed view still available via the toggle
     assert b"deception rate" in c.get(f"/game/{job_id}?view=detailed").data
     # it now appears on the index

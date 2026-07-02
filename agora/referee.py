@@ -123,6 +123,7 @@ class Referee:
 
             self._run_ticks(past_truths)
 
+            alive_before = {a: self.states[a].alive for a in cfg.agent_ids}
             scored = settle_round(self.states, self.truth, cfg, r, cfg.prior_mu)
             rr = RoundResult(
                 round_index=r,
@@ -136,6 +137,9 @@ class Referee:
             )
             rounds.append(rr)
             self.tx.log("round_end", game_index=self.game_index, round=r, result=rr)
+            for a in cfg.agent_ids:
+                if alive_before[a] and not self.states[a].alive:
+                    self.tx.log("elimination", game_index=self.game_index, round=r, agent=a)
             past_truths.append(self.truth)
 
         self.tx.log("game_end", final_credits={a: self.states[a].credits
@@ -189,8 +193,11 @@ class Referee:
         obs = build_observation(st, cfg, self.round_index, tick, peers, pending,
                                 past_truths, eliminated, final_answer=final)
         st.inbox = []  # surfaced now; each message is shown once
+        obs_text = render_observation(obs)
+        self.tx.log("prompt", agent=aid, game_index=self.game_index,
+                    round=self.round_index, tick=tick, final=final, text=obs_text)
         policy = self.policies[aid]
-        policy.start_turn(render_observation(obs), obs)
+        policy.start_turn(obs_text, obs)
 
         substantive = False
         actions_taken = 0

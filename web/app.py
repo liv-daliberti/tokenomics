@@ -150,12 +150,11 @@ def _start_job(job_id: str, params: dict) -> None:
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SAMPLE_RUNS = [
+    ("docs/samples/qwen3-32b_complementary_5games.jsonl", "Qwen3-32B vs Qwen3-32B — complementary tools, 5 games (must trade to survive)"),
     ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — 5 games, shared memory (co-evolution)"),
     ("docs/samples/qwen3-32b_slowbleed.jsonl", "Qwen3-32B vs Qwen3-32B — long cooperative (slow bleed)"),
     ("docs/samples/qwen3-32b_3games_1round.jsonl", "Qwen3-32B vs Qwen3-32B — 3 games × 1 round"),
     ("docs/samples/qwen3-32b_cooperative.jsonl", "Qwen3-32B vs Qwen3-32B — cooperative (2 games × 3 rounds)"),
-    ("docs/samples/cooperation_and_fraud.jsonl", "Scripted demo — cost-sharing & fraud"),
-    ("docs/samples/broker_and_death.jsonl", "Scripted demo — privilege & death"),
 ]
 
 
@@ -313,7 +312,7 @@ def new_game():
         "preset": f.get("preset", "cooperative"),
         "seed": seed,
         "games": games,
-        "backend": f.get("backend", "scripted"),
+        "backend": f.get("backend", "llm"),
         "policies": (f.get("policies") or "").strip() or DEFAULT_POLICIES,
         "model": f.get("model", "qwen3-32b"),
         "base_url": f.get("base_url", "http://localhost:8000/v1"),
@@ -437,9 +436,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     then the <b>outcome</b> (true value, each agent’s answer, its error, reward, and credit balance). A
     <span class="tag lie">FABRICATED</span> tag marks a sold value that doesn’t match what the seller actually
     measured. The <b>Scoreboard</b> at the top of a run gives a quick who-won / who-survived summary.</p>
-    <p style="margin:0"><b>The headline run is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model
-    playing the cooperative setup. Hit <a href="/create">Run new game</a> to try one yourself with scripted
-    baseline agents (instant, no GPU).</p>
+    <p style="margin:0"><b>Every run here is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model.
+    Hit <a href="/create">Run new game</a> to pit two of them against each other (this needs a local
+    vLLM endpoint serving the model).</p>
   </div>
 </details>
 
@@ -475,32 +474,17 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     {% for p in presets %}<option value="{{p}}" {% if p=='cooperative' %}selected{% endif %}>{{p}}</option>{% endfor %}
   </select>
 
-  <label>Agents</label>
-  <div>
-    <label style="text-transform:none;letter-spacing:0;display:inline;margin-right:16px;">
-      <input type="radio" name="backend" value="scripted" checked style="width:auto"> scripted (instant, no GPU)</label>
-    <label style="text-transform:none;letter-spacing:0;display:inline;">
-      <input type="radio" name="backend" value="llm" style="width:auto"> Qwen via vLLM (slower)</label>
+  <input type="hidden" name="backend" value="llm">
+  <label>Agents — Qwen-3-32B via a local vLLM endpoint</label>
+  <div class="row">
+    <div><label>Model (served name)</label><input name="model" value="qwen3-32b"></div>
+    <div><label>vLLM base URL</label><input name="base_url" value="http://localhost:8000/v1"></div>
   </div>
+  <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
+    Serve the model first (<code>scripts/serve_qwen.sh</code>); the match runs in the background.</p>
 
   <label>Games in a row — played back-to-back; the agents keep their memory across all of them</label>
   <input name="games" type="number" min="1" max="20" value="5">
-
-  <div id="scripted-opts">
-    <label>Scripted policies (cycled over agents)</label>
-    <input name="policies" value="{{ default_policies }}">
-    <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
-      available: {{ policies_list|join(', ') }}</p>
-  </div>
-
-  <div id="llm-opts" class="hide">
-    <div class="row">
-      <div><label>Model (served name)</label><input name="model" value="qwen3-32b"></div>
-      <div><label>vLLM base URL</label><input name="base_url" value="http://localhost:8000/v1"></div>
-    </div>
-    <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
-      Start the server first: <code>scripts/serve_qwen.sh</code>. Runs in the background.</p>
-  </div>
 
   <div style="border-top:1px solid var(--line);margin:20px 0 4px;padding-top:14px">
     <b>Simulator variables</b> <span class="m" style="color:var(--mut);font-size:12px">— prefilled from the preset; edit any value</span>

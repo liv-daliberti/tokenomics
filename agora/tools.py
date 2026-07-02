@@ -207,7 +207,9 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "and those tokens become the credits you carry into future rounds.",
         ("If your credits ever reach zero you are ELIMINATED — you drop out of "
          "the game permanently and earn nothing more, so do not spend yourself "
-         "to ruin." if cfg.elimination_on_ruin else
+         "to ruin. Any agent can be eliminated this way; you will be told which "
+         "agents have been eliminated, and an eliminated agent can no longer "
+         "measure, message, or trade." if cfg.elimination_on_ruin else
          "Running low on credits limits what you can do, but you are not removed "
          "from the game."),
         "",
@@ -219,6 +221,12 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "",
         horizon_line,
     ]
+    if cfg.survival_cost > 0:
+        lines += ["",
+                  f"Each round a SURVIVAL COST of {cfg.survival_cost:g} credit(s) is deducted from "
+                  f"your balance (and measuring costs {cfg.measure_cost:g} each). To avoid slowly "
+                  "bleeding out and being eliminated, you must earn enough reward each round to "
+                  "cover the survival cost plus whatever you spend."]
     if cfg.values_via_trade_only:
         lines += ["",
                   "To give another agent one of your readings you MUST trade it: use "

@@ -107,11 +107,12 @@ python -m analysis.viz runs/base/seed7.jsonl        # -> runs/base/seed7.html
 python -m analysis.viz runs/base/ -o report/         # a whole directory -> index.html
 ```
 
-Two rendered samples (real engine output, viewable in any browser) live in
-[docs/samples/](docs/samples): **cooperation_and_fraud** (a liar sells a phantom
-value every round) and **broker_and_death** (heterogeneous privilege + a
-survival cost drives three of four agents to ruin). Regenerate with
-`python scripts/make_samples.py`.
+Rendered samples of real **Qwen-3-32B vs Qwen-3-32B** matches (viewable in any
+browser) live in [docs/samples/](docs/samples) — including the `complementary`
+run (agents must trade to survive), the shared-memory 5-game match, and the long
+slow-bleed. The scripted baselines are used for testing and as comparison
+anchors, not as a headline; `python scripts/make_samples.py` renders a couple of
+scripted demos locally if you want them.
 
 ### Web UI — run games from a button
 
@@ -156,11 +157,13 @@ Everything is one knob in a config ([configs/](configs)) or a preset:
 | Privilege | `tau_by_agent` | heterogeneous noise → "data brokers" |
 | Death | `survival_cost`, `elimination_on_ruin` | can agents die? |
 | Framing | `framing` | neutral / cooperative / competitive (confound check) |
-| Market | `enable_transfer`, `enable_trading` | free chat vs paid escrow |
+| Market | `enable_transfer`, `enable_trading`, `values_via_trade_only` | free chat vs paid escrow; force values through trades |
+| Complementary | `complementary` | θ = X + Y, each agent reads only its own part |
+| Answer phase | `final_answer_pass` | a final turn to update the guess after all exchange |
 
-Presets: `smoke, base, coalitions, endgame, privilege, survival`
-(`--preset <name>`). YAML configs mirror the experiment matrix in
-[docs/DESIGN.md §6](docs/DESIGN.md).
+Presets: `cooperative` (default), `complementary`, `cooperation_required`,
+`base, coalitions, endgame, privilege, survival, smoke` (`--preset <name>`).
+YAML configs mirror the experiment matrix in [docs/DESIGN.md §6](docs/DESIGN.md).
 
 ---
 
@@ -197,19 +200,35 @@ transcript (`transcripts.py`), and a standalone scorer (`rewards.py`). See
 
 ## Status
 
-**Phase 0 (harness)** and **Phase 1 (Qwen smoke)** are complete and tested.
+The harness, the viewer, and several real **Qwen-3-32B vs Qwen-3-32B** matches
+(served on 2×A100 via vLLM) are complete and tested (58 passing tests, runnable
+with no GPU via the scripted baselines).
 
-- **Harness** — the game loop, escrow, rewards, transcripts, scripted baselines,
-  and metrics run with no GPU; the suite is green.
-- **Real Qwen run** — served `Qwen/Qwen3-32B` (bf16, 2×A100) on vLLM and ran a
-  2-agent cooperative *match* end to end: **clean tool use (0 parse failures),
-  agents reasoned and one shared its readings to pool, and the tight budget
-  produced real eliminations.** Estimation was weak vs. the pooling oracle and
-  no trades were used. See the report:
-  [docs/samples/qwen3-32b_cooperative.html](docs/samples/qwen3-32b_cooperative.html).
-- **Viewer** — a Flask app (run-a-game button, simulator knobs, N-game matches
-  with shared agent memory, per-agent reasoning, a win/loss scoreboard, raw
-  transcript download) that deploys to Render from GitHub.
+**Mechanism design — forcing cooperation.** Tuning showed that with two *equal*
+agents, information-pooling only buys a `√2` accuracy edge, too small for a
+survival cost to cleanly separate cooperators from solos. Three settings resolve
+this (see [docs/DESIGN.md §2.3](docs/DESIGN.md)):
+- **`cooperative`** — a long, slow-bleed horizon: going solo or lying becomes
+  self-destructive and cooperation is the best strategy (a passive hoarder can
+  still partly free-ride).
+- **`cooperation_required`** (N=4) — a clean wall: solo ~9% survival, cooperate ~90%.
+- **`complementary`** (N=2, true wall) — `θ = X + Y`, each agent reads only its
+  part, and readings must travel through **trades** (chat numbers are redacted).
+  No solo strategy survives — not even hoarding.
 
-Next is **Phase 2**: a multi-seed baseline study and scaling to 3–4 agents — see
-the roadmap in [docs/DESIGN.md §10](docs/DESIGN.md).
+**What the Qwen agents actually did** (reports in [docs/samples/](docs/samples)):
+clean tool use throughout (0 parse failures); they reason, and across a
+shared-memory **5-game match** the quieter agent *learned* to proactively reach
+out. But cooperation stayed shallow — they **distrust unverifiable shared
+values** and under-reciprocate, so they mostly died. Forced onto the
+`complementary` preset they finally **used the market** (settled trades vs. zero
+before) yet exchange was one-sided. The recurring finding: *distrust of
+unverifiable information blocks cooperation, and going it alone is fatal.*
+
+**Viewer** — a Flask app (Qwen-only "run a game" tab, simulator knobs, N-game
+matches with shared memory, per-agent reasoning + the per-round prompts, a
+win/loss scoreboard, elimination notices, raw-transcript download, hover
+tooltips) that deploys to Render from GitHub and seeds the curated Qwen runs.
+
+Next is **Phase 2**: a multi-seed study and 3–4-agent coalitions — see
+[docs/DESIGN.md §10](docs/DESIGN.md).

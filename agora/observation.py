@@ -36,6 +36,8 @@ def build_observation(
         "agent_id": state.agent_id,
         "credits": state.credits,
         "measure_cost": cfg.measure_cost,
+        "survival_cost": cfg.survival_cost,
+        "eliminate_on_ruin": cfg.elimination_on_ruin,
         "messages_left": state.messages_left,
         "prior_mu": cfg.prior_mu,
         "prior_sigma": cfg.prior_sigma,
@@ -70,13 +72,26 @@ def render_observation(obs: Dict[str, Any]) -> str:
     lines = [
         f"Round {obs['round_index']}, tick {obs['tick']} "
         f"({obs['ticks_left']} tick(s) left this round).",
-        f"Credits: {obs['credits']:g} (each measure costs {obs['measure_cost']:g}). "
-        f"Messages left: {obs['messages_left']}.",
+        f"YOUR CREDITS: {obs['credits']:g}. Action costs — measure: {obs['measure_cost']:g} "
+        f"credit(s) each; send_message: free ({obs['messages_left']} left this round); a trade "
+        f"costs the agreed price; transfer moves the amount you choose.",
     ]
+    sc = obs.get("survival_cost", 0.0)
+    if obs.get("eliminate_on_ruin", True) and sc > 0:
+        lines.append(
+            f"SURVIVAL: {sc:g} credit(s) are deducted at the END of every round. If that leaves "
+            f"you at zero you are ELIMINATED — so each round you must earn at least {sc:g} in "
+            f"reward (more, once you subtract what you spend) or your credits bleed to zero.")
+    elif obs.get("eliminate_on_ruin", True):
+        lines.append("SURVIVAL: if your credits ever hit zero you are ELIMINATED.")
     if obs["credits"] < obs["measure_cost"]:
         lines.append("You cannot afford to measure or buy — reason from what you already have.")
     if obs["eliminated"]:
-        lines.append(f"Eliminated (out of the game): {', '.join(obs['eliminated'])}.")
+        who = ", ".join(obs["eliminated"])
+        lines.append(
+            f"⚠ ELIMINATED — {who} ran out of credits and {'is' if len(obs['eliminated'])==1 else 'are'} "
+            "out of the game for good: they can no longer measure, message, or trade, so do not wait on "
+            "them or count on their help.")
     if obs.get("complementary"):
         lines.append(
             "Your instrument measures ONLY your own part of the hidden value; the "

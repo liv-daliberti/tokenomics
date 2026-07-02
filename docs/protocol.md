@@ -24,8 +24,18 @@ for r in horizon():                       # geometric (hidden) or fixed (known)
             take_turn(agent, tick)        #   later agents in the same tick
         if all alive have submitted and nothing substantive happened this tick:
             break                         # early termination
+    if final_answer_pass:                 # every agent gets one last turn to
+        for agent in alive: take_turn(agent, final=True)   # commit its estimate
     settle(r)                             # score, carry over, apply survival cost, eliminate
 ```
+
+Two optional modes change what happens above:
+- **`complementary`** — `theta_r = X_A + X_B + ...`, one part per agent drawn so
+  the parts sum to the public `theta` prior. An agent's `measure()` returns only
+  *its own* part; to estimate `theta` it must obtain the others' parts.
+- **`values_via_trade_only`** — numeric tokens in `send_message` text are redacted
+  on delivery, so a reading can only be handed over via `propose_trade`
+  (chat is negotiation-only).
 
 `take_turn` surfaces the agent's observation (its private info only), then runs
 an inner loop of at most `max_actions_per_tick` model steps. Each step yields
@@ -100,15 +110,20 @@ a choice with consequences, not a crash).
 
 Event types and key fields (see [agora/transcripts.py](../agora/transcripts.py)):
 
-- `game_start` `{config, n_rounds_actual}` · `game_end` `{final_credits}`
-- `round_start` `{round, truth, alive, credits}` · `round_end` `{round, result}`
+- `match_start` `{config, n_games}` · `match_end` `{n_games}` (multi-game matches)
+- `game_start` `{game_index, config, n_rounds_actual}` · `game_end` `{final_credits}`
+- `agent_prompt` `{agent, text}` (the system prompt, once per game)
+- `round_start` `{game_index, round, truth, alive, credits}` · `round_end` `{game_index, round, result}`
 - `tick_start` `{round, tick, order}`
-- `measure` `{agent, tick, value, truth, tau, cost, credits_after}`
+- `prompt` `{agent, round, tick, final, text}` (the observation shown to the agent each turn)
+- `reasoning` `{agent, tick, text}` (the agent's stated reasoning for that step)
+- `measure` `{agent, tick, value, truth, tau, cost, credits_after}` (in complementary mode, `truth` is the agent's own part)
 - `message` `{sender, to, text, tick}` · `misaddressed` `{agent, to, tick}`
 - `transfer` `{src, dst, amount, tick}`
 - `propose_trade` `{trade_id, seller, buyer, price, claimed_value, seller_observed, tick}`
 - `respond_trade` `{trade_id, responder, accept, status, tick}`
 - `submit_estimate` `{agent, value, tick}`
+- `elimination` `{agent, round, game_index}` (an agent hit zero credits)
 - `parse_fail` `{agent, tool, error}`
 
 The `truth` and `seller_observed` fields are referee-only bookkeeping that make

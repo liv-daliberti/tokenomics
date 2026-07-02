@@ -45,7 +45,8 @@ h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.3px; }
 .ev { display:flex; gap:10px; padding:5px 0; border-bottom:1px dashed #20242e; }
 .ev .who { min-width:34px; font-weight:600; }
 .ev .txt { flex:1; }
-.tag { font-size:11px; padding:1px 7px; border-radius:6px; font-weight:600; }
+.tag { font-size:11px; padding:1px 7px; border-radius:6px; font-weight:600; cursor:help; }
+.chip[title],.priv[title],th[title]{cursor:help;}
 .t-measure{color:var(--blue);}  .t-message{color:var(--gray);}
 .t-trade{color:var(--amber);}   .t-transfer{color:var(--green);}
 .t-submit{color:var(--purple);} .t-err{color:var(--red);}
@@ -133,9 +134,12 @@ def _scoreboard_html(events: List[Dict[str, Any]]) -> str:
                  f'<td>{lies}</td></tr>')
     return (f'<details class="round" open><summary><b>Scoreboard</b>'
             f'<span class="chip">{n_games} game(s)</span></summary>'
-            f'<div class="body"><table><tr><th>agent</th><th>games won</th>'
-            f'<th>survived</th><th>avg error</th><th>total reward</th>'
-            f'<th>lies told</th></tr>{rows}</table></div></details>')
+            f'<div class="body"><table><tr><th>agent</th>'
+            f'<th title="Won by the agent with the highest total reward that game (accuracy proxy). Non-competitive.">games won</th>'
+            f'<th title="Games this agent finished alive (not eliminated).">survived</th>'
+            f'<th title="Average distance from the true value across its rounds.">avg error</th>'
+            f'<th title="Total reward tokens earned (become next-round credits).">total reward</th>'
+            f'<th title="Number of fabricated values it tried to sell.">lies told</th></tr>{rows}</table></div></details>')
 
 
 def _render_event(e: Dict[str, Any]) -> str:
@@ -144,44 +148,55 @@ def _render_event(e: Dict[str, Any]) -> str:
         return (f'<div class="ev"><span class="who">{e.get("agent","?")}</span>'
                 f'<span class="txt think" style="border:0;padding:0;margin:0">'
                 f'💭 {html.escape(e["text"])}</span></div>')
+    if t == "elimination":
+        return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
+                f'<span class="txt"><span class="tag t-err">💀 ELIMINATED</span> '
+                f'ran out of credits — out of the game</span></div>')
+    if t == "prompt":
+        label = "final-answer prompt" if e.get("final") else f"prompt · tick {e.get('tick')}"
+        return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
+                f'<span class="txt"><details><summary style="cursor:pointer;color:var(--mut);'
+                f'font-size:12px">▸ {label}</summary><pre class="think" style="border:0;'
+                f'font-size:12px">{html.escape(e["text"])}</pre></details></span></div>')
     if t == "measure":
         return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
-                f'<span class="txt"><span class="tag t-measure">measure</span> '
+                f'<span class="txt"><span class="tag t-measure">🔬 measure</span> '
                 f'observed <b>{_fnum(e["value"])}</b> '
                 f'<span class="priv">(private; cost {_fnum(e["cost"])}, '
                 f'credits→{_fnum(e["credits_after"])})</span></span></div>')
     if t == "message":
         return (f'<div class="ev"><span class="who">{e["sender"]}</span>'
-                f'<span class="txt"><span class="tag t-message">msg → {html.escape(str(e["to"]))}</span> '
+                f'<span class="txt"><span class="tag t-message">💬 msg → {html.escape(str(e["to"]))}</span> '
                 f'{html.escape(e["text"])}</span></div>')
     if t == "propose_trade":
         lie = _lie_flag(e)
-        badge = ('<span class="tag lie">FABRICATED</span>' if lie
-                 else '<span class="tag honest">truthful</span>')
+        badge = ('<span class="tag lie">🤥 FABRICATED</span>' if lie
+                 else '<span class="tag honest">✓ truthful</span>')
         obs = ", ".join(_fnum(v) for v in (e.get("seller_observed") or [])) or "nothing measured"
         return (f'<div class="ev"><span class="who">{e["seller"]}</span>'
-                f'<span class="txt"><span class="tag t-trade">sell → {e["buyer"]}</span> '
-                f'claims <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])} {badge} '
+                f'<span class="txt"><span class="tag t-trade">🏷️ offer → {e["buyer"]}</span> '
+                f'sell <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])} {badge} '
                 f'<span class="priv">(actually observed: {obs})</span></span></div>')
     if t == "respond_trade":
+        emoji = "🤝" if e["status"] == "accepted" else "🙅"
         return (f'<div class="ev"><span class="who">{e["responder"]}</span>'
-                f'<span class="txt"><span class="tag t-trade">trade {e["status"]}</span> '
+                f'<span class="txt"><span class="tag t-trade">{emoji} trade {e["status"]}</span> '
                 f'{e["trade_id"]}</span></div>')
     if t == "transfer":
         return (f'<div class="ev"><span class="who">{e["src"]}</span>'
-                f'<span class="txt"><span class="tag t-transfer">transfer → {e["dst"]}</span> '
+                f'<span class="txt"><span class="tag t-transfer">💸 transfer → {e["dst"]}</span> '
                 f'{_fnum(e["amount"])} credits</span></div>')
     if t == "submit_estimate":
         return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
-                f'<span class="txt"><span class="tag t-submit">estimate</span> '
+                f'<span class="txt"><span class="tag t-submit">🎯 estimate</span> '
                 f'<b>{_fnum(e["value"])}</b></span></div>')
     if t == "misaddressed":
         return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
-                f'<span class="txt"><span class="tag t-err">mis-addressed</span> '
+                f'<span class="txt"><span class="tag t-err">⚠ mis-addressed</span> '
                 f'to {html.escape(str(e["to"]))}</span></div>')
     if t == "parse_fail":
         return (f'<div class="ev"><span class="who">{e.get("agent","?")}</span>'
-                f'<span class="txt"><span class="tag t-err">parse-fail</span> '
+                f'<span class="txt"><span class="tag t-err">⚠ parse-fail</span> '
                 f'{html.escape(str(e.get("tool")))}: {html.escape(str(e.get("error")))}</span></div>')
     return ""
 
@@ -259,7 +274,7 @@ def render_body(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
             rounds_html += (f'<div class="tick" style="margin-top:18px;font-size:14px">'
                             f'▮ Game {gi + 1} of {len(games)}</div>')
         for i, (start, evs) in enumerate(_rounds(gevs)):
-            rounds_html += _render_round(start, evs, is_first=(gi == 0 and i == 0))
+            rounds_html += _render_round(start, evs, is_first=True)
 
     legend = ('<div class="legend">Values marked <span class="tag lie">FABRICATED</span> '
               'are sales whose claimed value matches none of the seller\'s actual '
@@ -291,31 +306,58 @@ def _agent_actions(evs: List[Dict[str, Any]], agents: List[str]) -> Dict[str, li
     def act(agent, inner):
         push(agent, f'<div class="ev"><span class="txt">{inner}</span></div>')
 
+    def tag(cls, label, tip):
+        return f'<span class="tag {cls}" title="{html.escape(tip)}">{label}</span>'
+
+    tmap = {ev["trade_id"]: ev for ev in evs if ev["event"] == "propose_trade"}
+
     for e in evs:
         t = e["event"]
         if t == "reasoning":
-            push(e.get("agent", "?"), f'<div class="think">💭 {html.escape(e["text"])}</div>')
+            push(e.get("agent", "?"),
+                 f'<div class="think" title="The agent\'s own reasoning before it acted">'
+                 f'💭 {html.escape(e["text"])}</div>')
         elif t == "measure":
-            act(e["agent"], f'<span class="tag t-measure">measure</span> saw <b>{_fnum(e["value"])}</b>')
+            act(e["agent"], tag("t-measure", "🔬 measure",
+                "Drew one noisy reading of the hidden value. Costs credits; the number is private to this agent.")
+                + f' → saw <b>{_fnum(e["value"])}</b>')
         elif t == "message":
-            act(e["sender"], f'<span class="tag t-message">say → {html.escape(str(e["to"]))}</span> '
-                             f'“{html.escape(e["text"])}”')
+            act(e["sender"], tag("t-message", f"💬 say → {html.escape(str(e['to']))}",
+                "Free-text message to another agent. When trading is required, numbers are hidden.")
+                + f' “{html.escape(e["text"])}”')
         elif t == "propose_trade":
-            badge = ' <span class="tag lie">FABRICATED</span>' if _lie_flag(e) \
-                    else ' <span class="tag honest">truthful</span>'
-            act(e["seller"], f'<span class="tag t-trade">sell → {e["buyer"]}</span> '
-                             f'claims <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])}{badge}')
+            badge = (' ' + tag("lie", "🤥 FABRICATED",
+                     "The offered value matches none of the seller's actual readings (ground-truth lie detector).")
+                     if _lie_flag(e) else ' ' + tag("honest", "✓ truthful",
+                     "The offered value matches one the seller actually measured."))
+            act(e["seller"], tag("t-trade", f"🏷️ offer → {e['buyer']}",
+                "Offered to sell a measurement value to another agent for a price.")
+                + f' sell <b>{_fnum(e["claimed_value"])}</b> for {_fnum(e["price"])} credit(s){badge}')
         elif t == "respond_trade":
-            act(e["responder"], f'<span class="tag t-trade">trade {e["status"]}</span> {e["trade_id"]}')
+            src = tmap.get(e["trade_id"])
+            if e.get("status") == "accepted" and src:
+                act(e["responder"], tag("t-trade", "🤝 deal",
+                    "A buy/sell went through — credits paid via escrow, value delivered.")
+                    + f' {e["responder"]} bought <b>{_fnum(src["claimed_value"])}</b> from '
+                    f'{src["seller"]} for <b>{_fnum(src["price"])}</b> credit(s)')
+            else:
+                act(e["responder"], tag("t-trade", "🙅 declined",
+                    "Rejected a trade offer.") + f' offer {e["trade_id"]}')
         elif t == "transfer":
-            act(e["src"], f'<span class="tag t-transfer">give → {e["dst"]}</span> {_fnum(e["amount"])}')
+            act(e["src"], tag("t-transfer", f"💸 give → {e['dst']}",
+                "Transferred credits to another agent (a gift / cost-split).")
+                + f' {_fnum(e["amount"])} credit(s)')
         elif t == "submit_estimate":
-            act(e["agent"], f'<span class="tag t-submit">answer</span> <b>{_fnum(e["value"])}</b>')
+            act(e["agent"], tag("t-submit", "🎯 answer",
+                "This agent's estimate of the hidden value for the round; scored on distance from the truth.")
+                + f' <b>{_fnum(e["value"])}</b>')
         elif t == "misaddressed":
-            act(e["agent"], '<span class="tag t-err">mis-addressed a message</span>')
+            act(e["agent"], '<span class="tag t-err">⚠ mis-addressed a message</span>')
         elif t == "parse_fail":
-            act(e.get("agent", "?"), f'<span class="tag t-err">invalid tool call</span> '
+            act(e.get("agent", "?"), f'<span class="tag t-err">⚠ invalid tool call</span> '
                                      f'({html.escape(str(e.get("tool")))})')
+        elif t == "elimination":
+            act(e["agent"], '<span class="tag t-err">💀 ELIMINATED — ran out of credits</span>')
     return acts
 
 
@@ -323,6 +365,10 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
                   agents: List[str], is_open: bool) -> str:
     res = next((e["result"] for e in evs if e["event"] == "round_end"), None)
     acts = _agent_actions(evs, agents)
+    prompts: Dict[str, list] = {}
+    for e in evs:
+        if e["event"] == "prompt":
+            prompts.setdefault(e["agent"], []).append(e)
 
     who = ""
     for a in agents:
@@ -330,12 +376,21 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
         alive = (not res) or res["alive"].get(a, True)
         budget = ""
         if res:
-            budget = (f' <span class="priv">budget {_fnum(res["credits_start"].get(a))}'
+            budget = (f' <span class="priv" title="Credits at the start → end of this round">budget {_fnum(res["credits_start"].get(a))}'
                       f' → {_fnum(res["credits_end"].get(a))}</span>')
+        pblock = ""
+        pl = prompts.get(a, [])
+        if pl:
+            body = "".join(
+                f'<pre class="think" style="font-size:12px">{html.escape(p["text"])}</pre>'
+                for p in pl)
+            pblock = (f'<details style="margin:2px 0 6px"><summary style="cursor:pointer;'
+                      f'color:var(--mut);font-size:12px">▸ prompts {a} was sent this round '
+                      f'({len(pl)})</summary>{body}</details>')
         items = ("".join(lines)
                  or '<div class="ev"><span class="txt priv">— did nothing —</span></div>')
         who += (f'<div style="margin:10px 0"><div class="who" style="margin-bottom:2px">'
-                f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{items}</div>')
+                f'{a}{" ☠ eliminated" if not alive else ""}{budget}</div>{pblock}{items}</div>')
 
     rows = ""
     if res:
@@ -350,12 +405,15 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
                      f'<td>{_fnum(res["credits_start"].get(a))} → {_fnum(res["credits_end"].get(a))}</td>'
                      f'</tr>')
     outcome = (f'<div class="tick">outcome — true value θ = {_fnum(start["truth"])}</div>'
-               f'<table><tr><th>agent</th><th>answer</th><th>error</th><th>reward</th>'
-               f'<th>credits</th></tr>{rows}</table>') if res else ""
+               f'<table><tr><th>agent</th>'
+               f'<th title="This agent\'s final estimate of the hidden value">answer</th>'
+               f'<th title="Distance from the true value (lower is better)">error</th>'
+               f'<th title="Reward tokens earned this round">reward</th>'
+               f'<th title="Credits at start → end of the round">credits</th></tr>{rows}</table>') if res else ""
 
     return (f'<details class="round"{" open" if is_open else ""}><summary>'
             f'<b>Round {start["round"]}</b>'
-            f'<span class="chip truth">θ = {_fnum(start["truth"])}</span></summary>'
+            f'<span class="chip truth" title="The true hidden value this round, revealed after everyone answers">θ = {_fnum(start["truth"])}</span></summary>'
             f'<div class="body"><div class="tick">what each agent did</div>{who}{outcome}</div></details>')
 
 
@@ -379,19 +437,19 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
 
     if prompt:
         parts.append(
-            '<details class="round"><summary><b>The prompt each agent is given</b>'
-            '<span class="chip">shared task</span></summary>'
+            '<details class="round"><summary><b>System prompt</b>'
+            '<span class="chip">shared task · sent once</span></summary>'
             f'<div class="body"><pre style="white-space:pre-wrap;margin:0;color:var(--fg)">'
             f'{html.escape(prompt)}</pre></div></details>')
 
     for gi, (gstart, gevs) in enumerate(games):
         rlist = list(_rounds(gevs))
         rounds_html = "".join(
-            _simple_round(start, evs, agents, is_open=(n_games == 1 and i == 0))
+            _simple_round(start, evs, agents, is_open=True)   # everything open by default
             for i, (start, evs) in enumerate(rlist))
         if n_games > 1:
             parts.append(
-                f'<details class="round"{" open" if gi == 0 else ""}><summary>'
+                f'<details class="round" open><summary>'
                 f'<b>Game {gi + 1} of {n_games}</b>'
                 f'<span class="chip">{len(rlist)} round(s)</span></summary>'
                 f'<div class="body">{rounds_html}</div></details>')

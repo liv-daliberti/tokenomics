@@ -37,7 +37,7 @@ def test_liar_is_flagged_in_report():
 def test_simple_view_has_prompt_actions_outcome():
     res = _game("honest_cooperator,bayesian_solo")
     doc = render_simple(res.transcript.events, "t")
-    assert "The prompt each agent is given" in doc      # the prompt
+    assert "System prompt" in doc      # the prompt
     assert "what each agent did" in doc                 # per-agent actions
     assert "outcome — true value" in doc                # the outcome
     assert "estimate ~N(500" not in doc                 # sanity: no template leak
@@ -59,7 +59,7 @@ def test_simple_view_shows_budget_start_and_end():
     res = _game("bayesian_solo")
     doc = render_simple(res.transcript.events, "t")
     assert "budget" in doc and "→" in doc      # per-agent start→end credits
-    assert "<th>credits</th>" in doc           # outcome table credits column
+    assert "credits</th>" in doc               # outcome table credits column
 
 
 def test_diagnostics_clean_for_scripted():
