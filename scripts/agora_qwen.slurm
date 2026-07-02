@@ -23,6 +23,11 @@ export TOKENIZERS_PARALLELISM=false
 PORT=8765
 mkdir -p runs/qwen "$HF_HOME"
 
+# Optional YaRN rope-scaling to extend context beyond the 32k native window
+# (needed for long multi-game matches). Set ROPE_SCALING to a JSON dict.
+ROPE_ARGS=()
+[ -n "${ROPE_SCALING:-}" ] && ROPE_ARGS=(--rope-scaling "$ROPE_SCALING")
+
 echo "=== node $(hostname) | GPUs ==="; nvidia-smi -L
 
 # node302 has 80GB A100s, so native bf16 (most reliable for tool-calling) fits on
@@ -45,6 +50,7 @@ serve_and_wait() {
     --tool-call-parser hermes \
     --reasoning-parser qwen3 \
     --max-model-len "${MAX_MODEL_LEN:-16384}" \
+    "${ROPE_ARGS[@]}" \
     --gpu-memory-utilization 0.92 \
     --disable-log-requests \
     --port "$PORT" > runs/qwen/vllm.log 2>&1 &
