@@ -150,6 +150,7 @@ def _start_job(job_id: str, params: dict) -> None:
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SAMPLE_RUNS = [
+    ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — 5 games, shared memory (co-evolution)"),
     ("docs/samples/qwen3-32b_slowbleed.jsonl", "Qwen3-32B vs Qwen3-32B — long cooperative (slow bleed)"),
     ("docs/samples/qwen3-32b_3games_1round.jsonl", "Qwen3-32B vs Qwen3-32B — 3 games × 1 round"),
     ("docs/samples/qwen3-32b_cooperative.jsonl", "Qwen3-32B vs Qwen3-32B — cooperative (2 games × 3 rounds)"),
