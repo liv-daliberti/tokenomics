@@ -105,24 +105,33 @@ def test_carryover_and_reward():
     assert any(r.rewards["A"] > 0 for r in res.rounds)
 
 
-def test_cooperative_preset_requires_collaboration():
-    # In the resource-constrained cooperative preset, agents that pool their
-    # readings should end far more solvent than agents that go it alone.
+def test_cooperative_preset_punishes_going_it_alone():
+    # The 2-agent cooperative preset is a long slow-bleed: over many rounds,
+    # reckless solo play and lying are self-destructive, while cooperation is the
+    # best survival strategy. (A passive hoarder can still partly free-ride — that
+    # loophole needs complementary tools; see DESIGN §2.3.)
     from agora.config import PRESETS
-    from agora.referee import run_match
 
-    def avg_end_credits(spec, seeds=6):
-        vals = []
+    def survival(spec, seeds=30):
+        cfg0 = PRESETS["cooperative"]
+        ids = cfg0.agent_ids
+        alive = tot = 0
         for s in range(seeds):
-            cfg = PRESETS["cooperative"].with_(seed=s)
-            pols = {a: REGISTRY[spec](cfg, a, cfg.agent_ids) for a in cfg.agent_ids}
-            g = run_match(cfg, pols, 1).games[0]
-            vals += [g.states[a].credits for a in cfg.agent_ids]
-        return sum(vals) / len(vals)
+            cfg = cfg0.with_(seed=s)
+            pols = {a: REGISTRY[spec](cfg, a, ids) for a in ids}
+            g = Referee(cfg, pols).run()
+            for a in ids:
+                alive += int(g.states[a].alive)
+                tot += 1
+        return alive / tot
 
-    coop = avg_end_credits("honest_cooperator")
-    solo = avg_end_credits("bayesian_solo")
-    assert coop > solo + 1.0, f"pooling should clearly beat solo ({coop:.1f} vs {solo:.1f})"
+    coop = survival("honest_cooperator")
+    solo = survival("bayesian_solo")
+    liar = survival("liar")
+    assert solo < 0.2, f"reckless solo play should be fatal (got {solo:.0%})"
+    assert liar < 0.35, f"lying should be fatal (got {liar:.0%})"
+    assert coop > solo + 0.3, "cooperation must clearly beat going it alone"
+    assert coop > liar + 0.2, "cooperation must clearly beat lying"
 
 
 def test_reasoning_is_logged():

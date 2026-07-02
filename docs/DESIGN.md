@@ -97,13 +97,34 @@ pooling still pays.
 
 ### 2.3 Making cooperation mandatory
 
-The `cooperation_required` preset tightens the budget + survival cost until a
-lone agent's own readings earn too little to stay solvent, while agents that pool
-survive. Empirically (scripted baselines, 25 seeds): **a solo strategy survives
-~9%, a cooperating strategy ~90%.** A key limit: pooling only improves accuracy
-by `sqrt(N)`, so **two agents cannot enforce this** (the √2 edge is too small — a
-survival cost that kills solos also kills cooperators); you need `N ≥ 3–4`. The
-reciprocation channel itself is verified end-to-end in
+**Why tuning alone can't force it at N=2.** Two cooperating agents can access at
+most `2×` the measurements of a solo (each contributes its own budget), and
+averaging `2×` readings cuts error by only `sqrt(2) ≈ 1.4×` — a fixed ceiling. In
+reward terms that is ~1 point, which the per-round reward noise swamps, so no
+survival cost cleanly separates solo from cooperator. Verified across ~12
+parameter regimes (pooling, large budgets, weak prior, affordability cliffs,
+reserve-keeping).
+
+**Two working settings:**
+
+- **`cooperation_required` (N=4).** With four agents the pooling edge grows to
+  `sqrt(N)=2×`; a tight budget + survival cost then makes a lone agent's readings
+  earn too little to stay solvent. Scripted, 25 seeds: **solo ~9%, cooperator
+  ~90%** — a clean wall.
+- **`cooperative` (N=2, long slow-bleed).** A long horizon with a per-round
+  survival cost turns the small `√2` edge into a real survival gap over time: a
+  slightly-negative drift compounds to ruin. Scripted, 60 seeds: **cooperate
+  ~57%, reckless solo ~5%, lie ~12%** — going it alone or deceiving is
+  self-destructive and cooperation is the best strategy. The one loophole tuning
+  can't close is a **passive hoarder** (~52%) that measures almost nothing and
+  coasts on its reserve.
+
+**A true N=2 wall needs complementary tools** (your original "different agents,
+different tools" idea): split the hidden value into parts and give each agent a
+tool for only one part, so a lone agent is structurally blind to half the answer.
+That is a categorical (not `√2`) benefit — a future mechanic, not yet built.
+
+The reciprocation channel itself is verified end-to-end in
 [tests/test_reciprocation.py](../tests/test_reciprocation.py): messages deliver
 both ways and reach the prompt, trade offers are visible and acceptable with
 escrow settling, and cooperators fold received readings into their answers. So

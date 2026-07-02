@@ -113,20 +113,23 @@ PRESETS: Dict[str, GameConfig] = {
         gamma=0.8,
         n_rounds=8,          # cap on the geometric draw
     ),
-    # Resource-constrained cooperative default: a tight budget (2 credits) plus a
-    # per-round survival cost means a lone agent's own measurements are NOT enough
-    # to stay solvent — you have to pool/trade readings to earn enough to continue.
-    # Empirically (scripted): agents that share survive ~80% and grow their credits;
-    # agents that go it alone survive ~50% and drain to near-zero.
+    # Two-agent cooperative default, tuned as a LONG game with a slow bleed: a
+    # per-round survival cost gradually drains you, and accuracy (which requires
+    # pooling your readings) is what refills the tank. Over many rounds this makes
+    # the failure modes self-destructive. Empirically (scripted, 60 seeds):
+    #   cooperate (pool) ~57% survive  ·  reckless solo (over-measure) ~5%  ·
+    #   lie ~12%  ·  passive hoard ~52% (the one free-ride tuning can't kill —
+    #   that needs complementary tools; see docs/DESIGN.md §2.3).
+    # So: going it alone or deceiving is fatal, and cooperation is the best bet.
     "cooperative": GameConfig(
         agent_ids=["A", "B"],
         prior_mu=500.0, prior_sigma=150.0,
-        tau=180.0,                       # one reading is noisy; pooling pays
-        measure_cost=1.0, starting_credits=2.0,
-        survival_cost=1.5, elimination_on_ruin=True,
-        reward_rule="quantized", reward_bucket=40.0, reward_max=5,
-        message_quota=10, max_ticks=5,
-        horizon_mode="geometric", gamma=0.85, n_rounds=12,
+        tau=200.0,                        # one reading is noisy; pooling pays
+        measure_cost=1.0, starting_credits=4.0,
+        survival_cost=2.5, elimination_on_ruin=True,   # the slow bleed
+        reward_rule="quantized", reward_bucket=13.0, reward_max=10,  # steep: accuracy pays
+        message_quota=12, max_ticks=8,
+        horizon_mode="fixed", n_rounds=30, reveal_horizon=False,  # long, unknown end
         framing="cooperative",
     ),
     # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a
