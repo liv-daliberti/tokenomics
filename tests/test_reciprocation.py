@@ -126,7 +126,7 @@ def test_cooperator_incorporates_received_values():
         "prior_mu": 500.0, "prior_sigma": 150.0,
     }
     coop.start_turn("", obs)                 # harvests the broadcast into memory
-    assert any(abs(v - 600.0) < 1e-6 for v in coop._received), "did not remember the shared reading"
+    assert any(abs(v - 600.0) < 1e-6 for _, v in coop._received), "did not remember the shared reading"
     est = coop._estimate(obs)
     assert 400.0 < est < 600.0, f"cooperator ignored the shared reading (est={est})"
 
@@ -183,6 +183,49 @@ def test_cooperation_required_preset_kills_solos():
     assert solo < 0.25, f"a solo strategy should almost never survive (got {solo:.0%})"
     assert coop > 0.6, f"cooperators should usually survive (got {coop:.0%})"
     assert coop > solo + 0.4, "cooperation must clearly beat going it alone"
+
+
+def test_complementary_preset_is_a_true_two_agent_wall():
+    # With complementary tools (theta = X + Y, each agent reads only its part),
+    # NO solo strategy survives — not even passive hoarding — because a lone agent
+    # is structurally blind to the other's part. Only cooperation survives.
+    from agora.config import PRESETS
+
+    def survival(spec, seeds=30):
+        cfg0 = PRESETS["complementary"]
+        ids = cfg0.agent_ids
+        alive = tot = 0
+        for s in range(seeds):
+            cfg = cfg0.with_(seed=s)
+            pols = {x: REGISTRY[spec](cfg, x, ids) for x in ids}
+            g = Referee(cfg, pols).run()
+            for x in ids:
+                alive += int(g.states[x].alive)
+                tot += 1
+        return alive / tot
+
+    coop = survival("honest_cooperator")
+    solo = survival("bayesian_solo")
+    hoard = survival("hoarder")
+    liar = survival("liar")
+    assert coop > 0.7, f"cooperators must survive (got {coop:.0%})"
+    assert solo < 0.1, f"solo must be blind and die (got {solo:.0%})"
+    assert hoard < 0.2, f"even a hoarder must die (got {hoard:.0%})"
+    assert liar < 0.1, f"lying must die (got {liar:.0%})"
+
+
+def test_complementary_measurement_returns_own_component():
+    # A's measurements should center on its component (~mu/N), not on theta.
+    from agora.referee import Referee
+    cfg = GameConfig(agent_ids=["A", "B"], complementary=True, horizon_mode="fixed",
+                     n_rounds=1, tau=1.0, prior_mu=500.0, prior_sigma=150.0, seed=0)
+    res = Referee(cfg, {a: REGISTRY["bayesian_solo"](cfg, a, cfg.agent_ids)
+                        for a in cfg.agent_ids}).run()
+    ev = res.transcript.events
+    truth = next(e["truth"] for e in ev if e["event"] == "round_start")
+    a_meas = [e["value"] for e in ev if e["event"] == "measure" and e["agent"] == "A"]
+    # A's readings are of its component (~250), far below the total theta (~500).
+    assert a_meas and all(abs(v) < 0.9 * truth for v in a_meas), "A seems to measure the whole theta"
 
 
 if __name__ == "__main__":

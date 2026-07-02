@@ -119,10 +119,16 @@ reserve-keeping).
   can't close is a **passive hoarder** (~52%) that measures almost nothing and
   coasts on its reserve.
 
-**A true N=2 wall needs complementary tools** (your original "different agents,
-different tools" idea): split the hidden value into parts and give each agent a
-tool for only one part, so a lone agent is structurally blind to half the answer.
-That is a categorical (not `√2`) benefit — a future mechanic, not yet built.
+- **`complementary` (N=2, true wall).** `theta = X + Y`; agent A's instrument
+  reads only `X`, B's only `Y` (`complementary: true`). Alone, each is
+  *structurally* blind to the other's part — its error is floored by that part's
+  prior no matter how much it measures — so a lone agent cannot clear the reward
+  bar. This is a categorical benefit, not `√2`. Scripted, 60 seeds: **cooperate
+  ~95%, solo ~0%, hoard ~2%, lie ~0%** — the hoarder loophole is closed, because
+  passivity no longer helps. This is your original "different agents, different
+  tools" idea. The catch is a new failure mode: if only one agent shares, the
+  sharer is blind to the other's part and dies while the non-sharer free-rides,
+  so *mutual* sharing is required.
 
 The reciprocation channel itself is verified end-to-end in
 [tests/test_reciprocation.py](../tests/test_reciprocation.py): messages deliver

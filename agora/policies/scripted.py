@@ -69,14 +69,34 @@ class ScriptedPolicy(Policy):
         # own measurements + bought values + everything broadcast to me so far.
         return (list(obs["my_measurements"])
                 + [p["claimed_value"] for p in obs["purchased"]]
-                + list(self._received))
+                + [v for _, v in self._received])
 
     def _estimate(self, obs: Dict[str, Any]) -> float:
+        if obs.get("complementary"):
+            return self._complementary_estimate(obs)
         if self.shares_values or self.accepts_trades:
             vals = self._known_values(obs)
         else:
             vals = list(obs["my_measurements"]) + [p["claimed_value"] for p in obs["purchased"]]
         return posterior_mean(vals, obs["prior_mu"], obs["prior_sigma"], self.cfg.tau)
+
+    def _complementary_estimate(self, obs: Dict[str, Any]) -> float:
+        # theta = my part + the other agents' parts. I estimate my part from my own
+        # measurements, and each other agent's part from what THEY shared/sold me
+        # (falling back to that part's prior mean if they shared nothing -> blind).
+        mu_c, sig_c = obs["component_prior_mu"], obs["component_prior_sigma"]
+        tau = self.cfg.tau
+        by_sender: Dict[str, List[float]] = {}
+        for s, v in self._received:
+            by_sender.setdefault(s, []).append(v)
+        for p in obs["purchased"]:
+            by_sender.setdefault(p["seller"], []).append(p["claimed_value"])
+        total = posterior_mean(list(obs["my_measurements"]), mu_c, sig_c, tau)
+        for other in self.peers:
+            if other == self.agent_id:
+                continue
+            total += posterior_mean(by_sender.get(other, []), mu_c, sig_c, tau)
+        return total
 
     def _pick_peer(self) -> Optional[str]:
         others = [p for p in self.peers if p != self.agent_id]
@@ -89,7 +109,7 @@ class ScriptedPolicy(Policy):
         for m in obs["inbox"]:
             found = _NUM.search(m["text"])
             if found:
-                self._received.append(float(found.group(1)))
+                self._received.append((m["from"], float(found.group(1))))
 
         plan: List[Action] = []
         msgs_left = obs["messages_left"]

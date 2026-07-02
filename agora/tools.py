@@ -178,9 +178,21 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "(this prior is public; the drawn value is not).",
         "",
         "Your tools:",
-        f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s).",
+        (f"  - measure(): returns YOUR OWN PART of theta plus noise; costs "
+         f"{cfg.measure_cost:g} credit(s)." if cfg.complementary else
+         f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s)."),
         "  - send_message(to, text): free text to another agent; quota-limited.",
     ]
+    if cfg.complementary:
+        npart = len(peers) + 1
+        note = (f"IMPORTANT: theta is the SUM of {npart} parts, one per agent. Your "
+                f"instrument measures ONLY your own part (its prior mean is "
+                f"{cfg.prior_mu / npart:g}); you CANNOT measure anyone else's part. To "
+                "estimate theta you must add the other agents' parts to yours — which "
+                "you can only learn if they share their readings with you. Alone, you "
+                "are blind to their parts.")
+        i = lines.index("Your tools:")
+        lines[i:i] = [note, ""]
     if cfg.enable_transfer:
         lines.append("  - transfer_credits(to, amount): give credits to another agent.")
     if cfg.enable_trading:

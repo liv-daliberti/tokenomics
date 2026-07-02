@@ -31,6 +31,12 @@ class GameConfig:
     tau_by_agent: Optional[Dict[str, float]] = None
     measure_cost: float = 1.0
 
+    # Complementary tools: the hidden value theta is the SUM of N parts, one per
+    # agent, and each agent's instrument measures ONLY its own part. Alone, an
+    # agent is structurally blind to the other parts (error floored by the prior),
+    # so cooperation is genuinely required — even a passive hoarder cannot survive.
+    complementary: bool = False
+
     # --- budgets & communication ---
     # Target the market-forcing regime:  c*k_individual < budget < c*k_social.
     # With N=4, c=1, budget=4: a lone agent affords 4 samples but the social
@@ -147,6 +153,23 @@ PRESETS: Dict[str, GameConfig] = {
         reward_rule="quantized", reward_bucket=40.0, reward_max=5,
         message_quota=12, max_ticks=8,
         horizon_mode="fixed", n_rounds=10, reveal_horizon=False,
+        framing="cooperative",
+    ),
+    # A TRUE 2-agent cooperation wall via COMPLEMENTARY TOOLS: theta = X + Y, and
+    # agent A's instrument reads only X while B's reads only Y. Alone, each is
+    # structurally blind to the other's part (error floored by that part's prior),
+    # so NO solo strategy — not even passive hoarding — survives. Empirically
+    # (scripted, 60 seeds): cooperate ~95%, solo ~0%, hoard ~2%, lie ~0%.
+    "complementary": GameConfig(
+        agent_ids=["A", "B"],
+        complementary=True,
+        prior_mu=500.0, prior_sigma=150.0,
+        tau=25.0,                          # your own part is measurable; the other's is not
+        measure_cost=1.0, starting_credits=4.0,
+        survival_cost=2.0, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=18.0, reward_max=5,
+        message_quota=12, max_ticks=8,
+        horizon_mode="fixed", n_rounds=12, reveal_horizon=False,
         framing="cooperative",
     ),
     # Three agents: the smallest setting where a coalition can exclude someone.

@@ -217,9 +217,11 @@ class Referee:
             if not st.can_afford(cfg.measure_cost):
                 return "ERROR: insufficient credits to measure", True, False
             self.market.spend(aid, cfg.measure_cost, "measure")
-            x = self.env.measure(self.truth, st.tau)
-            st.measurements.append(Measurement(aid, x, self.truth, st.tau, tick, cfg.measure_cost))
-            self.tx.log("measure", agent=aid, tick=tick, value=x, truth=self.truth,
+            # complementary mode: an agent's instrument reads only its own component
+            target = self.env.components[aid] if cfg.complementary else self.truth
+            x = self.env.measure(target, st.tau)
+            st.measurements.append(Measurement(aid, x, target, st.tau, tick, cfg.measure_cost))
+            self.tx.log("measure", agent=aid, tick=tick, value=x, truth=target,
                         tau=st.tau, cost=cfg.measure_cost, credits_after=st.credits)
             return f"measured {x:.4f}", True, False
 
