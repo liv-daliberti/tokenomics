@@ -642,10 +642,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
       </div></div></div>
     <div class="step"><div class="step-n">3</div><div>
-      <h4>50 matches across the dial</h4>
-      <p>We run the same game at <b>ten settings</b> of that offset, <b>five random seeds</b> each — 50
-        Qwen-vs-Qwen matches in all — holding everything else fixed, and watch how mutual the exchange
-        becomes as solo play gets harder.</p></div></div>
+      <h4>100 matches across the dial</h4>
+      <p>We run the same game at <b>ten settings</b> of that offset, <b>ten random seeds</b> each — 100
+        Qwen-vs-Qwen matches in all. Each match is <b>10 games × 5 rounds</b>, played in one growing
+        conversation so the agents keep the <b>full context</b> of everything that came before — holding
+        everything else fixed, and watch how mutual the exchange becomes as solo play gets harder.</p></div></div>
   </div>
 </section>
 

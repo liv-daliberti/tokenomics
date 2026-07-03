@@ -125,10 +125,16 @@ def aggregate_rows(groups: dict) -> list:
 def write_aggregate(run_glob: str, out_path: str) -> int:
     """Aggregate multi-seed runs and dump a small {label, rows} JSON (committed so
     the deployed site can show mean±CI without shipping 50 transcripts)."""
-    rows = aggregate_rows(collect_multiseed(run_glob))
+    groups = collect_multiseed(run_glob)
+    rows = aggregate_rows(groups)
     total = sum(r["n_seeds"] for r in rows)
     seeds = max((r["n_seeds"] for r in rows), default=0)
-    label = f"{total} runs · up to {seeds} seeds × {len(rows)} offsets (mean ± 95% CI)"
+    # note the per-match structure (games × rounds) from a sample run, so the chart
+    # caption stays honest about what each seed actually is.
+    sample = next((r for g in groups.values() for r in g), None)
+    struct = (f" · {sample['n_games']} games × {sample.get('n_rounds', 0) // max(sample['n_games'], 1)} rounds"
+              if sample and sample.get("n_games") else "")
+    label = f"{total} runs · up to {seeds} seeds × {len(rows)} offsets{struct} (mean ± 95% CI)"
     with open(out_path, "w") as fh:
         json.dump({"label": label, "rows": rows}, fh)
     return total
