@@ -212,9 +212,24 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "(this prior is public; the drawn value is not).",
         "",
         "Your tools:",
-        f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s).",
+        (f"  - measure(): returns theta plus a FIXED per-round offset unique to your "
+         f"instrument, plus small noise; costs {cfg.measure_cost:g} credit(s)."
+         if cfg.bias_sigma > 0 else
+         f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s)."),
         "  - send_message(to, text): free text to another agent; quota-limited.",
     ]
+    if cfg.bias_sigma > 0:
+        npart = len(peers) + 1
+        note = ("IMPORTANT: your measuring instrument is MISCALIBRATED. Each round it "
+                "reads the true value plus a LARGE offset that is unique to you and does "
+                "NOT change if you measure again — so measuring more only averages out "
+                "small noise, never your offset. Every agent has a different offset, and "
+                f"across all {npart} agents the offsets CANCEL: the average of everyone's "
+                "readings equals the true value. So you can only recover theta by combining "
+                "your reading with the other agents' readings (average them). Alone, no "
+                "matter how many times you measure, you are stuck at your own offset.")
+        i = lines.index("Your tools:")
+        lines[i:i] = [note, ""]
     if cfg.enable_transfer:
         revive = (" (including an eliminated agent, which revives it next round)"
                   if cfg.elimination_on_ruin else "")

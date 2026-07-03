@@ -106,12 +106,12 @@ def test_carryover_and_reward():
 
 
 def test_cooperative_preset_punishes_going_it_alone():
-    # The 2-agent cooperative preset is a short, known 5-round bleed tuned so
-    # ENGAGING pays: τ=100 < σ=150 makes a reading informative and pooling clearly
-    # beats solo, while a conserver who submits the prior earns ~0 and bleeds out.
-    # Cooperation is the clear best strategy (~78% vs solo/hoard/lie ~45-55%). With
-    # two *equal* agents the pooling edge is ~sqrt(2), so this is a strong tilt, not
-    # extinction of defectors.
+    # The 2-agent cooperative preset is a HARD wall via paired instrument bias: each
+    # agent's reading carries a large fixed per-round offset (the offsets cancel only
+    # when averaged across agents), and the prior is wide, so NO solo strategy — not
+    # even measuring repeatedly or shrinking toward the prior — recovers theta. Only
+    # agents that pool readings survive. Scripted (30 seeds): cooperate ~100%, solo
+    # ~2%, hoard ~10%, lie ~2%.
     from agora.config import PRESETS
 
     def survival(spec, seeds=30):
@@ -129,10 +129,10 @@ def test_cooperative_preset_punishes_going_it_alone():
 
     coop = survival("honest_cooperator")
     solo = survival("bayesian_solo")
-    liar = survival("liar")
-    assert coop > 0.65, f"cooperation should be a strong survival strategy (got {coop:.0%})"
-    assert coop > solo + 0.12, f"cooperation must clearly beat going it alone (coop {coop:.0%} vs solo {solo:.0%})"
-    assert coop > liar + 0.12, f"cooperation must clearly beat lying (coop {coop:.0%} vs liar {liar:.0%})"
+    assert coop > 0.85, f"pooling cancels the bias -> cooperators reliably survive (got {coop:.0%})"
+    assert solo < 0.30, f"a lone agent is stuck at its instrument offset and dies (got {solo:.0%})"
+    assert survival("hoarder") < 0.40, "even a passive hoarder cannot free-ride to survival here"
+    assert survival("liar") < 0.30, "lying cannot substitute for a real pooled reading"
 
 
 def test_reasoning_is_logged():
@@ -187,6 +187,31 @@ def test_reciprocity_detects_one_sided_exchange():
     ev.append({"event": "message", "sender": "B", "to": "A", "text": "mine is 510.0"})
     r2 = reciprocity(ev)
     assert r2["reciprocity_index"] == 1.0 and r2["mutual_pairs"] == 1 and r2["one_sided_pairs"] == 0
+
+
+def test_paired_bias_offsets_cancel_only_when_pooled():
+    # Each agent's readings carry a fixed per-round offset; the offsets sum to zero,
+    # so a lone agent (even measuring many times) is stuck at its offset, but
+    # averaging both agents' readings recovers theta.
+    import statistics
+    from agora.environment import Environment
+    cfg = GameConfig(agent_ids=["A", "B"], bias_sigma=300.0, tau=30.0,
+                     prior_mu=500.0, prior_sigma=400.0, seed=1)
+    env = Environment(cfg)
+    theta = env.draw_truth(0)
+    assert abs(env.offsets["A"] + env.offsets["B"]) < 1e-9          # offsets sum to zero
+    assert abs(env.offsets["A"]) > 50                               # and are large
+    a = statistics.mean(env.measure(theta + env.offsets["A"], cfg.tau) for _ in range(200))
+    b = statistics.mean(env.measure(theta + env.offsets["B"], cfg.tau) for _ in range(200))
+    assert abs(a - theta) > 40, "a lone agent stays stuck at its offset no matter how much it measures"
+    assert abs((a + b) / 2 - theta) < 15, "averaging the two agents' readings recovers theta"
+
+
+def test_paired_bias_is_explained_in_the_prompt():
+    from agora.tools import system_prompt
+    cfg = GameConfig(agent_ids=["A", "B"], bias_sigma=300.0)
+    sp = system_prompt(cfg, "A", ["B"]).lower()
+    assert "offset" in sp and "average" in sp and ("cancel" in sp or "cancels" in sp)
 
 
 def test_reciprocity_ignores_dead_agent_rounds():

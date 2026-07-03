@@ -32,6 +32,14 @@ class GameConfig:
     tau_by_agent: Optional[Dict[str, float]] = None
     measure_cost: float = 1.0
 
+    # Paired instrument bias (interdependence). When > 0, each round every agent
+    # gets a large per-agent OFFSET drawn so the offsets SUM TO ZERO; its readings
+    # are theta + offset + small noise. A single agent cannot remove its own offset
+    # — measuring again just repeats it — so only AVERAGING readings ACROSS agents
+    # cancels the bias and recovers theta. This makes solo play non-viable and
+    # pooling necessary, while every agent still estimates the same theta.
+    bias_sigma: float = 0.0
+
     # --- budgets & communication ---
     # Target the market-forcing regime:  c*k_individual < budget < c*k_social.
     # With N=4, c=1, budget=4: a lone agent affords 4 samples but the social
@@ -127,26 +135,29 @@ PRESETS: Dict[str, GameConfig] = {
         gamma=0.8,
         n_rounds=8,          # cap on the geometric draw
     ),
-    # Two-agent cooperative default: a short, KNOWN 5-round game with a bleed.
-    # Tuned so ENGAGING pays: measurement noise τ=100 is *below* the prior spread
-    # σ=150, so a reading is genuinely informative and pooling two agents' readings
-    # is clearly better than going solo — while a per-round survival cost means a
-    # conserver who just submits the prior earns ~0 and bleeds out. This fixes an
-    # earlier mis-tuning (τ=200 > σ) where measuring was worthless and the agent
-    # who *tried* went bankrupt while a conserver survived. Empirically (scripted,
-    # 30 seeds): cooperate (pool) ~83% survive · reckless solo ~45% · passive
-    # hoard ~58% · lie ~62% — cooperation is clearly the best strategy. (With two
-    # *equal* agents the pooling edge is only ~sqrt(2), so this is a strong tilt,
-    # not a hard wall.)
+    # Two-agent cooperative default: a short, KNOWN 5-round game where solo play is
+    # NON-VIABLE by construction. Each agent's instrument has a large per-round
+    # OFFSET (bias_sigma=300, so each agent's offset std ~210) unique to it; the two
+    # offsets sum to zero, so a single reading is ~200 off — and measuring again
+    # can't fix it (same offset) — but AVERAGING both agents' readings cancels the
+    # offsets and recovers theta to within the tiny noise (tau=30). The prior is
+    # deliberately WIDE (sigma=400) so an agent can't dodge the wall by shrinking its
+    # biased reading toward the mean: even an OPTIMAL solo nets <0/round and dies,
+    # while a pooled answer (error ~20) scores ~9. So cooperation is REQUIRED, not
+    # merely rewarded — but each needs the OTHER's reading, so the exchange must be
+    # mutual, which is the emergent question. Scripted (40 seeds): cooperate 100%
+    # survive · solo 2% · hoard 10% · lie 2%. Every agent still estimates the same
+    # theta ("pick a number"); set bias_sigma=0 to recover the plain symmetric game.
     "cooperative": GameConfig(
         agent_ids=["A", "B"],
-        prior_mu=500.0, prior_sigma=150.0,
-        tau=100.0,                        # τ < σ: a reading is informative; pooling pays more
+        prior_mu=500.0, prior_sigma=400.0,   # WIDE prior: guessing the mean fails too
+        tau=30.0,                            # a single reading has little noise...
+        bias_sigma=300.0,                    # ...but a large per-agent offset only cancels when readings are AVERAGED across agents
         measure_cost=1.0, starting_credits=4.0,
-        survival_cost=3.0, elimination_on_ruin=True,   # the bleed — measuring must earn its keep
-        reward_rule="quantized", reward_bucket=10.0, reward_max=10,  # only good (pooled) accuracy pays
+        survival_cost=3.0, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=15.0, reward_max=10,  # solo (offset ~200) -> 0; pooled (offsets cancel) -> high
         message_quota=12, max_ticks=8,
-        horizon_mode="fixed", n_rounds=5, reveal_horizon=True,  # short game; agents know it is 5 rounds
+        horizon_mode="fixed", n_rounds=5, reveal_horizon=True,
         framing="cooperative",
     ),
     # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a

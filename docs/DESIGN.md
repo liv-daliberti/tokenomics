@@ -111,15 +111,26 @@ reserve-keeping).
   `sqrt(N)=2×`; a tight budget + survival cost then makes a lone agent's readings
   earn too little to stay solvent. Scripted, 25 seeds: **solo ~9%, cooperator
   ~90%** — a clean wall.
-- **`cooperative` (N=2, short known slow-bleed).** A per-round survival cost
-  drains you and accuracy (which needs pooling) refills the tank, so cooperation
-  is the winning strategy. It is a **known 5-round** game (agents are told the
-  horizon). Scripted, 30 seeds: **cooperate ~78%, reckless solo ~37%, lie ~32%**
-  (`scripts/study.py` reproduces these with CIs) — cooperation wins by ~2×. With
-  two *equal* agents the pooling edge is only `√2`, so a short game makes
-  cooperation the best bet rather than driving defectors to extinction; a
-  **passive hoarder** (~60%) can still partly free-ride — an accepted limitation
-  of the two-equal-agents setting.
+- **`cooperative` (N=2, paired instrument bias).** A **hard** two-agent wall that
+  keeps "pick a number" (both estimate the same `theta`). Each round every agent's
+  instrument gets a large fixed **offset** (`bias_sigma=300`, so each offset std
+  ~210) and the offsets **sum to zero**: a single reading is ~200 off, and
+  measuring again cannot fix it (same offset). Only **averaging both agents'
+  readings** cancels the offsets and recovers `theta` (tiny noise `tau=30`). The
+  prior is deliberately **wide** (`sigma=400`) so an agent cannot escape by
+  shrinking its biased reading toward the mean — even an *optimal* solo nets
+  <0/round and dies. Scripted, 30 seeds (`scripts/study.py`): **cooperate ~100%,
+  solo ~3%, hoard ~8%, lie ~3%** — only pooling survives. Unlike the symmetric
+  `√2` tilt, this makes cooperation *required*; the open question is whether the
+  exchange becomes **mutual** (each needs the other's reading). Set `bias_sigma=0`
+  to recover the plain symmetric game (where, tellingly, LLM agents don't pool at
+  all — see §"What the Qwen agents did").
+
+Earlier symmetric tunings of this preset (independent same-`theta` noise) gave
+only a `√2` edge and, once the economics were sane, the Qwen agents simply solved
+it solo and never modelled each other (0/196 reasoning steps mentioned the
+partner). That negative result is *why* interdependence (the offset wall above) is
+needed to study cooperation with these models at N=2.
 
 The task itself is always the plain **"pick a number"** game: every agent
 estimates the *same* hidden `theta`. Cooperation is made worthwhile by the

@@ -59,6 +59,7 @@ def build_observation(
         "peers": peers,
         "eliminated": list(eliminated or []),
         "can_revive": cfg.enable_transfer and cfg.elimination_on_ruin,
+        "paired_bias": cfg.bias_sigma > 0,
         "estimate_submitted": state.estimate is not None,
         "current_estimate": state.estimate,
         "past_truths": list(past_truths) if cfg.reveal_truth_after_round else [],
@@ -138,7 +139,10 @@ def render_observation(obs: Dict[str, Any]) -> str:
                 "them or count on their help.")
     if obs["my_measurements"]:
         vals = ", ".join(f"{v:.1f}" for v in obs["my_measurements"])
-        lines.append(f"Your measurements so far: [{vals}].")
+        note = (" (each carries your instrument's fixed offset — averaging with the "
+                "other agents' readings is what cancels it and recovers the true value)"
+                if obs.get("paired_bias") else "")
+        lines.append(f"Your measurements so far: [{vals}].{note}")
     else:
         lines.append("You have taken no measurements yet.")
     if obs["purchased"]:

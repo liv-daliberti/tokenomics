@@ -208,15 +208,18 @@ The task is always the same **"pick a number"** estimation game — every agent
 estimates the *same* hidden `theta`. Cooperation is not scripted; it is made
 worthwhile by the economics.
 
-**Mechanism design — forcing cooperation.** Tuning showed that with two *equal*
-agents, information-pooling only buys a `√2` accuracy edge, too small for a
-survival cost to cleanly separate cooperators from solos. Two settings resolve
-this (see [docs/DESIGN.md §2.3](docs/DESIGN.md)):
-- **`cooperative`** (N=2, the default) — a long, slow-bleed horizon: a per-round
-  survival cost gradually drains you, and accuracy (which requires pooling your
-  readings) is what refills the tank. Going solo or lying becomes self-destructive
-  and cooperation is the best strategy (a passive hoarder can still partly free-ride).
-- **`cooperation_required`** (N=4) — a clean wall: solo ~9% survival, cooperate ~90%.
+**Mechanism design — forcing cooperation.** With two *equal* agents, independent
+pooling only buys a `√2` edge — too small to separate cooperators from solos, and
+once the economics are sane the Qwen agents just solve it alone (they never even
+mention the partner). So the default forces true interdependence (see
+[docs/DESIGN.md §2.3](docs/DESIGN.md)):
+- **`cooperative`** (N=2, the default) — **paired instrument bias**: each agent's
+  reading carries a large fixed per-round offset, the two offsets sum to zero, and
+  the prior is wide. A single reading is ~200 off and measuring again can't fix it;
+  only **averaging both agents' readings** recovers `theta`. Solo (even optimal) is
+  non-viable — scripted: cooperate ~100% survive, solo ~3%, hoard ~8%, lie ~3%.
+  Everyone still estimates the same `theta`; `bias_sigma=0` recovers the symmetric game.
+- **`cooperation_required`** (N=4) — a survival wall: solo ~9% survival, cooperate ~90%.
 
 **Rescue.** With `enable_transfer`, an agent can `transfer_credits` to another —
 including an **eliminated** one, which **revives** it into the next round. Agents
