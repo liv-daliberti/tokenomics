@@ -236,7 +236,8 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
         val = (f"{yv:.0%}" if unit == "pct" else (f"{yv:.0f}" if ymax >= 4 else f"{yv:.2f}"))
         endlab = (f'<text class="endlab" x="{px(xs[-1])-8:.1f}" y="{py(ys[-1])-9:.1f}" '
                   f'style="fill:{color}">{val}</text>')
-    cap = (f'<figcaption title="{html.escape(desc)}" style="cursor:help">{title}</figcaption>'
+    cap = (f'<figcaption data-desc="{html.escape(desc)}" title="{html.escape(desc)}" '
+           f'style="cursor:help">{title}</figcaption>'
            if desc else f'<figcaption>{title}</figcaption>')
     return f'''<figure class="chart{' hero' if hero else ''}">
       {cap}
@@ -377,12 +378,15 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     color:var(--muted); margin:40px 0 4px; font-weight:600;}
   table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px;
     font-variant-numeric:tabular-nums; margin-top:10px;}
-  th,td{text-align:right; padding:7px 10px; border-bottom:1px solid var(--border);}
+  th,td{text-align:right; padding:7px 10px; border-bottom:1px solid var(--border); color:var(--ink);}
   th:first-child,td:first-child{text-align:left;}
   th{color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.05em;}
+  th[data-desc]{cursor:help; text-decoration:underline dotted var(--axis); text-underline-offset:3px;}
   .tip{position:fixed; pointer-events:none; opacity:0; background:var(--ink); color:var(--plane);
     font-family:var(--mono); font-size:11.5px; padding:5px 8px; border-radius:7px; transform:translate(-50%,-140%);
-    white-space:nowrap; z-index:9; transition:opacity .08s;}
+    white-space:nowrap; z-index:9; transition:opacity .08s; box-shadow:0 4px 16px rgba(0,0,0,.4);}
+  .tip.wide{white-space:normal; max-width:300px; text-align:left; line-height:1.45; font-size:12px;
+    transform:translate(-50%,-112%);}
   .foot{font-size:12.5px; color:var(--muted); margin-top:28px; max-width:64ch;}
 </style>
 <div class="viz-root"><div class="wrap">
@@ -408,13 +412,13 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <h2>All runs <span style="font-weight:400;text-transform:none;letter-spacing:0">· hover a column for what it means</span></h2>
   <div style="overflow-x:auto"><table>
     <tr>
-      <th title="{{D_offset}}" style="cursor:help">offset σ</th>
-      <th title="{{D_surv}}" style="cursor:help">survivors</th>
-      <th title="{{D_coop}}" style="cursor:help">cooperation</th>
-      <th title="{{D_recip}}" style="cursor:help">reciprocity</th>
-      <th title="{{D_msg}}" style="cursor:help">msgs/round</th>
-      <th title="{{D_soc}}" style="cursor:help">reasons re partner</th>
-      <th title="{{D_welf}}" style="cursor:help">welfare</th></tr>
+      <th data-desc="{{D_offset}}" title="{{D_offset}}">offset σ</th>
+      <th data-desc="{{D_surv}}" title="{{D_surv}}">survivors</th>
+      <th data-desc="{{D_coop}}" title="{{D_coop}}">cooperation</th>
+      <th data-desc="{{D_recip}}" title="{{D_recip}}">reciprocity</th>
+      <th data-desc="{{D_msg}}" title="{{D_msg}}">msgs/round</th>
+      <th data-desc="{{D_soc}}" title="{{D_soc}}">reasons re partner</th>
+      <th data-desc="{{D_welf}}" title="{{D_welf}}">welfare</th></tr>
     {{TROWS}}
   </table></div>
 
@@ -428,10 +432,21 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 <div class="tip" id="tip"></div>
 <script>
   const tip=document.getElementById('tip');
+  function showTip(el,text,wide){
+    tip.textContent=text; tip.classList.toggle('wide',!!wide);
+    const r=el.getBoundingClientRect();
+    tip.style.left=(r.left+r.width/2)+'px'; tip.style.top=r.top+'px'; tip.style.opacity=1;
+  }
+  const hide=()=>{tip.style.opacity=0;};
   for(const m of document.querySelectorAll('.mk')){
-    m.addEventListener('mouseenter',e=>{tip.textContent='offset '+m.dataset.x+'  →  '+m.dataset.y;
-      const r=m.getBoundingClientRect(); tip.style.left=(r.left+r.width/2)+'px'; tip.style.top=r.top+'px'; tip.style.opacity=1;});
-    m.addEventListener('mouseleave',()=>tip.style.opacity=0);
+    m.addEventListener('mouseenter',()=>showTip(m,'offset '+m.dataset.x+'  →  '+m.dataset.y,false));
+    m.addEventListener('mouseleave',hide);
+  }
+  // metric definitions: reliable styled tooltip on any [data-desc] (table headers, chart captions)
+  for(const el of document.querySelectorAll('[data-desc]')){
+    el.addEventListener('mouseenter',()=>showTip(el,el.dataset.desc,true));
+    el.addEventListener('mousemove',()=>showTip(el,el.dataset.desc,true));
+    el.addEventListener('mouseleave',hide);
   }
 </script>
 """
