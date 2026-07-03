@@ -21,7 +21,10 @@
 set -uo pipefail
 cd /n/fs/similarity/tokenomics
 
-BIASES=(0 50 100 150 200 250 300 350 400 500)
+# Offsets to sweep, one per array task. Override with OFFSETS="10 20 30 40" plus a
+# matching --array=0-N to run a finer or partial sweep (e.g. resolving the switch
+# between 0 and 50). Default is the full 10-point dial.
+read -ra BIASES <<< "${OFFSETS:-0 50 100 150 200 250 300 350 400 500}"
 BIAS=${BIASES[$SLURM_ARRAY_TASK_ID]}
 # PORT_BASE lets a second seed-batch run alongside the first without colliding on
 # ports while both drain on the same node (GPUs are still gated by SLURM gres).
