@@ -181,7 +181,8 @@ agora/
   policies/        LLM policy + scripted baselines (= smoke backend)
   transcripts.py   append-only JSONL logging (the analysis substrate)
   run.py           CLI
-analysis/metrics.py  regret, cooperation, verifiable deception, welfare, Gini
+analysis/metrics.py  regret, cooperation, reciprocity, rescue, deception, prices, welfare, Gini
+scripts/study.py     multi-seed study: aggregate metrics with 95% CIs
 configs/             base + ablation configs (the experiment matrix)
 scripts/serve_qwen.sh  vLLM launch recipe for Qwen3-32B
 tests/               escrow invariants + end-to-end game
@@ -200,7 +201,7 @@ transcript (`transcripts.py`), and a standalone scorer (`rewards.py`). See
 ## Status
 
 The harness, the viewer, and several real **Qwen-3-32B vs Qwen-3-32B** matches
-(served on 2×A100 via vLLM) are complete and tested (59 passing tests, runnable
+(served on 2×A100 via vLLM) are complete and tested (66 passing tests, runnable
 with no GPU via the scripted baselines).
 
 The task is always the same **"pick a number"** estimation game — every agent

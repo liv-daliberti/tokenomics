@@ -70,6 +70,8 @@ th:first-child,td:first-child { text-align:left; }
 th { color:var(--mut); font-weight:500; font-size:12px; text-transform:uppercase; }
 .dead { color:var(--red); }
 .legend { color:var(--mut); font-size:12px; margin-top:26px; }
+.simple-legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin:12px 0 2px; }
+.lkey { font-size:12px; color:var(--mut); white-space:nowrap; }
 a { color:var(--blue); }
 code { background:#20242e; padding:1px 5px; border-radius:5px; }
 """
@@ -514,6 +516,25 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
             f'<div class="body"><div class="tick">what each agent did</div>{who}{outcome}</div></details>')
 
 
+def _simple_legend() -> str:
+    """A compact key for the emojis used in the per-agent timelines."""
+    items = [
+        ("🔬", "measured a noisy reading"),
+        ("💬", "sent a message"),
+        ("🏷️", "offered a trade (dimmed = no one accepted)"),
+        ("🤝", "bought — a settled trade"),
+        ("💰 sold", "was paid for a value it sold"),
+        ("💸", "gave credits to a peer"),
+        ("✨", "revived by a peer's gift"),
+        ("🎯", "submitted its estimate"),
+        ("💀", "eliminated (0 credits)"),
+        ("💭", "its private reasoning"),
+        ("💰 N", "credits left after that step"),
+    ]
+    chips = "".join(f'<span class="lkey"><b>{e}</b> {t}</span>' for e, t in items)
+    return f'<div class="simple-legend">{chips}</div>'
+
+
 def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> str:
     """Render the 'system prompt -> what each agent did -> outcome' view, grouped by game, with a scoreboard on top."""
     games = _games(events)
@@ -533,6 +554,7 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
 
     parts = [f'<h1>{html.escape(title)}</h1><p class="sub">{html.escape(sub)}</p>']
     parts.append(_scoreboard_html(events))
+    parts.append(_simple_legend())
 
     if prompt:
         parts.append(
