@@ -632,8 +632,9 @@ def render_comparison(runs: List[tuple]) -> str:
         ("wall (interdependence)", chip, False, D["offset"]),
         ("prior σ / noise τ", lambda d: num(f'{d["c"].get("prior_sigma", 0):.0f} / {d["c"].get("tau", 0):.0f}'),
          False, "The public prior spread (σ) and the measurement noise (τ) this run used."),
-        ("games · rounds", lambda d: num(f'{d["s"]["n_games"]} · {d["n"]}'),
-         False, "Games played back-to-back, and total rounds across them."),
+        ("games × rounds each", lambda d: num(f'{d["s"]["n_games"]} × {d["c"].get("n_rounds", "?")}'),
+         False, "Games played back-to-back × rounds per game (the fixed horizon the agents "
+                "are told). E.g. '10 × 5' = ten games of five rounds each."),
         ("survivor rate", lambda d: bar(d["s"]["survivors"] / max(1, d["s"]["n_agents"]), "var(--amber)"),
          False, D["survivors"]),
         ("cooperation index", lambda d: bar(d["s"]["cooperation"]["cooperation_index"]

@@ -233,6 +233,7 @@ def seed_samples() -> None:
                 "n_agents": len(cfg.get("agent_ids", [])), "tau": cfg.get("tau"),
                 "framing": cfg.get("framing"), "n_games": s.get("n_games"),
                 "rounds": len([e for e in ev if e["event"] == "round_end"]),
+                "n_rounds": cfg.get("n_rounds"),  # rounds PER game (the told horizon)
                 "deception_rate": s["deception"]["deception_rate"],
                 "cooperation": s["cooperation"]["cooperation_index"],
                 "survivors": s["survivors"], "gini": s["gini_final_credits"],
@@ -288,6 +289,7 @@ def _run_job(job_id: str, meta: dict) -> None:
         meta.update(
             status="done",
             rounds=len([e for e in tx.events if e["event"] == "round_end"]),
+            n_rounds=cfg.n_rounds,  # rounds PER game (the told horizon)
             deception_rate=s["deception"]["deception_rate"],
             cooperation=s["cooperation"]["cooperation_index"],
             survivors=s["survivors"], n_agents=s["n_agents"],
@@ -717,7 +719,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <li>
     <a href="/game/{{ g.id }}">{{ g.title }}</a>
     {% if g.status == 'done' %}
-      <span class="m">{{ g.n_agents }} agents · {% if g.n_games and g.n_games > 1 %}{{ g.n_games }} games · {% endif %}{{ g.rounds }} rounds{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
+      <span class="m">{{ g.n_agents }} agents · {% if g.n_games and g.n_games > 1 %}{{ g.n_games }} games × {{ g.n_rounds or (g.rounds // g.n_games) }} rounds{% else %}{{ g.n_rounds or g.rounds }} rounds{% endif %}{% if g.tau is defined %} · τ={{ g.tau }}{% endif %}</span>
       {% if g.deception_rate is defined and g.deception_rate == g.deception_rate %}
         <span class="pill {{ 'bad' if g.deception_rate>0 else 'ok' }}">deception {{ '%.2f'|format(g.deception_rate) }}</span>{% endif %}
       <span class="pill">survivors {{ g.survivors }}/{{ g.n_agents }}</span>
