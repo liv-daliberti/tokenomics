@@ -216,6 +216,7 @@ def price_stats(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                if e["event"] == "respond_trade" and e.get("status") == "accepted"}
 
     def _stats(xs: List[float]) -> Dict[str, Any]:
+        """Summary stats (n, min, max, mean, median) of a list of prices."""
         s = sorted(xs)
         n = len(s)
         if not n:

@@ -65,6 +65,7 @@ def aggregate(values: List[float]) -> Tuple[float, float, int]:
 
 
 def _cell(metric: str, mean: float, ci: float) -> str:
+    """Format a metric's mean±CI as one table cell (percent or raw scalar)."""
     if mean != mean:
         return "n/a"
     return f"{mean:.0%}±{ci:.0%}" if metric in PCT else f"{mean:.1f}±{ci:.1f}"

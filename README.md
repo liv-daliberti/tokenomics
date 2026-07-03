@@ -61,11 +61,13 @@ deception:  {offers: 8, lies: 8, deception_rate: 1.0, ...}
 cooperation:{measurements: 75, shared: 16, cooperation_index: 0.21}
 ```
 
-Run the tests:
+Run the tests (and the docstring lint, which is also enforced by the suite):
 
 ```bash
-python tests/test_market.py     # escrow / contract invariants
-python tests/test_referee.py    # end-to-end game + metrics
+python -m pytest -q                   # full suite (70 tests)
+python tests/test_market.py           # escrow / contract invariants
+python tests/test_referee.py          # end-to-end game + metrics
+python scripts/lint_docstrings.py     # every production def must be documented
 ```
 
 ---

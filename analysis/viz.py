@@ -457,6 +457,8 @@ def _simple_round(start: Dict[str, Any], evs: List[Dict[str, Any]],
     open_c = dict(start.get("credits") or {})
 
     def opening(a):
+        """This agent's credits at the round's OPEN (from round_start; falls back
+        to the stored result for an agent absent from that list)."""
         if a in open_c:
             return open_c[a]
         return res["credits_start"].get(a) if res else None
@@ -595,9 +597,11 @@ def render_comparison(runs: List[tuple]) -> str:
         data.append((label, s, cfg, n_rounds))
 
     def pct(v):
+        """Format a 0..1 metric to 2 decimals, or an em dash for nan/non-numbers."""
         return _fnum(v, 2) if isinstance(v, (int, float)) and v == v else "—"
 
     def wall(c):
+        """Describe the interdependence wall (hard/soft/none) from a config's bias_sigma."""
         b = c.get("bias_sigma", 0) or 0
         kind = "hard" if b >= 200 else ("soft" if b > 0 else "none (symmetric)")
         return f'{kind} · offset σ={_fnum(b, 0)}'

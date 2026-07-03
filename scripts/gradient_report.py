@@ -69,6 +69,7 @@ def collect(pattern: str) -> list:
 # it; endpoint is direct-labelled. Recessive grid, 2px line, 8px markers.       #
 # --------------------------------------------------------------------------- #
 def _chart(rows, key, *, title, unit, color, ymax=None, hero=False):
+    """Render one metric-vs-offset line chart (single series) as inline SVG."""
     W, H = (720, 300) if hero else (340, 210)
     ml, mr, mt, mb = 46, 18, 34, 34
     xs = [r["offset"] for r in rows]
@@ -77,8 +78,13 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False):
     ymax = ymax if ymax is not None else (max(ys) * 1.15 if ys and max(ys) > 0 else 1)
     ymax = max(ymax, 1e-9)
 
-    def px(x): return ml + (x / xmax) * (W - ml - mr)
-    def py(y): return H - mb - (y / ymax) * (H - mt - mb)
+    def px(x):
+        """Data offset -> pixel x."""
+        return ml + (x / xmax) * (W - ml - mr)
+
+    def py(y):
+        """Data value -> pixel y (inverted; baseline at bottom)."""
+        return H - mb - (y / ymax) * (H - mt - mb)
 
     # gridlines + y ticks (4)
     grid = ""
