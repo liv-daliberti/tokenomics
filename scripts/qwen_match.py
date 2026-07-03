@@ -38,6 +38,11 @@ if os.environ.get("ROUNDS"):
     _overrides["n_rounds"] = int(os.environ["ROUNDS"])
 if os.environ.get("MAXTICKS"):
     _overrides["max_ticks"] = int(os.environ["MAXTICKS"])
+# numeric overrides for sweeps (e.g. an interdependence gradient over bias_sigma)
+for _env, _field in (("BIAS_SIGMA", "bias_sigma"), ("PRIOR_SIGMA", "prior_sigma"),
+                     ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost")):
+    if os.environ.get(_env):
+        _overrides[_field] = float(os.environ[_env])
 cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
 print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} games={GAMES} "

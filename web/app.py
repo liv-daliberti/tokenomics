@@ -155,7 +155,9 @@ def _start_job(job_id: str, params: dict) -> None:
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SAMPLE_RUNS = [
-    ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — 5 games, shared memory (co-evolution)"),
+    ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — HARD wall (paired bias; solo is fatal)"),
+    ("docs/samples/qwen3-32b_5games_medium.jsonl", "Qwen3-32B vs Qwen3-32B — MEDIUM wall (solo usually dies)"),
+    ("docs/samples/qwen3-32b_5games_soft.jsonl", "Qwen3-32B vs Qwen3-32B — SOFT wall (solo survives, worse)"),
 ]
 
 
