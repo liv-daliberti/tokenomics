@@ -206,9 +206,12 @@ GPU) and reports these metrics as mean ± 95% CI, with `--compare` to put polici
 side by side — so a claim is backed by a distribution, not one transcript.
 
 **Agent transparency.** Agents are given the exact reward function and the
-per-round break-even error, and after each round they see their own outcome
-(truth, estimate, error, reward, credit change). So a poor decision reflects the
-model's reasoning, not missing information about the rules or its own state.
+survival cost, and after each round they see their own outcome (truth, estimate,
+error, reward, credit change). Deliberately *not* given: a per-round "aim within
+±X" target — handing agents a derived accuracy goal anchored them on solo
+measuring (a real ablation: with the target, Qwen agents ground out measurements
+alone and all died, cooperation 0). Transparency is about the rules and their own
+state, never a prescribed strategy — cooperation must stay emergent.
 
 ---
 
