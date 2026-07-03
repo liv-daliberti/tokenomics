@@ -164,9 +164,61 @@ def test_summary_is_complete():
     cfg = GameConfig(agent_ids=["A", "B", "C", "D"], seed=9)
     res = _run(cfg, "honest_cooperator,bayesian_solo,liar,hoarder")
     s = summary(res.transcript.events)
-    for key in ("deception", "cooperation", "welfare", "gini_final_credits",
-                "survivors", "regret_by_round"):
+    for key in ("deception", "cooperation", "reciprocity", "rescue", "price_stats",
+                "welfare", "gini_final_credits", "survivors", "regret_by_round"):
         assert key in s
+
+
+def test_reciprocity_detects_one_sided_exchange():
+    from analysis.metrics import reciprocity
+    # A shares its reading with B; B measures but never shares back -> one-sided.
+    ev = [
+        {"event": "game_start", "config": {"agent_ids": ["A", "B"]}},
+        {"event": "measure", "agent": "A", "value": 500.0},
+        {"event": "measure", "agent": "B", "value": 510.0},
+        {"event": "message", "sender": "A", "to": "B", "text": "my reading is 500.0"},
+        {"event": "message", "sender": "B", "to": "A", "text": "thanks, noted"},  # no value
+    ]
+    r = reciprocity(ev)
+    assert r["directed"] == {"A->B": 1}
+    assert r["reciprocity_index"] == 0.0 and r["one_sided_pairs"] == 1 and r["mutual_pairs"] == 0
+    # B shares back -> now mutual
+    ev.append({"event": "message", "sender": "B", "to": "A", "text": "mine is 510.0"})
+    r2 = reciprocity(ev)
+    assert r2["reciprocity_index"] == 1.0 and r2["mutual_pairs"] == 1 and r2["one_sided_pairs"] == 0
+
+
+def test_rescue_and_price_stats():
+    from analysis.metrics import rescue, price_stats
+    ev = [
+        {"event": "transfer", "src": "A", "dst": "B", "amount": 3.0},
+        {"event": "revival", "agent": "B", "credits": 3.0},
+        {"event": "elimination", "agent": "B"},
+        {"event": "propose_trade", "trade_id": "T1", "seller": "A", "buyer": "B",
+         "price": 0.0, "claimed_value": 500.0, "seller_observed": [500.0]},
+        {"event": "respond_trade", "trade_id": "T1", "responder": "B", "status": "accepted"},
+        {"event": "propose_trade", "trade_id": "T2", "seller": "A", "buyer": "B",
+         "price": 2.0, "claimed_value": 501.0, "seller_observed": [501.0]},
+        {"event": "respond_trade", "trade_id": "T2", "responder": "B", "status": "accepted"},
+    ]
+    rc = rescue(ev)
+    assert (rc["transfers"], rc["revivals"], rc["eliminations"]) == (1, 1, 1)
+    assert rc["credits_transferred"] == 3.0
+    ps = price_stats(ev)
+    assert ps["settled"]["n"] == 2 and ps["settled_gifts"] == 1 and ps["settled_charged"] == 1
+
+
+def test_study_runner_aggregates():
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "scripts", "study.py")
+    spec = importlib.util.spec_from_file_location("study", path)
+    study = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(study)
+    m = study.run_one("cooperative", "honest_cooperator", 0, 1)
+    assert 0.0 <= m["survival"] <= 1.0 and m["cooperation"] == m["cooperation"]
+    mean, ci, n = study.aggregate([0.5, 0.7, 0.9])
+    assert abs(mean - 0.7) < 1e-9 and n == 3 and ci > 0
 
 
 def test_prompt_states_the_exact_reward_function():

@@ -135,6 +135,90 @@ def cooperation(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any
     }
 
 
+def reciprocity(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any]:
+    """Is information exchange MUTUAL or one-sided? Counts directed value
+    transmissions (a message carrying one of the sender's readings, or an accepted
+    trade) per ordered pair, then scores each exchanging pair by min/max of the two
+    directions. ``reciprocity_index`` = 1 means every pair shares equally both ways,
+    ~0 means one agent gives while the other takes — the 'one-sided market' finding.
+    """
+    measured: Dict[str, list] = defaultdict(list)
+    for e in events:
+        if e["event"] == "measure":
+            measured[e["agent"]].append(e["value"])
+    gstart = next((e for e in events if e["event"] == "game_start"), None)
+    all_agents = gstart["config"]["agent_ids"] if gstart else sorted(measured)
+    parties = {e["trade_id"]: (e["seller"], e["buyer"])
+               for e in events if e["event"] == "propose_trade"}
+
+    tx: Dict[tuple, int] = defaultdict(int)      # (src, dst) -> value transmissions
+    for e in events:
+        if e["event"] == "message":
+            nums = _extract_numbers(e["text"])
+            if not any(abs(v - n) <= tol for v in measured[e["sender"]] for n in nums):
+                continue                          # negotiation, not a value share
+            dsts = ([a for a in all_agents if a != e["sender"]]
+                    if e["to"] == "all" else [e["to"]])
+            for d in dsts:
+                tx[(e["sender"], d)] += 1
+        elif e["event"] == "respond_trade" and e.get("status") == "accepted":
+            sp = parties.get(e["trade_id"])
+            if sp:
+                tx[(sp[0], sp[1])] += 1           # seller delivered to buyer
+
+    ratios, mutual, one_sided = [], 0, 0
+    for a, b in {tuple(sorted(k)) for k in tx}:
+        fwd, rev = tx.get((a, b), 0), tx.get((b, a), 0)
+        hi, lo = max(fwd, rev), min(fwd, rev)
+        if hi == 0:
+            continue
+        ratios.append(lo / hi)
+        mutual += int(lo > 0)
+        one_sided += int(lo == 0)
+    return {
+        "transmissions": sum(tx.values()),
+        "directed": {f"{s}->{d}": c for (s, d), c in sorted(tx.items())},
+        "reciprocity_index": (sum(ratios) / len(ratios)) if ratios else float("nan"),
+        "mutual_pairs": mutual,
+        "one_sided_pairs": one_sided,
+    }
+
+
+def rescue(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Credit gifts and revivals: how much do agents keep each other alive?"""
+    transfers = [e for e in events if e["event"] == "transfer"]
+    return {
+        "transfers": len(transfers),
+        "credits_transferred": sum(e.get("amount", 0.0) for e in transfers),
+        "revivals": sum(1 for e in events if e["event"] == "revival"),
+        "eliminations": sum(1 for e in events if e["event"] == "elimination"),
+    }
+
+
+def price_stats(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Distribution of trade prices — do agents give information away (price 0) or
+    charge for it (price > 0)? Reported for offered and for settled trades."""
+    offers = [e for e in events if e["event"] == "propose_trade"]
+    settled = {e["trade_id"] for e in events
+               if e["event"] == "respond_trade" and e.get("status") == "accepted"}
+
+    def _stats(xs: List[float]) -> Dict[str, Any]:
+        s = sorted(xs)
+        n = len(s)
+        if not n:
+            return {"n": 0}
+        return {"n": n, "min": s[0], "max": s[-1],
+                "mean": sum(s) / n, "median": s[n // 2]}
+
+    settled_prices = [e["price"] for e in offers if e["trade_id"] in settled]
+    return {
+        "offered": _stats([e["price"] for e in offers]),
+        "settled": _stats(settled_prices),
+        "settled_gifts": sum(1 for p in settled_prices if p <= 1e-9),
+        "settled_charged": sum(1 for p in settled_prices if p > 1e-9),
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Regret vs an all-pooling oracle, plus welfare / inequality / survival.       #
 # --------------------------------------------------------------------------- #
@@ -259,6 +343,9 @@ def summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "deception": deception(events),
         "cooperation": cooperation(events),
+        "reciprocity": reciprocity(events),
+        "rescue": rescue(events),
+        "price_stats": price_stats(events),
         "welfare": welfare,
         "gini_final_credits": gini(list(final.values())),
         "survivors": sum(1 for v in alive_final.values() if v),
