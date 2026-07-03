@@ -49,14 +49,20 @@ def _metrics(path: str) -> dict:
     }
 
 
-def collect(pattern: str) -> list:
-    """Load every gradient run, tagging each with its offset (from the filename)."""
+def collect(pattern: str, complete_only: bool = True) -> list:
+    """Load each gradient run, tagged with its offset (from the filename).
+
+    By default only FINISHED matches are included (a complete transcript ends with
+    a ``match_end`` event), so a mid-run partial transcript can't add a misleading
+    noisy point while the sweep is still filling in."""
     rows = []
     for p in sorted(glob.glob(pattern), key=lambda q: float(re.search(r"grad_b(\d+)", q).group(1))):
         off = float(re.search(r"grad_b(\d+)", p).group(1))
         try:
+            if complete_only and "match_end" not in open(p).read():
+                continue
             m = _metrics(p)
-        except Exception as exc:  # partial/໌corrupt file mid-run
+        except Exception as exc:  # partial/corrupt file mid-run
             print(f"  skip {p}: {exc}")
             continue
         m["offset"] = off
@@ -158,7 +164,8 @@ def render(rows: list) -> str:
                .replace("{{TROWS}}", trows).replace("{{N}}", str(n))
 
 
-_HTML = r"""<style>
+_HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
+<style>
   .viz-root{
     --plane:#f4f6f9; --surface:#fbfcfe; --ink:#0d1526; --ink-2:#4a5468; --muted:#8a93a6;
     --grid:#e4e8ef; --axis:#c7cdd8; --border:rgba(13,21,38,.10);
@@ -225,12 +232,16 @@ _HTML = r"""<style>
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
     agents do.</p>
-  <p class="meta">{{N}} runs · Qwen-3-32B×2 · offset σ 0→500 · everything else fixed</p>
+  <p class="meta">{{N}} of 10 runs complete · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies · live, filling in</p>
 
   <div class="card hero">{{HERO}}</div>
-  <p class="lede">The headline: <b>reciprocity of exchange rises with interdependence.</b> When solo play
-    is viable (low offset) the agents barely engage, and what sharing happens is one-sided. As solo becomes
-    unviable, the exchange becomes <b>mutual</b> — each agent gives because it needs what the other has.</p>
+  <p class="lede">Read the <b>trend, not the individual points</b> — each point here is a <b>single match</b>,
+    so the middle of the range is noisy. The robust signal is at the extremes: when solo play is viable (low
+    offset) engagement is weak and any sharing is one-sided; pushing toward "solo is impossible" moves the
+    exchange toward <b>mutual</b>. Note the far right: at the hardest walls <b>survival collapses</b> — agents
+    die before they can establish cooperation, so reciprocity falls back too. A multi-seed sweep (mean ± CI)
+    would sharpen this into a clean dose–response; the cleanest three-point contrast is on the
+    <b>Compare</b> page (5-game runs: reciprocity 0.28 → 0.45 → 0.97).</p>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
@@ -241,7 +252,8 @@ _HTML = r"""<style>
     {{TROWS}}
   </table></div>
 
-  <p class="foot">Each point is one match (Qwen-3-32B × 2, shared memory). "Offset" is a fixed per-agent
+  <p class="foot"><b>Caveat: one match (one seed) per point</b>, so per-point values carry real sampling
+    noise — the curve should firm up with several seeds averaged per offset. "Offset" is a fixed per-agent
     bias added to every reading that round; the two agents' offsets sum to zero, so averaging both readings
     recovers the true value while any single agent — even measuring repeatedly — stays stuck at its own
     offset. Only bias σ varies across runs; prior, noise, budget, survival cost and horizon are held fixed.</p>
