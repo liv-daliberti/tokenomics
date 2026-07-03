@@ -609,9 +609,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <p>When solo play works, the agents just solve it alone. In one match, <b>0 of 196</b> reasoning steps
         even mentioned the other agent.</p></div></div>
     <div class="step"><div class="step-n">2</div><div>
-      <h4>Paying them to cooperate backfired</h4>
-      <p>We retuned the economics to reward teamwork. With clearer stakes they doubled down individually,
-        ground out measurements alone, and <b>died faster</b>.</p></div></div>
+      <h4>Rewarding accuracy backfired</h4>
+      <p>We tried to fix it with payoffs — bigger rewards for good estimates, and we told each agent exactly
+        how close it had to get. But <b>accuracy isn't cooperation</b>: handed a clear target, each agent just
+        measured harder <b>on its own</b> to hit it instead of pooling with the other. Measuring costs credits,
+        so they burned through their budgets and <b>died even faster</b>.</p></div></div>
     <div class="step"><div class="step-n">3</div><div>
       <h4>So we made cooperation the only way to win</h4>
       <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
