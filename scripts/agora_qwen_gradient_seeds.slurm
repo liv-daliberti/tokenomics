@@ -4,7 +4,9 @@
 # tasks, ~4 run at a time on node302's 8 A100s. Only bias_sigma varies; prior,
 # noise, budget, survival cost, horizon are fixed (prior σ = 400, wide).
 # Each match = 10 games x 5 rounds; agents keep the FULL match context (one growing
-# conversation, ~50k tokens by the end -> window bumped to 98304 so it always fits).
+# conversation). Low-offset matches (both agents survive all 10 games) accumulate the
+# most and peaked near ~98k tokens, so the window is 131072 (yarn x4, Qwen3's max) to
+# hold even the chattiest full match. Re-submitting only backfills incomplete seeds.
 #SBATCH -J agora-grad-seeds
 #SBATCH --account=mltheory
 #SBATCH --partition=mltheory
@@ -44,8 +46,8 @@ echo "=== task $SLURM_ARRAY_TASK_ID | bias_sigma=$BIAS | seeds=$SEEDS | port $PO
   --model Qwen/Qwen3-32B --served-model-name qwen3-32b \
   --tensor-parallel-size 2 \
   --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3 \
-  --max-model-len 98304 \
-  --rope-scaling '{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":32768}' \
+  --max-model-len 131072 \
+  --rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}' \
   --gpu-memory-utilization 0.92 --disable-log-requests \
   --port "$PORT" > "runs/qwen/vllm-grads-${BIAS}.log" 2>&1 &
 VLLM_PID=$!
@@ -56,6 +58,14 @@ for i in $(seq 1 120); do
 done
 
 for SEED in $SEEDS; do
+  OUT="runs/qwen/grad_b${BIAS}_s${SEED}"
+  # BACKFILL: skip seeds that already finished (a complete transcript ends with
+  # match_end). Re-submitting the array only re-runs missing/partial matches — e.g.
+  # the low-offset ones that overflowed the smaller window — and leaves good runs be.
+  if grep -ql match_end "${OUT}.jsonl" 2>/dev/null; then
+    echo "=== bias=$BIAS seed=$SEED already complete — skip ==="
+    continue
+  fi
   echo "=== bias=$BIAS seed=$SEED at $(date) ==="
   MODEL=qwen3-32b BASE_URL="http://localhost:$PORT/v1" \
     PRESET=cooperative GAMES="${GAMES:-10}" ROUNDS="${ROUNDS:-5}" MAXTICKS="${MAXTICKS:-4}" SEED="$SEED" \
