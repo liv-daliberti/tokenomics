@@ -32,7 +32,11 @@ export HF_HOME=/n/fs/similarity/tokenomics/.hf_cache
 export HF_HUB_ENABLE_HF_TRANSFER=0
 export VLLM_LOGGING_LEVEL=WARNING
 export TOKENIZERS_PARALLELISM=false
-mkdir -p runs/qwen "$HF_HOME"
+# Per-task torch.compile cache: the array tasks start together and would otherwise
+# race on one shared cache (~/.cache/vllm), corrupting it when a new config forces a
+# recompile. An isolated cache root per task removes the race.
+export VLLM_CACHE_ROOT="/n/fs/similarity/tokenomics/runs/qwen/.vllm_cache/t${SLURM_ARRAY_TASK_ID}"
+mkdir -p runs/qwen "$HF_HOME" "$VLLM_CACHE_ROOT"
 
 echo "=== task $SLURM_ARRAY_TASK_ID | bias_sigma=$BIAS | seeds=$SEEDS | port $PORT | node $(hostname) ==="
 
