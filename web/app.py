@@ -162,10 +162,14 @@ _gspec = _ilu.spec_from_file_location("gradient_report",
 _gradient = _ilu.module_from_spec(_gspec)
 _gspec.loader.exec_module(_gradient)
 
+# Three points ON the sweep dial (not separate hand-run matches): one match per
+# offset, the first seed at that offset in which at least one agent survives, so
+# the transcript is watchable. Labeled by offset so each maps to a point on the
+# dose-response curve.
 _SAMPLE_RUNS = [
-    ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — HARD wall (paired bias; solo is fatal)"),
-    ("docs/samples/qwen3-32b_5games_medium.jsonl", "Qwen3-32B vs Qwen3-32B — MEDIUM wall (solo usually dies)"),
-    ("docs/samples/qwen3-32b_5games_soft.jsonl", "Qwen3-32B vs Qwen3-32B — SOFT wall (solo survives, worse)"),
+    ("docs/samples/sweep_off000.jsonl", "Qwen3-32B ×2 — offset σ=0 (no wall: solo is viable)"),
+    ("docs/samples/sweep_off150.jsonl", "Qwen3-32B ×2 — offset σ=150 (mid wall)"),
+    ("docs/samples/sweep_off300.jsonl", "Qwen3-32B ×2 — offset σ=300 (hard wall: solo often fatal)"),
 ]
 
 
@@ -572,9 +576,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
-  <h1 class="lead">Do language-model agents cooperate?<br><em>Only when they have to.</em></h1>
-  <p class="dek">We built a small world where two AI agents can either go it alone or help each other — and
-    a dial that controls <em>how much they need to</em>.</p>
+  <h1 class="lead">Can you <em>force</em> language-model agents to reciprocate?<br><em>In our tests, no — you
+    mostly just kill them.</em></h1>
+  <p class="dek">We built a small world where two AI agents can go it alone or help each other, and a dial for
+    <em>how much they need to</em>. Turning it up raised mortality — not mutual give-and-take.</p>
 </header>
 
 <section class="sec">
@@ -609,8 +614,8 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <h4>The real question is reciprocity, not sharing</h4>
       <p>Even when each agent could go it alone, they message and swap readings — cooperation as such isn't
         the sticking point. What varies is whether the give-and-take is <b>mutual</b> or <b>one-sided</b>
-        (one agent gives, the other mostly takes). So we measure <b>reciprocity</b> and ask what makes it
-        mutual.</p></div></div>
+        (one agent gives, the other mostly takes). So we measure <b>reciprocity</b> and ask whether making
+        them need each other makes it mutual.</p></div></div>
     <div class="step"><div class="step-n">2</div><div>
       <h4>One dial: how badly they need each other</h4>
       <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
@@ -632,16 +637,19 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">The more they need each other, the more they give back</h2>
-  <div class="prose"><p><b>Reciprocity</b> — how mutual the exchange is — against the offset, aggregated over
-    every finished seed with 95% confidence intervals. Below it: survival, cooperation, messaging, and how
-    much each agent reasons about the other.</p></div>
+  <h2 class="sec-h">A null result: the wall raised mortality, not reciprocity</h2>
+  <div class="prose"><p>Across the sweep, <b>reciprocity did not track interdependence</b>. Point to point it's
+    swamped by seed-to-seed noise — the 95% intervals are about as wide as the scale itself, and the no-wall
+    baseline is as reciprocal as most walled settings. The one clean, monotone signal runs the other way:
+    <b>survival falls as the wall hardens</b>. Push solo play toward impossible and agents die earlier — which
+    also starves reciprocity, since a dead partner can't give anything back.</p></div>
   {% if gradient_charts %}
-  <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.</p>
+  <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.
+    Messaging is shown <b>per agent-round</b>, not as a raw total, so agents dying earlier under hard walls
+    isn't mistaken for "they talked less."</p>
   {{ gradient_charts|safe }}
-  <p class="note"><b>Still filling in:</b> the sweep is running, so the error bars are wide and the middle is
-    noisy — they tighten as seeds land. There's also a real ceiling at the far right: push the wall too hard
-    and agents die before they can establish cooperation. Full report &amp; table on the
+  <p class="note"><b>Still filling in:</b> the sweep is running, so the error bars are wide — they tighten as
+    seeds land, but the flat reciprocity trend is unlikely to reverse. Full report &amp; table on the
     <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {% else %}
   <p class="note">The sweep is running — the charts appear here as runs finish.</p>
@@ -651,27 +659,31 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>Language-model agents don't cooperate just because it would help. <b>They cooperate when they must</b> —
-      and the more they depend on each other, the more the exchange becomes <b>mutual</b> rather than one-sided.</p>
-    <p class="sub">Design implication: to get cooperative multi-agent AI, build <b>interdependence into the
-      task itself</b>. Tuning incentives isn't enough.</p>
+    <p>In this design, <b>making the agents need each other did not make them reciprocate</b> — it mostly made
+      them die. Worth stating plainly as a negative result: interdependence pressure is not, by itself, a lever
+      for mutual cooperation between these language-model agents.</p>
+    <p class="sub">Why it comes out flat: individual matches swing wildly by random seed, and reciprocity is
+      counted only while both agents are alive — so the hard end, where it should peak, is exactly where the
+      denominator collapses. Whether a cleaner signal survives is what the full 50-run sweep is meant to
+      settle; so far it doesn't.</p>
   </div>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">See for yourself</p>
   <h2 class="sec-h">Explore the runs</h2>
-  <div class="prose"><p>Every run is Qwen-3-32B against itself. Open one to watch each agent reason, measure,
-    message, and trade — tick by tick — then who survived. The two ends of the dial:</p></div>
+  <div class="prose"><p>Every run is Qwen-3-32B against itself — a single match at one point on the dial. Open
+    one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two
+    ends:</p></div>
   <div class="feat">
-    <a class="fcard hard" href="/game/sample-qwen3-32b-5games"><div class="ft">Hard wall</div>
-      <h4>Solo is impossible → they reciprocate</h4>
-      <p>Both agents realize they need the other's reading, message back and forth, and pool to recover the
-        true value.</p></a>
-    <a class="fcard soft" href="/game/sample-qwen3-32b-5games-soft"><div class="ft">Soft wall</div>
-      <h4>Solo half-works → it stays one-sided</h4>
-      <p>One agent shares generously; the other takes and rarely gives back. Cooperation is optional, so it
-        frays.</p></a>
+    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0</div>
+      <h4>No wall — solo is viable</h4>
+      <p>Each agent can hit the target alone, so messages fly but sharing is sporadic and one-sided when it
+        happens. Both survive.</p></a>
+    <a class="fcard hard" href="/game/sample-sweep-off300"><div class="ft">offset σ = 300</div>
+      <h4>Hard wall — solo is often fatal</h4>
+      <p>A lone agent can't cancel its offset. Games end early as agents run out of credits; the survivor
+        doesn't reliably get anything back.</p></a>
   </div>
   <div class="explore-links">
     <a class="cta" href="/compare">⇄ Compare every run side by side →</a>
@@ -831,9 +843,9 @@ who won and who survived. <a href="/">What is this?</a></p>
 
 COMPARE = _SHELL.replace("{{ inner|safe }}", """
 <a class="back" href="/">← all games</a>
-<p class="sub" style="font-size:13px;margin:10px 0 14px">Every finished game, side by side.
-Use it to contrast setups — e.g. the <b>hard wall</b> (solo is fatal) vs the <b>soft wall</b>
-(solo survives but cooperation pays), and whether the agents actually reciprocate.</p>
+<p class="sub" style="font-size:13px;margin:10px 0 14px">Every finished game, side by side, sorted by
+interdependence (offset σ). Use it to contrast points on the dial — e.g. <b>σ=0</b> (solo is viable) vs
+<b>σ=300</b> (solo is often fatal) — and see how noisy reciprocity is match to match.</p>
 {{ body|safe }}
 """)
 

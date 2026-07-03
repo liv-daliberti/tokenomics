@@ -24,6 +24,9 @@ METRIC_DESCRIPTIONS = {
     "survivor_rate": "Fraction of agents still alive (credits above zero) at each game's end, averaged.",
     "survivors": "How many agents were still alive (credits above zero) at the end.",
     "messages": "Number of free-text messages the agents sent each other.",
+    "messages_per_round": "Messages sent per alive-agent-round — messaging normalized "
+                          "for how long agents actually lived, so early death (common under "
+                          "hard walls) doesn't masquerade as 'they talked less'.",
     "welfare": "Total reward earned across both agents and all rounds — higher means the pair did better.",
     "deception": "Fraction of sold values that matched NONE of the seller's real readings (a verifiable lie).",
     "transmissions": "Readings passed from one agent to another (value-carrying messages + settled trades).",

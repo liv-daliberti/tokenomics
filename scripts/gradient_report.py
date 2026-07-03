@@ -38,12 +38,23 @@ def _metrics(path: str) -> dict:
     reasoning = [e for e in ev if e["event"] == "reasoning"]
     social = sum(1 for e in reasoning if _SOCIAL.search(e["text"]))
     recip = s["reciprocity"]["reciprocity_index"]
+    # EXPOSURE = alive-agent-rounds: how many (agent, round) chances to act there
+    # actually were. It falls as the wall hardens (agents die earlier), so raw
+    # counts like "messages sent" drop mechanically. Normalizing by exposure
+    # separates "acted less per chance" from "had fewer chances" — see DESIGN.md.
+    gstart = next((e for e in ev if e["event"] == "game_start"), None)
+    agents = gstart["config"]["agent_ids"] if gstart else []
+    exposure = sum(len(e.get("alive") or agents)
+                   for e in ev if e["event"] == "round_start")
+    msgs = sum(1 for e in ev if e["event"] == "message")
     return {
         "offset": None,  # filled by caller
         "survivor_rate": sum(surv) / len(surv),
         "cooperation": s["cooperation"]["cooperation_index"] if s["cooperation"]["measurements"] else 0.0,
         "reciprocity": 0.0 if (recip != recip) else recip,  # nan -> 0 (no mutual exchange)
-        "messages": sum(1 for e in ev if e["event"] == "message"),
+        "messages": msgs,                                   # raw total (exposure-confounded)
+        "messages_per_round": (msgs / exposure) if exposure else 0.0,  # fair rate
+        "exposure": exposure,
         "social_frac": (social / len(reasoning)) if reasoning else 0.0,
         "welfare": s["welfare"],
         "n_games": s["n_games"],
@@ -74,7 +85,8 @@ def collect(pattern: str, complete_only: bool = True) -> list:
     return rows
 
 
-_AGG_KEYS = ["survivor_rate", "cooperation", "reciprocity", "messages", "social_frac", "welfare"]
+_AGG_KEYS = ["survivor_rate", "cooperation", "reciprocity", "messages",
+             "messages_per_round", "exposure", "social_frac", "welfare"]
 
 
 def collect_multiseed(pattern: str) -> dict:
@@ -275,7 +287,8 @@ def _figures(rows: list):
     panels = "".join([
         _chart(rows, "survivor_rate", title="Survivor rate", unit="pct", color="var(--c-surv)", ymax=1.0, desc=D["survivor_rate"]),
         _chart(rows, "cooperation", title="Cooperation index", unit="pct", color="var(--c-coop)", ymax=1.0, desc=D["cooperation"]),
-        _chart(rows, "messages", title="Messages sent", unit="n", color="var(--c-msg)", desc=D["messages"]),
+        _chart(rows, "messages_per_round", title="Messages / agent-round", unit="n",
+               color="var(--c-msg)", desc=D["messages_per_round"]),
         _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0, desc=D["social"]),
     ])
     return hero, panels
@@ -302,14 +315,14 @@ def render(rows: list, label: str = "") -> str:
     trows = "".join(
         f'<tr><td>{r["offset"]:.0f}</td><td>{_mv(r,"survivor_rate"):.0%}</td>'
         f'<td>{_mv(r,"cooperation"):.0%}</td><td>{_mv(r,"reciprocity"):.0%}</td>'
-        f'<td>{_mv(r,"messages"):.0f}</td><td>{_mv(r,"social_frac"):.0%}</td>'
+        f'<td>{_mv(r,"messages_per_round"):.2f}</td><td>{_mv(r,"social_frac"):.0%}</td>'
         f'<td>{_mv(r,"welfare"):.0f}</td></tr>' for r in rows)
     label = label or f"{len(rows)} offsets · one match (one seed) per point — preliminary"
     out = _HTML.replace("{{HERO}}", hero).replace("{{PANELS}}", panels)\
                .replace("{{TROWS}}", trows).replace("{{LABEL}}", html.escape(label))
     for token, key in (("{{D_offset}}", "offset"), ("{{D_surv}}", "survivor_rate"),
                        ("{{D_coop}}", "cooperation"), ("{{D_recip}}", "reciprocity"),
-                       ("{{D_msg}}", "messages"), ("{{D_soc}}", "social"),
+                       ("{{D_msg}}", "messages_per_round"), ("{{D_soc}}", "social"),
                        ("{{D_welf}}", "welfare")):
         out = out.replace(token, html.escape(D[key]))
     return out
@@ -374,7 +387,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 </style>
 <div class="viz-root"><div class="wrap">
   <p class="eyebrow">Agora · multi-agent LLM · dose–response</p>
-  <h1>Cooperation switches on when you make it necessary</h1>
+  <h1>Making agents need each other raised mortality, not reciprocity</h1>
   <p class="stand">Two Qwen-3-32B agents estimate the same hidden number. We dial one knob — an
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
@@ -382,13 +395,13 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
-  <p class="lede">Read the <b>trend, not the individual points</b> — each point here is a <b>single match</b>,
-    so the middle of the range is noisy. The robust signal is at the extremes: when solo play is viable (low
-    offset) engagement is weak and any sharing is one-sided; pushing toward "solo is impossible" moves the
-    exchange toward <b>mutual</b>. Note the far right: at the hardest walls <b>survival collapses</b> — agents
-    die before they can establish cooperation, so reciprocity falls back too. A multi-seed sweep (mean ± CI)
-    would sharpen this into a clean dose–response; the cleanest three-point contrast is on the
-    <b>Compare</b> page (5-game runs: reciprocity 0.28 → 0.45 → 0.97).</p>
+  <p class="lede">The headline is a <b>null</b>: reciprocity (top) does <b>not</b> rise with the offset. Point to
+    point it's dominated by seed noise — the 95% intervals are about as wide as the scale, and the no-wall
+    baseline is as reciprocal as most walled settings. The one clean, monotone trend is <b>survival</b>, and it
+    falls: harder walls kill agents earlier, and a dead partner can't reciprocate, so the alive-gated
+    reciprocity denominator collapses right where the effect was supposed to appear. Messaging is shown
+    <b>per agent-round</b> so that earlier deaths aren't miscounted as "talked less." Read the <b>trend, not the
+    individual points</b> — each point is a mean over seeds with real spread.</p>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
@@ -399,17 +412,18 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
       <th title="{{D_surv}}" style="cursor:help">survivors</th>
       <th title="{{D_coop}}" style="cursor:help">cooperation</th>
       <th title="{{D_recip}}" style="cursor:help">reciprocity</th>
-      <th title="{{D_msg}}" style="cursor:help">messages</th>
+      <th title="{{D_msg}}" style="cursor:help">msgs/round</th>
       <th title="{{D_soc}}" style="cursor:help">reasons re partner</th>
       <th title="{{D_welf}}" style="cursor:help">welfare</th></tr>
     {{TROWS}}
   </table></div>
 
-  <p class="foot"><b>Caveat: one match (one seed) per point</b>, so per-point values carry real sampling
-    noise — the curve should firm up with several seeds averaged per offset. "Offset" is a fixed per-agent
-    bias added to every reading that round; the two agents' offsets sum to zero, so averaging both readings
-    recovers the true value while any single agent — even measuring repeatedly — stays stuck at its own
-    offset. Only bias σ varies across runs; prior, noise, budget, survival cost and horizon are held fixed.</p>
+  <p class="foot"><b>Each point is a mean over seeds (± 95% CI).</b> The intervals are wide because
+    match-to-match variance is large relative to any offset effect on reciprocity — that width <i>is</i> the
+    finding, not a rendering artifact. "Offset" is a fixed per-agent bias added to every reading that round;
+    the two agents' offsets sum to zero, so averaging both readings recovers the true value while any single
+    agent — even measuring repeatedly — stays stuck at its own offset. Only bias σ varies across runs; prior,
+    noise, budget, survival cost and horizon are held fixed. Messaging is normalized per alive-agent-round.</p>
 </div></div>
 <div class="tip" id="tip"></div>
 <script>
