@@ -154,6 +154,14 @@ def _start_job(job_id: str, params: dict) -> None:
 
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Reuse the dose-response renderer (a script) to serve /gradient in-app.
+import importlib.util as _ilu  # noqa: E402
+_gspec = _ilu.spec_from_file_location("gradient_report",
+                                      os.path.join(_REPO, "scripts", "gradient_report.py"))
+_gradient = _ilu.module_from_spec(_gspec)
+_gspec.loader.exec_module(_gradient)
+
 _SAMPLE_RUNS = [
     ("docs/samples/qwen3-32b_5games.jsonl", "Qwen3-32B vs Qwen3-32B — HARD wall (paired bias; solo is fatal)"),
     ("docs/samples/qwen3-32b_5games_medium.jsonl", "Qwen3-32B vs Qwen3-32B — MEDIUM wall (solo usually dies)"),
@@ -373,6 +381,26 @@ def compare():
     return render_template_string(COMPARE, css=_CSS, body=body)
 
 
+@app.route("/gradient")
+def gradient():
+    """The interdependence dose-response report: offset (bias σ) vs cooperation,
+    reciprocity, survival, and messaging, as small-multiple charts."""
+    rows = []
+    for base in ("docs/samples/gradient", "runs/qwen"):  # committed data, then local runs
+        rows = _gradient.collect(os.path.join(_REPO, base, "grad_b*.jsonl"))
+        if rows:
+            break
+    if not rows:
+        return render_template_string(
+            COMPARE, css=_CSS,
+            body='<h1>Interdependence gradient</h1><p class="sub">No gradient runs yet — '
+                 'run the offset sweep (<code>scripts/agora_qwen_gradient.slurm</code>) to populate it.</p>')
+    nav = ('<a href="/" style="position:fixed;top:12px;left:14px;z-index:99;'
+           'font:13px/1 system-ui,sans-serif;color:#3987e5;text-decoration:none;'
+           'background:rgba(20,22,30,.72);padding:7px 11px;border-radius:9px">← all games</a>')
+    return nav + _gradient.render(rows)
+
+
 @app.route("/status/<job_id>")
 def status(job_id: str):
     """JSON status of a job, for the game page's auto-refresh poll."""
@@ -477,6 +505,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:28px">
   <h2 style="font-size:20px;margin:0">Games</h2>
   <div style="display:flex;gap:8px;align-items:center">
+    <a class="ghost" href="/gradient" style="margin:0;padding:6px 12px;font-size:12px;text-decoration:none">📈 Gradient</a>
   {% if games %}<a class="ghost" href="/compare" style="margin:0;padding:6px 12px;font-size:12px;text-decoration:none">⇄ Compare</a>
     <form method="post" action="/delete_all" style="margin:0"
       onsubmit="return confirm('Delete ALL games? This cannot be undone.')">
