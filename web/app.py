@@ -162,14 +162,21 @@ _gspec = _ilu.spec_from_file_location("gradient_report",
 _gradient = _ilu.module_from_spec(_gspec)
 _gspec.loader.exec_module(_gradient)
 
-# Three points ON the sweep dial (not separate hand-run matches): one match per
-# offset, the first seed at that offset in which at least one agent survives, so
-# the transcript is watchable. Labeled by offset so each maps to a point on the
-# dose-response curve.
+# One browsable match PER POINT on the sweep dial (not separate hand-run matches):
+# for each offset, the first seed in which at least one agent survives (else the
+# first complete seed), so every point on the dose-response curve is openable.
+# Order here = order shown in the gallery (see `seed_samples`).
 _SAMPLE_RUNS = [
     ("docs/samples/sweep_off000.jsonl", "Qwen3-32B ×2 — offset σ=0 (no wall: solo is viable)"),
+    ("docs/samples/sweep_off050.jsonl", "Qwen3-32B ×2 — offset σ=50 (soft wall)"),
+    ("docs/samples/sweep_off100.jsonl", "Qwen3-32B ×2 — offset σ=100 (soft wall)"),
     ("docs/samples/sweep_off150.jsonl", "Qwen3-32B ×2 — offset σ=150 (mid wall)"),
+    ("docs/samples/sweep_off200.jsonl", "Qwen3-32B ×2 — offset σ=200 (mid wall)"),
+    ("docs/samples/sweep_off250.jsonl", "Qwen3-32B ×2 — offset σ=250 (mid-hard wall)"),
     ("docs/samples/sweep_off300.jsonl", "Qwen3-32B ×2 — offset σ=300 (hard wall: solo often fatal)"),
+    ("docs/samples/sweep_off350.jsonl", "Qwen3-32B ×2 — offset σ=350 (hard wall)"),
+    ("docs/samples/sweep_off400.jsonl", "Qwen3-32B ×2 — offset σ=400 (very hard wall)"),
+    ("docs/samples/sweep_off500.jsonl", "Qwen3-32B ×2 — offset σ=500 (hardest: solo hopeless)"),
 ]
 
 
@@ -206,8 +213,12 @@ def seed_samples() -> None:
                             pass
                 seeded.discard(jid)
 
-    # (2)+(3) add any current sample we have not added and the user has not deleted
-    for jid, (rel, title) in current.items():
+    # (2)+(3) add any current sample we have not added and the user has not deleted.
+    # `created` is shifted by the sample's position so the gallery (sorted newest
+    # first) preserves _SAMPLE_RUNS order — git checkouts flatten file mtimes, so
+    # we can't rely on them for ordering.
+    n_samples = len(current)
+    for idx, (jid, (rel, title)) in enumerate(current.items()):
         src = os.path.join(_REPO, rel)
         if jid in seeded or os.path.exists(_meta_path(jid)) or not os.path.exists(src):
             seeded.add(jid)
@@ -218,7 +229,7 @@ def seed_samples() -> None:
             cfg = next(e for e in ev if e["event"] == "game_start")["config"]
             meta = {
                 "id": jid, "status": "done", "title": title,
-                "created": os.path.getmtime(src), "backend": "llm", "preset": "(sample)",
+                "created": os.path.getmtime(src) + (n_samples - idx), "backend": "llm", "preset": "(sample)",
                 "n_agents": len(cfg.get("agent_ids", [])), "tau": cfg.get("tau"),
                 "framing": cfg.get("framing"), "n_games": s.get("n_games"),
                 "rounds": len([e for e in ev if e["event"] == "round_end"]),
