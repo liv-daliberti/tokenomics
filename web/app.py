@@ -589,11 +589,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
-  <h1 class="lead">Can you <em>force</em> language-model agents to reciprocate?<br><em>Not reliably — mostly
-    you just kill them.</em></h1>
-  <p class="dek">We built a small world where two AI agents can go it alone or help each other, and a dial for
-    <em>how much they need to</em>. Turning it up reliably raised mortality; mutual give-and-take stayed
-    noisy.</p>
+  <h1 class="lead">Cooperation is a <em>switch</em>, not a dial.</h1>
+  <p class="dek">Two AI agents can go it alone or help each other. We built a dial for <em>how much they need
+    to</em> — and cooperation flips from <em>off</em> to <em>on</em> the instant going solo is penalized, then
+    flatlines. Turning the dial higher doesn't buy more cooperation. It just raises the body count.</p>
 </header>
 
 <section class="sec">
@@ -625,11 +624,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <h2 class="sec-h">Make cooperation necessary — then dial exactly how much.</h2>
   <div class="steps">
     <div class="step"><div class="step-n">1</div><div>
-      <h4>The real question is reciprocity, not sharing</h4>
-      <p>Even when each agent could go it alone, they message and swap readings — cooperation as such isn't
-        the sticking point. What varies is whether the give-and-take is <b>mutual</b> or <b>one-sided</b>
-        (one agent gives, the other mostly takes). So we measure <b>reciprocity</b> and ask whether making
-        them need each other makes it mutual.</p></div></div>
+      <h4>Two things we can measure directly</h4>
+      <p>When agents <i>can</i> help each other, do they <b>cooperate at all</b> — share readings, talk — or
+        just ignore each other? And when they do, is the give-and-take <b>mutual</b> or <b>one-sided</b> (one
+        gives, the other only takes)? A referee that knows the true value lets us score both. Then we vary how
+        badly they need each other and watch what moves.</p></div></div>
     <div class="step"><div class="step-n">2</div><div>
       <h4>One dial: how badly they need each other</h4>
       <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
@@ -646,28 +645,43 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <p>We run the same game at <b>ten settings</b> of that offset, <b>ten random seeds</b> each — 100
         Qwen-vs-Qwen matches in all. Each match is <b>10 games × 5 rounds</b>, played in one growing
         conversation so the agents keep the <b>full context</b> of everything that came before — holding
-        everything else fixed, and watch how mutual the exchange becomes as solo play gets harder.</p></div></div>
+        everything else fixed, and watch whether, and how, they cooperate as solo play gets harder.</p></div></div>
   </div>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">Mortality rose reliably. Reciprocity didn't.</h2>
-  <div class="prose"><p>Across the sweep, <b>reciprocity does not simply rise with interdependence</b>. It's
-    noisy and non-monotone: low where solo play is viable, a <b>suggestive bump in the mid-range</b> (offsets
-    ~150–250, where the wall bites but agents still mostly survive), then a <b>collapse at the hard end</b> —
-    because the agents die, and a dead partner can't reciprocate. The 95% intervals are wide, so read that bump
-    as a hint, not a law. The one clean, monotone signal runs the other way: <b>survival falls as the wall
-    hardens</b>.</p></div>
+  <h2 class="sec-h">Cooperation flips on at the first sign of need — then flatlines</h2>
+  <div class="prose">
+    <p><b>1 · The dead zone.</b> With <b>no wall</b> (offset 0), the agents almost entirely <b>ignore each
+      other</b>. Across those matches they share just <b>7%</b> of their readings and send <b>≈0 messages a
+      round</b> — three of the four seeds never send a single message — yet they survive fine on their own.
+      Given the option to go solo, they take it, even across ten games with full memory of each other.</p>
+    <p><b>2 · The switch.</b> The instant solo play is even mildly penalized (offset 50), cooperation
+      <b>flips on</b> — jumping to about <b>68%</b>, with steady back-and-forth messaging. It's close to
+      all-or-nothing: off at zero, on at the first hint of need.</p>
+    <p><b>3 · No volume knob.</b> But turning the dial <b>higher</b> doesn't turn cooperation up. From offset
+      50 all the way to 500 it just hovers, noisily, around <b>40–60%</b>. More interdependence doesn't buy
+      more cooperation — it's a <b>switch, not a dial</b>.</p>
+  </div>
   {% if gradient_charts %}
   <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.
     Messaging is shown <b>per agent-round</b>, not as a raw total, so agents dying earlier under hard walls
     isn't mistaken for "they talked less."</p>
   {{ gradient_charts|safe }}
-  <p class="note"><b>Still filling in:</b> the sweep is running, so the error bars are wide — they tighten as
-    seeds land — the mid-range bump may firm up or wash out, but the survival decline is the robust result.
-    Full report &amp; table on the
-    <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
+  <div class="prose" style="margin-top:22px">
+    <p><b>What the dial <i>does</i> control is survival.</b> As the wall hardens the survivor rate falls
+      steadily — from ~90% with no wall down to ~15–30% at the extremes. Past the switch, cranking
+      interdependence doesn't improve cooperation; it just kills agents faster, and a dead agent can't
+      cooperate at all.</p>
+    <p><b>And the exchange never gets fairer.</b> <b>Reciprocity</b> — whether sharing is mutual, or one agent
+      gives while the other only takes — stays <b>noise across the whole range</b> (wide, overlapping
+      intervals). Making them need each other <i>more</i> turns cooperation on; it doesn't make the give-and-take
+      balanced.</p>
+  </div>
+  <p class="note"><b>Still filling in:</b> {{ gradient_label }} — the last seeds are landing, so error bars
+    tighten as they do, but the switch and the survival decline are already clear. Full report, table, and the
+    per-offset breakdown on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {% else %}
   <p class="note">The sweep is running — the charts appear here as runs finish.</p>
   {% endif %}
@@ -676,13 +690,15 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>In this design, <b>making the agents need each other did not reliably make them reciprocate</b> — it
-      reliably made them die. Worth stating plainly as a mostly-negative result: interdependence pressure is
-      not, by itself, a dependable lever for mutual cooperation between these language-model agents.</p>
-    <p class="sub">Why it stays murky: individual matches swing wildly by random seed, and reciprocity is
-      counted only while both agents are alive — so the hard end, where you'd expect the strongest exchange, is
-      exactly where the denominator collapses. There's a hint of a mid-range sweet spot; whether it survives
-      more seeds is what the full 50-run sweep is meant to settle.</p>
+    <p>Cooperation between these language-model agents is <b>gated by necessity, and it's binary</b>. Remove the
+      option to go solo and they start talking and sharing; leave it in and they don't bother — not even over
+      ten games with full memory of each other. But necessity is a <b>switch, not a throttle</b>: you can turn
+      cooperation <b>on</b>, you can't turn it <b>up</b>, and you can't improve its <b>quality</b> — no amount
+      of pressure made the exchange reliably mutual.</p>
+    <p class="sub">Design implication: to get cooperative multi-agent AI, make solo play <b>non-viable</b> —
+      that alone flips cooperation on. But don't expect graded control. Past that threshold, "more
+      interdependence" buys <b>more mortality</b>, not more or fairer cooperation. If you need balanced,
+      reciprocal exchange, structural pressure isn't the lever — it doesn't produce it here.</p>
   </div>
 </section>
 
@@ -690,17 +706,17 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="sec-eyebrow">See for yourself</p>
   <h2 class="sec-h">Explore the runs</h2>
   <div class="prose"><p>Every run is Qwen-3-32B against itself — a single match at one point on the dial. Open
-    one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two
-    ends:</p></div>
+    one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two sides
+    of the switch:</p></div>
   <div class="feat">
-    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0</div>
-      <h4>No wall — solo is viable</h4>
-      <p>Each agent can hit the target alone, so messages fly but sharing is sporadic and one-sided when it
-        happens. Both survive.</p></a>
-    <a class="fcard hard" href="/game/sample-sweep-off300"><div class="ft">offset σ = 300</div>
-      <h4>Hard wall — solo is often fatal</h4>
-      <p>A lone agent can't cancel its offset. Games end early as agents run out of credits; the survivor
-        doesn't reliably get anything back.</p></a>
+    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0 · switch OFF</div>
+      <h4>No wall — the dead zone</h4>
+      <p>Either agent can hit the target alone, so they never bother to talk. Near-zero messages, almost
+        nothing shared — and both survive anyway. Cooperation simply doesn't switch on.</p></a>
+    <a class="fcard hard" href="/game/sample-sweep-off050"><div class="ft">offset σ = 50 · switch ON</div>
+      <h4>A wall appears — cooperation flips on</h4>
+      <p>Now going solo is penalized. Within the first game or two the agents start messaging and pooling
+        readings — the same model, one notch of the dial later.</p></a>
   </div>
   <div class="explore-links">
     <a class="cta" href="/compare">⇄ Compare every run side by side →</a>

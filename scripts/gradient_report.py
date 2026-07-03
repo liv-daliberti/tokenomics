@@ -287,13 +287,17 @@ CHART_CSS = """
 
 
 def _figures(rows: list):
-    """Return (hero chart svg, small-multiple panels svg) for the dose-response."""
+    """Return (hero chart svg, small-multiple panels svg) for the dose-response.
+
+    Cooperation is the hero — it carries the headline (the off→on switch at the
+    first sign of a wall). Survival (the dial's real effect) and reciprocity (the
+    honest null) sit alongside it."""
     D = METRIC_DESCRIPTIONS
-    hero = _chart(rows, "reciprocity", title="Reciprocity of exchange", unit="pct",
-                  color="var(--c-recip)", ymax=1.0, hero=True, desc=D["reciprocity"])
+    hero = _chart(rows, "cooperation", title="Cooperation index", unit="pct",
+                  color="var(--c-coop)", ymax=1.0, hero=True, desc=D["cooperation"])
     panels = "".join([
         _chart(rows, "survivor_rate", title="Survivor rate", unit="pct", color="var(--c-surv)", ymax=1.0, desc=D["survivor_rate"]),
-        _chart(rows, "cooperation", title="Cooperation index", unit="pct", color="var(--c-coop)", ymax=1.0, desc=D["cooperation"]),
+        _chart(rows, "reciprocity", title="Reciprocity of exchange", unit="pct", color="var(--c-recip)", ymax=1.0, desc=D["reciprocity"]),
         _chart(rows, "messages_per_round", title="Messages / agent-round", unit="n",
                color="var(--c-msg)", desc=D["messages_per_round"]),
         _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0, desc=D["social"]),
@@ -397,7 +401,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 </style>
 <div class="viz-root"><div class="wrap">
   <p class="eyebrow">Agora · multi-agent LLM · dose–response</p>
-  <h1>Making agents need each other raised mortality; reciprocity didn't reliably follow</h1>
+  <h1>Cooperation is a switch, not a dial</h1>
   <p class="stand">Two Qwen-3-32B agents estimate the same hidden number. We dial one knob — an
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
@@ -405,13 +409,14 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
-  <p class="lede">Reciprocity (top) does <b>not</b> simply rise with the offset. It's noisy and non-monotone: low
-    where solo play is viable, a <b>suggestive bump in the mid-range</b> (offsets ~150–250, where the wall bites
-    but agents still mostly survive), then a <b>collapse at the hard end</b> — harder walls kill agents earlier,
-    and a dead partner can't reciprocate, so the alive-gated denominator falls apart right where the effect was
-    supposed to peak. The 95% intervals are wide, so read the bump as a hint, not a law. The one clean, monotone
-    trend is <b>survival</b>, and it falls. Messaging is shown <b>per agent-round</b> so that earlier deaths
-    aren't miscounted as "talked less." Read the <b>trend, not the individual points</b>.</p>
+  <p class="lede">The top chart is the finding. With <b>no wall</b> (offset 0) the agents almost entirely
+    <b>ignore each other</b> — they share ~7% of readings and send close to zero messages, yet survive fine
+    alone. The instant solo play is even mildly penalized (offset 50) cooperation <b>flips on</b> (~68%). But
+    turning the dial <b>higher</b> doesn't turn cooperation up — from offset 50 to 500 it just hovers, noisily,
+    around 40–60%. What the dial actually controls is <b>survival</b> (below), which falls steadily as the wall
+    hardens: past the switch you're not buying cooperation, only mortality. And <b>reciprocity</b> — whether the
+    sharing is mutual or one-sided — never reliably climbs above noise. Messaging is shown <b>per agent-round</b>
+    so earlier deaths aren't miscounted as "talked less"; read the <b>trend, not the individual points</b>.</p>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
@@ -428,12 +433,15 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     {{TROWS}}
   </table></div>
 
-  <p class="foot"><b>Each point is a mean over seeds (± 95% CI).</b> The intervals are wide because
-    match-to-match variance is large relative to any offset effect on reciprocity — that width <i>is</i> the
-    finding, not a rendering artifact. "Offset" is a fixed per-agent bias added to every reading that round;
-    the two agents' offsets sum to zero, so averaging both readings recovers the true value while any single
-    agent — even measuring repeatedly — stays stuck at its own offset. Only bias σ varies across runs; prior,
-    noise, budget, survival cost and horizon are held fixed. Messaging is normalized per alive-agent-round.</p>
+  <p class="foot"><b>Each point is a mean over seeds (± 95% CI)</b>, and each seed is a full match of
+    <b>10 games × 5 rounds</b> played in one growing conversation, so the agents carry the entire history with
+    them. "Offset" is a fixed per-agent bias added to every reading that round; the two agents' offsets sum to
+    zero, so averaging both readings recovers the true value while any single agent — even measuring repeatedly
+    — stays stuck at its own offset. Only bias σ varies across runs; prior, noise, budget, survival cost and
+    horizon are held fixed. Cooperation and reciprocity are per-opportunity rates; messaging is normalized per
+    alive-agent-round, so agents dying earlier under hard walls isn't mistaken for "they talked less." Wide
+    reciprocity intervals are the point, not an artifact — that exchange balance simply doesn't track the
+    dial.</p>
 </div></div>
 <div class="tip" id="tip"></div>
 <script>
