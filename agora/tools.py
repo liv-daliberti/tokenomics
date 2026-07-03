@@ -225,6 +225,11 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
                 "reads the true value plus a LARGE offset that is unique to you and does "
                 "NOT change if you measure again — so measuring more only averages out "
                 "small noise, never your offset.")
+        # Across-round behaviour — stated plainly so the agent doesn't misjudge it
+        # (many wrongly assume a re-drawn offset persists and try to self-correct).
+        note += (" Your offset is the SAME in every round of this game, so you could learn it from feedback."
+                 if cfg.bias_persists else
+                 " A fresh offset is drawn for you each round, so a past round tells you nothing about this round's offset.")
         # The solution (offsets cancel; average everyone's readings). Handing this
         # to the agent prompts the very pooling we measure, so it is gated: with
         # strategy_hint=False the agent must discover pooling itself (the

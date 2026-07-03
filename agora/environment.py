@@ -22,18 +22,22 @@ class Environment:
         self._round_truths: List[float] = []
         # paired-bias mode: per-agent instrument offsets for the current round
         self.offsets: dict = {a: 0.0 for a in cfg.agent_ids}
+        self._offsets_drawn = False   # for bias_persists: draw once per game, then keep
 
     def draw_truth(self, round_index: int) -> float:
         """Ground truth for a round: theta ~ Normal(prior_mu, prior_sigma^2).
 
         Every agent estimates this same hidden number ("pick a number"). In
         paired-bias mode (bias_sigma > 0) also draw per-agent instrument offsets
-        that SUM TO ZERO, so averaging every agent's reading cancels them."""
+        that SUM TO ZERO, so averaging every agent's reading cancels them. The
+        offsets are re-drawn each round unless ``bias_persists`` fixes them for the
+        whole game (in which case they are drawn once, on the first round)."""
         theta = self.rng.gauss(self.cfg.prior_mu, self.cfg.prior_sigma)
-        if self.cfg.bias_sigma > 0:
+        if self.cfg.bias_sigma > 0 and not (self.cfg.bias_persists and self._offsets_drawn):
             raw = {a: self.rng.gauss(0.0, self.cfg.bias_sigma) for a in self.cfg.agent_ids}
             mean = sum(raw.values()) / len(raw)
             self.offsets = {a: raw[a] - mean for a in self.cfg.agent_ids}  # sum to 0
+            self._offsets_drawn = True
         # keep the log dense-indexed even if rounds are drawn out of order
         while len(self._round_truths) <= round_index:
             self._round_truths.append(float("nan"))

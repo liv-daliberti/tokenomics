@@ -330,9 +330,11 @@ def _gradient_charts() -> tuple:
     if there is no gradient data."""
     try:
         for base in ("docs/samples/gradient", "runs/qwen"):
-            rows, label = _gradient.load_rows(os.path.join(_REPO, base))
+            bdir = os.path.join(_REPO, base)
+            rows, label = _gradient.load_rows(bdir)
             if rows:
-                return _gradient.charts_block(rows), _gradient.CHART_CSS, label
+                return (_gradient.charts_block(rows, _gradient._load_anchors(bdir)),
+                        _gradient.CHART_CSS, label)
     except Exception:
         pass
     return "", "", ""
@@ -447,9 +449,12 @@ def gradient():
     """The interdependence dose-response report: offset (bias σ) vs cooperation,
     reciprocity, survival, and messaging, as small-multiple charts."""
     rows, label = [], ""
+    anchors = None
     for base in ("docs/samples/gradient", "runs/qwen"):  # committed data, then local runs
-        rows, label = _gradient.load_rows(os.path.join(_REPO, base))
+        bdir = os.path.join(_REPO, base)
+        rows, label = _gradient.load_rows(bdir)
         if rows:
+            anchors = _gradient._load_anchors(bdir)
             break
     if not rows:
         return render_template_string(
@@ -459,7 +464,7 @@ def gradient():
     nav = ('<a href="/" style="position:fixed;top:12px;left:14px;z-index:99;'
            'font:13px/1 system-ui,sans-serif;color:#3987e5;text-decoration:none;'
            'background:rgba(20,22,30,.72);padding:7px 11px;border-radius:9px">← all games</a>')
-    return nav + _gradient.render(rows, label)
+    return nav + _gradient.render(rows, label, anchors)
 
 
 @app.route("/status/<job_id>")

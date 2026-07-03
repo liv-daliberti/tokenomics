@@ -17,10 +17,9 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agora.backends import OpenAIBackend
 from agora.config import PRESETS
-from agora.policies import LLMPolicy
 from agora.referee import run_match
+from agora.run import build_policies
 from agora.transcripts import Transcript
 
 MODEL = os.environ.get("MODEL", "qwen3-32b")
@@ -52,13 +51,15 @@ if os.environ.get("STRATEGY_HINT", "") != "":
     _overrides["strategy_hint"] = os.environ["STRATEGY_HINT"].lower() not in ("0", "false", "no")
 cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
-print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} games={GAMES} "
-      f"rounds={cfg.n_rounds} ticks={cfg.max_ticks} reveal_horizon={cfg.reveal_horizon} "
-      f"url={BASE_URL} -> {OUT}", flush=True)
+# POLICIES cycles over the seats: 'llm' (default, all Qwen) or a mix like
+# 'llm,liar' / 'llm,honest_cooperator' for the D1/D2 trust probe — one Qwen agent
+# against a scripted bot whose honesty is ground truth on both sides.
+POLICIES = os.environ.get("POLICIES", "llm")
+print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} policies={POLICIES} "
+      f"games={GAMES} rounds={cfg.n_rounds} ticks={cfg.max_ticks} "
+      f"framing={cfg.framing} strategy_hint={cfg.strategy_hint} url={BASE_URL} -> {OUT}", flush=True)
 
-backend = OpenAIBackend(model=MODEL, base_url=BASE_URL)
-policies = {a: LLMPolicy(backend, cfg, a, [p for p in ids if p != a], n_games=GAMES)
-            for a in ids}
+policies = build_policies(cfg, POLICIES, MODEL, BASE_URL, n_games=GAMES)
 
 os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
 tx = Transcript(OUT + ".jsonl")

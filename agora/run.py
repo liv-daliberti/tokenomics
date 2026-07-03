@@ -28,18 +28,31 @@ from .referee import GameResult, Referee
 from .transcripts import Transcript
 
 
-def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str) -> Dict[str, object]:
-    """Build the per-agent policy map from a spec: 'llm' -> LLMPolicy on a local vLLM endpoint, otherwise scripted baseline policies cycled over the agents."""
+def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str,
+                   n_games: int = 1) -> Dict[str, object]:
+    """Build the per-agent policy map from a spec, cycled over the agents. Tokens
+    are 'llm' (an LLMPolicy on the vLLM endpoint) or a scripted baseline name. A
+    MIXED spec puts an LLM seat next to a ground-truth bot — e.g. 'llm,liar' pits
+    one Qwen agent against a scripted liar (the D1/D2 probe: does the LLM discount
+    a proven liar, and does a judge recover the referee's lie label?). ``n_games``
+    is passed to LLM seats so the system prompt announces the real match length."""
     ids = cfg.agent_ids
-    if spec == "llm":
+    names = [n.strip() for n in spec.split(",") if n.strip()]
+    unknown = [n for n in names if n != "llm" and n not in REGISTRY]
+    if unknown:
+        raise SystemExit(f"unknown scripted policies: {unknown}; choose from {sorted(REGISTRY)} (or 'llm')")
+    backend = None
+    if "llm" in names:
         from .backends import OpenAIBackend
         backend = OpenAIBackend(model=model, base_url=base_url)
-        return {aid: LLMPolicy(backend, cfg, aid, [p for p in ids if p != aid]) for aid in ids}
-    names = [n.strip() for n in spec.split(",") if n.strip()]
-    unknown = [n for n in names if n not in REGISTRY]
-    if unknown:
-        raise SystemExit(f"unknown scripted policies: {unknown}; choose from {sorted(REGISTRY)}")
-    return {aid: REGISTRY[names[i % len(names)]](cfg, aid, ids) for i, aid in enumerate(ids)}
+
+    def _make(name: str, aid: str):
+        """One agent's policy: an LLM seat or a named scripted baseline."""
+        if name == "llm":
+            return LLMPolicy(backend, cfg, aid, [p for p in ids if p != aid], n_games=n_games)
+        return REGISTRY[name](cfg, aid, ids)
+
+    return {aid: _make(names[i % len(names)], aid) for i, aid in enumerate(ids)}
 
 
 def summarize(result: GameResult, policy_spec: str) -> None:

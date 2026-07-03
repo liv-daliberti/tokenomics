@@ -18,15 +18,20 @@ import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from analysis.metrics import METRIC_DESCRIPTIONS, summary  # noqa: E402
+from analysis.metrics import METRIC_DESCRIPTIONS, deception, load_events, summary  # noqa: E402
 
 _SOCIAL = re.compile(r"(other agent|agent [ab]|average|combine|offset|share|pool|"
                      r"both|together|reciprocat|mutual|exchange|trade|each other)", re.I)
 
 
 def _metrics(path: str) -> dict:
-    """Compute one run's dose-response metrics from its transcript."""
-    ev = [json.loads(l) for l in open(path) if l.strip()]
+    """Compute one run's dose-response metrics from its transcript file."""
+    return _row_from_events([json.loads(l) for l in open(path) if l.strip()])
+
+
+def _row_from_events(ev: list) -> dict:
+    """Compute one run's dose-response metrics from its transcript events (shared
+    by the Qwen runs and the scripted-anchor sweep so both use identical defs)."""
     s = summary(ev)
     # survivor rate: mean over games of (agents alive at game end)/n_agents
     ends = [e["result"] for e in ev if e["event"] == "round_end"]
@@ -47,11 +52,16 @@ def _metrics(path: str) -> dict:
     exposure = sum(len(e.get("alive") or agents)
                    for e in ev if e["event"] == "round_start")
     msgs = sum(1 for e in ev if e["event"] == "message")
+    dec = s["deception"]
     return {
         "offset": None,  # filled by caller
         "survivor_rate": sum(surv) / len(surv),
         "cooperation": s["cooperation"]["cooperation_index"] if s["cooperation"]["measurements"] else 0.0,
         "reciprocity": 0.0 if (recip != recip) else recip,  # nan -> 0 (no mutual exchange)
+        # verified fabrication rate; nan when the run had no sell offers, so the
+        # aggregate is taken only over runs where the escrow channel was used.
+        "deception": (dec["deception_rate"] if dec["offers"] else float("nan")),
+        "offers": dec["offers"],
         "messages": msgs,                                   # raw total (exposure-confounded)
         "messages_per_round": (msgs / exposure) if exposure else 0.0,  # fair rate
         "exposure": exposure,
@@ -85,7 +95,7 @@ def collect(pattern: str, complete_only: bool = True) -> list:
     return rows
 
 
-_AGG_KEYS = ["survivor_rate", "cooperation", "reciprocity", "messages",
+_AGG_KEYS = ["survivor_rate", "cooperation", "reciprocity", "deception", "messages",
              "messages_per_round", "exposure", "social_frac", "welfare"]
 
 
@@ -122,11 +132,46 @@ def aggregate_rows(groups: dict) -> list:
     return rows
 
 
+def _pooled_deception(run_glob: str) -> dict:
+    """Fabrication rate POOLED per offset (sum lies / sum offers) over ALL runs at
+    that offset, complete or not. A rate must pool its denominator, not average
+    per-run rates; and a sell offer is valid data even in an unfinished match, so
+    pooling here (unlike the seed-averaged metrics) keeps the sparse, high-signal
+    trade events instead of dropping whole seeds. Returns {offset: {mean,ci,n}}."""
+    agg: dict = {}
+    for p in glob.glob(run_glob):
+        m = re.search(r"grad_b(\d+)_s(\d+)", os.path.basename(p))
+        if not m:
+            continue
+        try:
+            d = deception(load_events(p))
+        except Exception:
+            continue
+        off = float(m.group(1))
+        lies, offers = agg.get(off, (0, 0))
+        agg[off] = (lies + d["lies"], offers + d["offers"])
+    out = {}
+    for off, (lies, offers) in agg.items():
+        if offers == 0:
+            out[off] = {"mean": float("nan"), "ci": 0.0, "n": 0}
+        else:
+            p = lies / offers
+            ci = 1.96 * math.sqrt(max(p * (1 - p), 0.0) / offers)
+            out[off] = {"mean": p, "ci": ci, "n": offers}
+    return out
+
+
 def write_aggregate(run_glob: str, out_path: str) -> int:
     """Aggregate multi-seed runs and dump a small {label, rows} JSON (committed so
     the deployed site can show mean±CI without shipping 50 transcripts)."""
     groups = collect_multiseed(run_glob)
     rows = aggregate_rows(groups)
+    # Fabrication is pooled per-offer (see _pooled_deception), not seed-averaged,
+    # so it isn't lost when trade-bearing seeds are still mid-run.
+    pooled = _pooled_deception(run_glob)
+    for r in rows:
+        if r["offset"] in pooled:
+            r["deception"] = pooled[r["offset"]]
     total = sum(r["n_seeds"] for r in rows)
     seeds = max((r["n_seeds"] for r in rows), default=0)
     # note the per-match structure (games × rounds) from a sample run, so the chart
@@ -138,6 +183,19 @@ def write_aggregate(run_glob: str, out_path: str) -> int:
     with open(out_path, "w") as fh:
         json.dump({"label": label, "rows": rows}, fh)
     return total
+
+
+def _load_anchors(base_dir: str) -> dict:
+    """Scripted-baseline anchor curves ({spec: rows}) from gradient_anchors.json,
+    if present in ``base_dir`` (written by scripts/scripted_gradient.py). None if
+    absent, so the report degrades to no overlay."""
+    path = os.path.join(base_dir, "gradient_anchors.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        return json.load(open(path)).get("specs")
+    except Exception:
+        return None
 
 
 def load_rows(base_dir: str) -> tuple:
@@ -156,10 +214,13 @@ def load_rows(base_dir: str) -> tuple:
 # SVG line chart (one metric vs offset). Single series -> no legend; title names
 # it; endpoint is direct-labelled. Recessive grid, 2px line, 8px markers.       #
 # --------------------------------------------------------------------------- #
-def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
+def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc="", anchors=None):
     """Render one metric-vs-offset line chart (single series) as inline SVG.
 
-    ``desc`` becomes a hover tooltip on the caption explaining the metric."""
+    ``desc`` becomes a hover tooltip on the caption explaining the metric.
+    ``anchors`` is an optional list of {name, rows, color} scripted-baseline
+    reference series, drawn as thin dashed lines behind the main line so the LLM
+    curve can be read against a ceiling/floor (e.g. honest-cooperator vs solo)."""
     W, H = (720, 300) if hero else (340, 210)
     ml, mr, mt, mb = 46, 18, 34, 34
     xs = [r["offset"] for r in rows]
@@ -211,6 +272,22 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
             band += (f'<rect class="zone" x="{x1:.1f}" y="{mt}" width="{x2-x1:.1f}" '
                      f'height="{H-mt-mb}"/>'
                      f'<text class="zone-l" x="{(x1+x2)/2:.1f}" y="{mt+14}">{name}</text>')
+    # scripted-baseline anchor lines (dashed, behind the main series, direct-labelled)
+    anchor_svg = ""
+    for anc in (anchors or []):
+        axs = [r["offset"] for r in anc["rows"]]
+        ays = []
+        for r in anc["rows"]:
+            v = r.get(key)
+            m = (v["mean"] if isinstance(v, dict) else v) if v is not None else float("nan")
+            ays.append(0.0 if m != m else m)
+        if not axs:
+            continue
+        apath = " ".join(f"{'M' if i==0 else 'L'}{px(x):.1f},{py(min(y, ymax)):.1f}"
+                         for i, (x, y) in enumerate(zip(axs, ays)))
+        anchor_svg += f'<path class="aline" d="{apath}" style="stroke:{anc["color"]}"/>'
+        anchor_svg += (f'<text class="albl" x="{px(axs[-1])-6:.1f}" y="{py(min(ays[-1], ymax))-5:.1f}" '
+                       f'style="fill:{anc["color"]}">{html.escape(anc["name"])}</text>')
     # line + area
     path = " ".join(f"{'M' if i==0 else 'L'}{px(x):.1f},{py(y):.1f}" for i, (x, y) in enumerate(zip(xs, ys)))
     area = (f"M{px(xs[0]):.1f},{py(0):.1f} " +
@@ -248,7 +325,7 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
     return f'''<figure class="chart{' hero' if hero else ''}">
       {cap}
       <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} versus instrument offset">
-        {band}{grid}{xt}
+        {band}{grid}{xt}{anchor_svg}
         <path class="area" d="{area}" style="fill:{color}"/>
         <path class="line" d="{path}" style="stroke:{color}"/>
         {ebars}{dots}{endlab}
@@ -261,7 +338,8 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
 # same charts can be EMBEDDED in the viewer (e.g. the home page) and match it.
 CHART_CSS = """
 .grad{--c-recip:var(--blue);--c-surv:var(--red);--c-coop:var(--green);--c-msg:var(--purple);
-  --c-soc:var(--amber);--zone-ink:#6b7688;--gmono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  --c-soc:var(--amber);--c-dec:#e0637a;--c-ceil:var(--green);--c-floor:#9aa4b2;
+  --zone-ink:#6b7688;--gmono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
 .grad .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 10px;margin:14px 0;}
 .grad .card.hero{padding-bottom:12px;}
 .grad .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
@@ -272,6 +350,8 @@ CHART_CSS = """
 .grad svg{width:100%;height:auto;display:block;overflow:visible;}
 .grad .grid{stroke:var(--line);stroke-width:1;}
 .grad .line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
+.grad .aline{fill:none;stroke-width:1.5;stroke-dasharray:4 4;opacity:.6;stroke-linejoin:round;}
+.grad .albl{fill:var(--mut);font-size:10px;font-weight:600;text-anchor:end;opacity:.9;font-family:var(--gmono);}
 .grad .ebar{stroke-width:1.5;opacity:.55;stroke-linecap:round;}
 .grad .area{opacity:.10;}
 .grad .mk{stroke:var(--card);stroke-width:2;cursor:pointer;transition:r .1s;}
@@ -286,30 +366,48 @@ CHART_CSS = """
 """
 
 
-def _figures(rows: list):
-    """Return (hero chart svg, small-multiple panels svg) for the dose-response.
+def _surv_anchors(anchors: dict) -> list:
+    """Scripted ceiling/floor overlays for the survival chart, if anchors loaded."""
+    if not anchors:
+        return []
+    out = []
+    if anchors.get("honest_cooperator"):
+        out.append({"name": "honest-cooperator (pool)", "rows": anchors["honest_cooperator"],
+                    "color": "var(--c-ceil)"})
+    if anchors.get("bayesian_solo"):
+        out.append({"name": "solo (never share)", "rows": anchors["bayesian_solo"],
+                    "color": "var(--c-floor)"})
+    return out
 
-    Cooperation is the hero — it carries the headline (the off→on switch at the
-    first sign of a wall). Survival (the dial's real effect) and reciprocity (the
-    honest null) sit alongside it."""
+
+def _figures(rows: list, anchors: dict = None):
+    """Return (cooperation hero, survival hero, small-multiple panels) for the
+    dose-response. Cooperation carries the switch; survival — read against the
+    scripted honest-cooperator ceiling and solo floor — shows the LLM leaves
+    survival on the table; deception (near zero) shows the market stays honest."""
     D = METRIC_DESCRIPTIONS
     hero = _chart(rows, "cooperation", title="Cooperation index", unit="pct",
                   color="var(--c-coop)", ymax=1.0, hero=True, desc=D["cooperation"])
+    hero_surv = _chart(rows, "survivor_rate", title="Survivor rate — Qwen vs scripted ceiling & floor",
+                       unit="pct", color="var(--c-surv)", ymax=1.0, hero=True,
+                       desc=D["survivor_rate"], anchors=_surv_anchors(anchors))
     panels = "".join([
-        _chart(rows, "survivor_rate", title="Survivor rate", unit="pct", color="var(--c-surv)", ymax=1.0, desc=D["survivor_rate"]),
+        _chart(rows, "deception", title="Verified fabrication rate", unit="pct", color="var(--c-dec)",
+               ymax=1.0, desc=D["deception"]),
         _chart(rows, "reciprocity", title="Reciprocity of exchange", unit="pct", color="var(--c-recip)", ymax=1.0, desc=D["reciprocity"]),
         _chart(rows, "messages_per_round", title="Messages / agent-round", unit="n",
                color="var(--c-msg)", desc=D["messages_per_round"]),
         _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0, desc=D["social"]),
     ])
-    return hero, panels
+    return hero, hero_surv, panels
 
 
-def charts_block(rows: list) -> str:
-    """The dose-response charts (hero + small multiples) as EMBEDDABLE HTML — no
+def charts_block(rows: list, anchors: dict = None) -> str:
+    """The dose-response charts (heroes + small multiples) as EMBEDDABLE HTML — no
     page chrome — to drop into another page; pair it with CHART_CSS."""
-    hero, panels = _figures(rows)
+    hero, hero_surv, panels = _figures(rows, anchors)
     return (f'<div class="grad"><div class="card hero">{hero}</div>'
+            f'<div class="card hero">{hero_surv}</div>'
             f'<div class="card"><div class="grid2">{panels}</div></div></div>')
 
 
@@ -319,20 +417,29 @@ def _mv(r, k):
     return v["mean"] if isinstance(v, dict) else v
 
 
-def render(rows: list, label: str = "") -> str:
+def _dec_cell(r) -> str:
+    """Deception table cell: a percent, or '—' when the run(s) made no sell offers."""
+    v = _mv(r, "deception")
+    return "—" if (v != v) else f"{v:.0%}"
+
+
+def render(rows: list, label: str = "", anchors: dict = None) -> str:
     """Assemble the full standalone dose-response HTML report."""
     D = METRIC_DESCRIPTIONS
-    hero, panels = _figures(rows)
+    hero, hero_surv, panels = _figures(rows, anchors)
     trows = "".join(
         f'<tr><td>{r["offset"]:.0f}</td><td>{_mv(r,"survivor_rate"):.0%}</td>'
         f'<td>{_mv(r,"cooperation"):.0%}</td><td>{_mv(r,"reciprocity"):.0%}</td>'
+        f'<td>{_dec_cell(r)}</td>'
         f'<td>{_mv(r,"messages_per_round"):.2f}</td><td>{_mv(r,"social_frac"):.0%}</td>'
         f'<td>{_mv(r,"welfare"):.0f}</td></tr>' for r in rows)
     label = label or f"{len(rows)} offsets · one match (one seed) per point — preliminary"
-    out = _HTML.replace("{{HERO}}", hero).replace("{{PANELS}}", panels)\
+    out = _HTML.replace("{{HERO}}", hero).replace("{{HERO_SURV}}", hero_surv)\
+               .replace("{{PANELS}}", panels)\
                .replace("{{TROWS}}", trows).replace("{{LABEL}}", html.escape(label))
     for token, key in (("{{D_offset}}", "offset"), ("{{D_surv}}", "survivor_rate"),
                        ("{{D_coop}}", "cooperation"), ("{{D_recip}}", "reciprocity"),
+                       ("{{D_dec}}", "deception"),
                        ("{{D_msg}}", "messages_per_round"), ("{{D_soc}}", "social"),
                        ("{{D_welf}}", "welfare")):
         out = out.replace(token, html.escape(D[key]))
@@ -346,6 +453,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     --plane:#0f1115; --surface:#171a21; --ink:#e6e9ef; --ink-2:#aeb6c4; --muted:#9aa4b2;
     --grid:#20242e; --axis:#39404e; --border:#252a34;
     --c-recip:#5aa9e6; --c-surv:#e6685a; --c-coop:#5ad19a; --c-msg:#b98ae6; --c-soc:#e6b35a;
+    --c-dec:#e0637a; --c-ceil:#5ad19a; --c-floor:#9aa4b2;
     --zone:rgba(90,169,230,.06); --zone-ink:#6b7688;
     --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -371,6 +479,8 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   svg{width:100%; height:auto; display:block; overflow:visible;}
   .grid{stroke:var(--grid); stroke-width:1;}
   .line{fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
+  .aline{fill:none; stroke-width:1.5; stroke-dasharray:4 4; opacity:.6; stroke-linejoin:round;}
+  .albl{font-size:10px; font-weight:600; text-anchor:end; opacity:.9; font-family:var(--mono);}
   .ebar{stroke-width:1.5; opacity:.55; stroke-linecap:round;}
   .area{opacity:.09;}
   .mk{stroke:var(--surface); stroke-width:2; cursor:pointer; transition:r .1s;}
@@ -398,6 +508,13 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   .tip.wide{white-space:normal; max-width:300px; text-align:left; line-height:1.45; font-size:12px;
     transform:translate(-50%,-112%);}
   .foot{font-size:12.5px; color:var(--muted); margin-top:28px; max-width:64ch;}
+  .findings{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--c-dec);
+    border-radius:14px; padding:6px 22px 14px; margin:26px 0;}
+  .findings h3{font-size:13px; font-family:var(--mono); text-transform:uppercase; letter-spacing:.1em;
+    color:var(--c-dec); font-weight:640; margin:16px 0 6px;}
+  .findings ul{margin:0; padding-left:20px;}
+  .findings li{font-size:14.5px; color:var(--ink-2); margin:9px 0; max-width:66ch; line-height:1.5;}
+  .findings li b{color:var(--ink); font-weight:640;}
 </style>
 <div class="viz-root"><div class="wrap">
   <p class="eyebrow">Agora · multi-agent LLM · dose–response</p>
@@ -405,7 +522,9 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <p class="stand">Two Qwen-3-32B agents estimate the same hidden number. We dial one knob — an
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
-    agents do.</p>
+    agents do. Cooperation flips on at the first hint of a wall — but the referee's <b>ground-truth lie
+    detector</b> also shows they <b>almost never fabricate</b>, and never cooperate deeply enough to survive
+    like a real cooperating pair would.</p>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
@@ -418,7 +537,30 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     sharing is mutual or one-sided — never reliably climbs above noise. Messaging is shown <b>per agent-round</b>
     so earlier deaths aren't miscounted as "talked less"; read the <b>trend, not the individual points</b>.</p>
 
+  <div class="card hero">{{HERO_SURV}}</div>
+  <p class="lede"><b>Read survival against the anchors.</b> The dashed lines are deterministic scripted
+    baselines in the <b>identical</b> game (30 seeds each): an <b>honest-cooperator</b> pair survives ~100% at
+    every offset, while a <b>solo</b> pair (never shares) collapses as the wall hardens. The Qwen agents (solid
+    red) sit <b>between</b> — they cooperate enough to beat solo, but never reach the cooperative ceiling. Past
+    the switch they die in games a cooperating pair walks through: cooperation turns on but stays <b>shallow</b>.</p>
+
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
+
+  <aside class="findings">
+    <h3>What the ground-truth instruments show</h3>
+    <ul>
+      <li><b>They don't lie.</b> Verified fabrication is ~<b>1%</b> of sell offers (1 unambiguous case in 721) —
+        not the 8.7% an earlier detector reported, which scored <b>honest averaging</b> as fraud. When a sold
+        number can't be checked, these agents route around the channel rather than exploit it: <b>81%</b> of
+        matches settle zero trades.</li>
+      <li><b>They don't reason about trust.</b> Across <b>50,580</b> reasoning steps, ~<b>0.5%</b> mention
+        trust, verification, honesty or deception — and those are about their own instrument, not the partner.
+        "Distrust of unverifiable information" is not what blocks cooperation here.</li>
+      <li><b>A third chase a doomed solo fix.</b> The instrument offset is re-drawn every round, but in
+        <b>34 of 100</b> matches an agent infers its offset from last round's revealed truth and subtracts it
+        this round — a solo correction that can't work, and a clue to why survival never reaches the ceiling.</li>
+    </ul>
+  </aside>
 
   <h2>All runs <span style="font-weight:400;text-transform:none;letter-spacing:0">· hover a column for what it means</span></h2>
   <div style="overflow-x:auto"><table>
@@ -427,6 +569,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
       <th data-desc="{{D_surv}}" title="{{D_surv}}">survivors</th>
       <th data-desc="{{D_coop}}" title="{{D_coop}}">cooperation</th>
       <th data-desc="{{D_recip}}" title="{{D_recip}}">reciprocity</th>
+      <th data-desc="{{D_dec}}" title="{{D_dec}}">fabrication</th>
       <th data-desc="{{D_msg}}" title="{{D_msg}}">msgs/round</th>
       <th data-desc="{{D_soc}}" title="{{D_soc}}">reasons re partner</th>
       <th data-desc="{{D_welf}}" title="{{D_welf}}">welfare</th></tr>
@@ -485,12 +628,16 @@ def main(argv=None):
     src = pos[0] if pos else "runs/qwen"
     if "*" in src:                       # explicit glob
         rows, label = collect(src), ""
+        anchor_dir = "docs/samples/gradient"
     else:                                # a directory (prefers the aggregate JSON)
         rows, label = load_rows(src)
-    print(f"collected {len(rows)} points  ({label or 'single-seed'})")
+        anchor_dir = src
+    anchors = _load_anchors(anchor_dir)
+    print(f"collected {len(rows)} points  ({label or 'single-seed'})"
+          f"{'  + scripted anchors' if anchors else '  (no anchors file)'}")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(out, "w") as fh:
-        fh.write(render(rows, label))
+        fh.write(render(rows, label, anchors))
     print(f"wrote {out}")
 
 
