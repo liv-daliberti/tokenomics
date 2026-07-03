@@ -15,6 +15,25 @@ from typing import Any, Dict, List
 
 _NUMPAT = re.compile(r"-?\d+(?:\.\d+)?")
 
+# Plain-language descriptions, surfaced as hover tooltips in the viewer.
+METRIC_DESCRIPTIONS = {
+    "reciprocity": "How MUTUAL the exchange is: 1 = both agents share equally, ~0 = one "
+                   "gives while the other only takes. Counted only while both are alive.",
+    "cooperation": "Fraction of measurements an agent handed to the other — via a message "
+                   "carrying the value, or an accepted trade.",
+    "survivor_rate": "Fraction of agents still alive (credits above zero) at each game's end, averaged.",
+    "survivors": "How many agents were still alive (credits above zero) at the end.",
+    "messages": "Number of free-text messages the agents sent each other.",
+    "welfare": "Total reward earned across both agents and all rounds — higher means the pair did better.",
+    "deception": "Fraction of sold values that matched NONE of the seller's real readings (a verifiable lie).",
+    "transmissions": "Readings passed from one agent to another (value-carrying messages + settled trades).",
+    "trades": "Buy/sell trades that settled — a value delivered in exchange for a price.",
+    "rescues": "Times a dead agent was funded back into the game by a peer's credit transfer.",
+    "social": "Share of an agent's reasoning steps that reference the other agent, sharing, pooling, or averaging.",
+    "offset": "The per-agent instrument bias (σ). Bigger = solo play is harder, because a lone agent "
+              "can't cancel its own offset — only averaging both agents' readings can.",
+}
+
 
 def _extract_numbers(text: str) -> List[float]:
     """Pull all numeric tokens out of a message's text."""

@@ -16,7 +16,7 @@ import html
 import os
 from typing import Any, Dict, List
 
-from .metrics import load_events, scoreboard, summary
+from .metrics import METRIC_DESCRIPTIONS, load_events, scoreboard, summary
 
 _CSS = """
 :root { --bg:#0f1115; --card:#171a21; --line:#252a34; --fg:#e6e9ef; --mut:#9aa4b2;
@@ -627,28 +627,35 @@ def render_comparison(runs: List[tuple]) -> str:
         """A plain right-aligned number cell."""
         return f'<span style="font-variant-numeric:tabular-nums">{v}</span>'
 
+    D = METRIC_DESCRIPTIONS
     rows = [
-        ("wall (interdependence)", chip, False),
-        ("prior σ / noise τ", lambda d: num(f'{d["c"].get("prior_sigma", 0):.0f} / {d["c"].get("tau", 0):.0f}'), False),
-        ("games · rounds", lambda d: num(f'{d["s"]["n_games"]} · {d["n"]}'), False),
-        ("survivor rate", lambda d: bar(d["s"]["survivors"] / max(1, d["s"]["n_agents"]), "var(--amber)"), False),
+        ("wall (interdependence)", chip, False, D["offset"]),
+        ("prior σ / noise τ", lambda d: num(f'{d["c"].get("prior_sigma", 0):.0f} / {d["c"].get("tau", 0):.0f}'),
+         False, "The public prior spread (σ) and the measurement noise (τ) this run used."),
+        ("games · rounds", lambda d: num(f'{d["s"]["n_games"]} · {d["n"]}'),
+         False, "Games played back-to-back, and total rounds across them."),
+        ("survivor rate", lambda d: bar(d["s"]["survivors"] / max(1, d["s"]["n_agents"]), "var(--amber)"),
+         False, D["survivors"]),
         ("cooperation index", lambda d: bar(d["s"]["cooperation"]["cooperation_index"]
-                                            if d["s"]["cooperation"]["measurements"] else 0.0, "var(--green)"), False),
-        ("reciprocity index", lambda d: bar(_recip(d), "var(--blue)"), True),
-        ("value transmissions", lambda d: num(d["s"]["reciprocity"]["transmissions"]), False),
-        ("trades settled", lambda d: num(d["s"]["price_stats"]["settled"].get("n", 0)), False),
-        ("rescues (revivals)", lambda d: num(d["s"]["rescue"]["revivals"]), False),
-        ("welfare (Σ reward)", lambda d: num(f'{d["s"]["welfare"]:.0f}'), False),
+                                            if d["s"]["cooperation"]["measurements"] else 0.0, "var(--green)"),
+         False, D["cooperation"]),
+        ("reciprocity index", lambda d: bar(_recip(d), "var(--blue)"), True, D["reciprocity"]),
+        ("value transmissions", lambda d: num(d["s"]["reciprocity"]["transmissions"]), False, D["transmissions"]),
+        ("trades settled", lambda d: num(d["s"]["price_stats"]["settled"].get("n", 0)), False, D["trades"]),
+        ("rescues (revivals)", lambda d: num(d["s"]["rescue"]["revivals"]), False, D["rescues"]),
+        ("welfare (Σ reward)", lambda d: num(f'{d["s"]["welfare"]:.0f}'), False, D["welfare"]),
         ("deception rate", lambda d: bar(d["s"]["deception"]["deception_rate"], "var(--red)")
-                                     if d["s"]["deception"]["offers"] else '<span style="color:var(--mut)">—</span>', False),
+                                     if d["s"]["deception"]["offers"] else '<span style="color:var(--mut)">—</span>',
+         False, D["deception"]),
     ]
     head = "".join(f'<th style="min-width:150px;vertical-align:bottom">{html.escape(str(d["label"]))}</th>'
                    for d in data)
     body = ""
-    for name, fn, hot in rows:
+    for name, fn, hot, desc in rows:
         hl = ' style="background:rgba(90,169,230,.07)"' if hot else ""
-        namecell = (f'<td style="text-align:left;color:{"var(--fg)" if hot else "var(--mut)"};'
-                    f'font-weight:{600 if hot else 400}">{name}</td>')
+        namecell = (f'<td title="{html.escape(desc)}" style="text-align:left;cursor:help;'
+                    f'color:{"var(--fg)" if hot else "var(--mut)"};'
+                    f'font-weight:{600 if hot else 400};border-bottom:1px dotted var(--line)">{name}</td>')
         cells = "".join(f'<td>{fn(d)}</td>' for d in data)
         body += f'<tr{hl}>{namecell}{cells}</tr>'
     return (

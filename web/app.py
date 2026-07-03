@@ -170,18 +170,43 @@ _SAMPLE_RUNS = [
 
 
 def seed_samples() -> None:
-    """Populate the gallery from the committed sample transcripts, ONCE.
+    """Keep the gallery's curated samples in sync with `_SAMPLE_RUNS`, idempotently.
 
-    A `.seeded` marker means we have seeded before, so a deliberate "Delete all"
-    is not resurrected on restart. A fresh, ephemeral deploy (e.g. Render) has no
-    marker and gets the curated samples."""
+    A `.seeded` file records which sample ids we have added. On start we (1) drop
+    any auto-seeded `sample-*` game that is no longer curated — e.g. an old sample
+    for a mechanic we removed — (2) leave user-run games and user-deleted samples
+    alone, and (3) add any current sample that isn't present yet. A fresh deploy
+    with no file gets the full current set."""
     marker = os.path.join(RUNS, ".seeded")
-    if os.path.exists(marker):
-        return
+    try:
+        seeded = {ln.strip() for ln in open(marker) if ln.strip()}
+    except OSError:
+        seeded = set()
+
+    current = {}  # jid -> (rel, title)
     for rel, title in _SAMPLE_RUNS:
-        src = os.path.join(_REPO, rel)
         jid = "sample-" + re.sub(r"[^a-zA-Z0-9]", "-", os.path.basename(rel).replace(".jsonl", ""))
-        if not os.path.exists(src) or os.path.exists(_meta_path(jid)):
+        current[jid] = (rel, title)
+
+    # (1) remove stale curated samples: any sample-* game not in the current set
+    for f in os.listdir(RUNS):
+        if f.startswith("sample-") and f.endswith(".json"):
+            jid = f[:-5]
+            if jid not in current:
+                for ext in (".json", ".jsonl"):
+                    p = os.path.join(RUNS, jid + ext)
+                    if os.path.exists(p):
+                        try:
+                            os.remove(p)
+                        except OSError:
+                            pass
+                seeded.discard(jid)
+
+    # (2)+(3) add any current sample we have not added and the user has not deleted
+    for jid, (rel, title) in current.items():
+        src = os.path.join(_REPO, rel)
+        if jid in seeded or os.path.exists(_meta_path(jid)) or not os.path.exists(src):
+            seeded.add(jid)
             continue
         try:
             ev = load_events(src)
@@ -200,10 +225,12 @@ def seed_samples() -> None:
             }
             shutil.copy(src, os.path.join(RUNS, jid + ".jsonl"))
             _write_meta(meta)
+            seeded.add(jid)
         except Exception:  # a bad sample must never take down the app
             continue
     try:
-        open(marker, "w").close()
+        with open(marker, "w") as fh:
+            fh.write("\n".join(sorted(seeded)))
     except OSError:
         pass
 
@@ -551,7 +578,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <h2>The dose–response · reciprocity of exchange</h2>
     <a class="cta" href="/gradient">See the live curve →</a>
   </div>
-  <div class="stat-row">
+  <div class="stat-row" title="Reciprocity index — how mutual the exchange is: 1 = both agents share equally, ~0 = one gives while the other only takes.">
     <div class="stat soft"><div class="k">Soft wall · solo survives</div><div class="v">0.28</div>
       <div class="d">one-sided — one agent gives, the other just takes</div></div>
     <div class="stat med"><div class="k">Medium wall</div><div class="v">0.45</div>

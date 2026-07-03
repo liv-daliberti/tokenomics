@@ -9,6 +9,7 @@ Usage: python scripts/gradient_report.py [glob] -o out.html
 from __future__ import annotations
 
 import glob
+import html
 import json
 import math
 import os
@@ -16,7 +17,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from analysis.metrics import summary  # noqa: E402
+from analysis.metrics import METRIC_DESCRIPTIONS, summary  # noqa: E402
 
 _SOCIAL = re.compile(r"(other agent|agent [ab]|average|combine|offset|share|pool|"
                      r"both|together|reciprocat|mutual|exchange|trade|each other)", re.I)
@@ -74,8 +75,10 @@ def collect(pattern: str, complete_only: bool = True) -> list:
 # SVG line chart (one metric vs offset). Single series -> no legend; title names
 # it; endpoint is direct-labelled. Recessive grid, 2px line, 8px markers.       #
 # --------------------------------------------------------------------------- #
-def _chart(rows, key, *, title, unit, color, ymax=None, hero=False):
-    """Render one metric-vs-offset line chart (single series) as inline SVG."""
+def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
+    """Render one metric-vs-offset line chart (single series) as inline SVG.
+
+    ``desc`` becomes a hover tooltip on the caption explaining the metric."""
     W, H = (720, 300) if hero else (340, 210)
     ml, mr, mt, mb = 46, 18, 34, 34
     xs = [r["offset"] for r in rows]
@@ -132,8 +135,10 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False):
         val = (f"{yv:.0%}" if unit == "pct" else (f"{yv:.0f}" if ymax >= 4 else f"{yv:.2f}"))
         endlab = (f'<text class="endlab" x="{px(xs[-1])-8:.1f}" y="{py(ys[-1])-9:.1f}" '
                   f'style="fill:{color}">{val}</text>')
+    cap = (f'<figcaption title="{html.escape(desc)}" style="cursor:help">{title}</figcaption>'
+           if desc else f'<figcaption>{title}</figcaption>')
     return f'''<figure class="chart{' hero' if hero else ''}">
-      <figcaption>{title}</figcaption>
+      {cap}
       <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} versus instrument offset">
         {band}{grid}
         <path class="area" d="{area}" style="fill:{color}"/>
@@ -146,13 +151,14 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False):
 
 def render(rows: list) -> str:
     """Assemble the full dose-response HTML report."""
+    D = METRIC_DESCRIPTIONS
     hero = _chart(rows, "reciprocity", title="Reciprocity of exchange", unit="pct",
-                  color="var(--c-recip)", ymax=1.0, hero=True)
+                  color="var(--c-recip)", ymax=1.0, hero=True, desc=D["reciprocity"])
     panels = "".join([
-        _chart(rows, "survivor_rate", title="Survivor rate", unit="pct", color="var(--c-surv)", ymax=1.0),
-        _chart(rows, "cooperation", title="Cooperation index", unit="pct", color="var(--c-coop)", ymax=1.0),
-        _chart(rows, "messages", title="Messages sent", unit="n", color="var(--c-msg)"),
-        _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0),
+        _chart(rows, "survivor_rate", title="Survivor rate", unit="pct", color="var(--c-surv)", ymax=1.0, desc=D["survivor_rate"]),
+        _chart(rows, "cooperation", title="Cooperation index", unit="pct", color="var(--c-coop)", ymax=1.0, desc=D["cooperation"]),
+        _chart(rows, "messages", title="Messages sent", unit="n", color="var(--c-msg)", desc=D["messages"]),
+        _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0, desc=D["social"]),
     ])
     trows = "".join(
         f'<tr><td>{r["offset"]:.0f}</td><td>{r["survivor_rate"]:.0%}</td>'
@@ -160,26 +166,27 @@ def render(rows: list) -> str:
         f'<td>{r["messages"]:.0f}</td><td>{r["social_frac"]:.0%}</td>'
         f'<td>{r["welfare"]:.0f}</td></tr>' for r in rows)
     n = len(rows)
-    return _HTML.replace("{{HERO}}", hero).replace("{{PANELS}}", panels)\
+    out = _HTML.replace("{{HERO}}", hero).replace("{{PANELS}}", panels)\
                .replace("{{TROWS}}", trows).replace("{{N}}", str(n))
+    for token, key in (("{{D_offset}}", "offset"), ("{{D_surv}}", "survivor_rate"),
+                       ("{{D_coop}}", "cooperation"), ("{{D_recip}}", "reciprocity"),
+                       ("{{D_msg}}", "messages"), ("{{D_soc}}", "social"),
+                       ("{{D_welf}}", "welfare")):
+        out = out.replace(token, html.escape(D[key]))
+    return out
 
 
 _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 <style>
   .viz-root{
-    --plane:#f4f6f9; --surface:#fbfcfe; --ink:#0d1526; --ink-2:#4a5468; --muted:#8a93a6;
-    --grid:#e4e8ef; --axis:#c7cdd8; --border:rgba(13,21,38,.10);
-    --c-recip:#2a78d6; --c-surv:#d03b3b; --c-coop:#1baf7a; --c-msg:#4a3aa7; --c-soc:#eda100;
-    --zone:rgba(42,120,214,.05); --zone-ink:#a3abbd;
+    /* the Agora viewer's dark palette — the gradient page matches the rest of the site */
+    --plane:#0f1115; --surface:#171a21; --ink:#e6e9ef; --ink-2:#aeb6c4; --muted:#9aa4b2;
+    --grid:#20242e; --axis:#39404e; --border:#252a34;
+    --c-recip:#5aa9e6; --c-surv:#e6685a; --c-coop:#5ad19a; --c-msg:#b98ae6; --c-soc:#e6b35a;
+    --zone:rgba(90,169,230,.06); --zone-ink:#6b7688;
     --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
-  @media (prefers-color-scheme:dark){ .viz-root{
-    --plane:#0c0e13; --surface:#161922; --ink:#f2f4f8; --ink-2:#b3bac9;
-    --muted:#7f8798; --grid:#242833; --axis:#39404e; --border:rgba(255,255,255,.10);
-    --c-recip:#3987e5; --c-surv:#e66767; --c-coop:#199e70; --c-msg:#9085e9; --c-soc:#c98500;
-    --zone:rgba(57,135,229,.07); --zone-ink:#5b6577;
-  }}
   .viz-root{background:var(--plane); color:var(--ink); font-family:var(--sans);
     line-height:1.55; margin:0; padding:40px 22px 72px; -webkit-font-smoothing:antialiased;}
   .wrap{max-width:900px; margin:0 auto;}
@@ -245,10 +252,16 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
-  <h2>All runs</h2>
+  <h2>All runs <span style="font-weight:400;text-transform:none;letter-spacing:0">· hover a column for what it means</span></h2>
   <div style="overflow-x:auto"><table>
-    <tr><th>offset σ</th><th>survivors</th><th>cooperation</th><th>reciprocity</th>
-        <th>messages</th><th>reasons re partner</th><th>welfare</th></tr>
+    <tr>
+      <th title="{{D_offset}}" style="cursor:help">offset σ</th>
+      <th title="{{D_surv}}" style="cursor:help">survivors</th>
+      <th title="{{D_coop}}" style="cursor:help">cooperation</th>
+      <th title="{{D_recip}}" style="cursor:help">reciprocity</th>
+      <th title="{{D_msg}}" style="cursor:help">messages</th>
+      <th title="{{D_soc}}" style="cursor:help">reasons re partner</th>
+      <th title="{{D_welf}}" style="cursor:help">welfare</th></tr>
     {{TROWS}}
   </table></div>
 
