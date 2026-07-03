@@ -594,42 +594,71 @@ def render_comparison(runs: List[tuple]) -> str:
         gs = next((e for e in events if e["event"] == "game_start"), {})
         cfg = gs.get("config", {})
         n_rounds = sum(1 for e in events if e["event"] == "round_end")
-        data.append((label, s, cfg, n_rounds))
+        data.append({"label": label, "s": s, "c": cfg, "n": n_rounds,
+                     "bias": cfg.get("bias_sigma", 0) or 0})
+    data.sort(key=lambda d: d["bias"])   # order columns as the interdependence dial
 
-    def pct(v):
-        """Format a 0..1 metric to 2 decimals, or an em dash for nan/non-numbers."""
-        return _fnum(v, 2) if isinstance(v, (int, float)) and v == v else "—"
+    def _recip(d):
+        """Reciprocity index with nan (no exchange) mapped to 0."""
+        v = d["s"]["reciprocity"]["reciprocity_index"]
+        return 0.0 if v != v else v
 
-    def wall(c):
-        """Describe the interdependence wall (hard/soft/none) from a config's bias_sigma."""
-        b = c.get("bias_sigma", 0) or 0
-        kind = "hard" if b >= 200 else ("soft" if b > 0 else "none (symmetric)")
-        return f'{kind} · offset σ={_fnum(b, 0)}'
+    def chip(d):
+        """A coloured wall-strength chip (symmetric → soft → medium → hard)."""
+        b = d["bias"]
+        kind = ("hard" if b >= 250 else "medium" if b >= 130 else "soft" if b > 0 else "symmetric")
+        col = {"hard": "var(--green)", "medium": "var(--amber)",
+               "soft": "var(--red)", "symmetric": "var(--mut)"}[kind]
+        return (f'<span style="display:inline-flex;align-items:center;gap:7px;font-size:12px">'
+                f'<span style="width:8px;height:8px;border-radius:50%;background:{col}"></span>'
+                f'{kind} · σ={b:.0f}</span>')
+
+    def bar(v, color):
+        """A 0..1 metric as a value + mini progress bar (— for nan)."""
+        if not isinstance(v, (int, float)) or v != v:
+            return '<span style="color:var(--mut)">—</span>'
+        w = max(2.0, min(100.0, v * 100))
+        return (f'<div style="display:flex;align-items:center;gap:9px">'
+                f'<span style="font-variant-numeric:tabular-nums;min-width:30px;text-align:right">{v:.2f}</span>'
+                f'<div style="flex:1;min-width:44px;height:6px;background:var(--line);border-radius:4px;overflow:hidden">'
+                f'<div style="width:{w:.0f}%;height:100%;background:{color};border-radius:4px"></div></div></div>')
+
+    def num(v):
+        """A plain right-aligned number cell."""
+        return f'<span style="font-variant-numeric:tabular-nums">{v}</span>'
 
     rows = [
-        ("wall (interdependence)", lambda s, c, n: wall(c)),
-        ("agents", lambda s, c, n: str(len(c.get("agent_ids", [])))),
-        ("prior σ / noise τ", lambda s, c, n: f'{_fnum(c.get("prior_sigma"), 0)} / {_fnum(c.get("tau"), 0)}'),
-        ("games · rounds", lambda s, c, n: f'{s["n_games"]} · {n}'),
-        ("survivors (final)", lambda s, c, n: f'{s["survivors"]}/{s["n_agents"]}'),
-        ("cooperation index", lambda s, c, n: pct(s["cooperation"]["cooperation_index"])),
-        ("reciprocity index", lambda s, c, n: pct(s["reciprocity"]["reciprocity_index"])),
-        ("value transmissions", lambda s, c, n: str(s["reciprocity"]["transmissions"])),
-        ("trades settled", lambda s, c, n: str(s["price_stats"]["settled"].get("n", 0))),
-        ("rescues (revivals)", lambda s, c, n: str(s["rescue"]["revivals"])),
-        ("welfare (Σ reward)", lambda s, c, n: _fnum(s["welfare"], 0)),
-        ("deception rate", lambda s, c, n: pct(s["deception"]["deception_rate"]) if s["deception"]["offers"] else "—"),
+        ("wall (interdependence)", chip, False),
+        ("prior σ / noise τ", lambda d: num(f'{d["c"].get("prior_sigma", 0):.0f} / {d["c"].get("tau", 0):.0f}'), False),
+        ("games · rounds", lambda d: num(f'{d["s"]["n_games"]} · {d["n"]}'), False),
+        ("survivor rate", lambda d: bar(d["s"]["survivors"] / max(1, d["s"]["n_agents"]), "var(--amber)"), False),
+        ("cooperation index", lambda d: bar(d["s"]["cooperation"]["cooperation_index"]
+                                            if d["s"]["cooperation"]["measurements"] else 0.0, "var(--green)"), False),
+        ("reciprocity index", lambda d: bar(_recip(d), "var(--blue)"), True),
+        ("value transmissions", lambda d: num(d["s"]["reciprocity"]["transmissions"]), False),
+        ("trades settled", lambda d: num(d["s"]["price_stats"]["settled"].get("n", 0)), False),
+        ("rescues (revivals)", lambda d: num(d["s"]["rescue"]["revivals"]), False),
+        ("welfare (Σ reward)", lambda d: num(f'{d["s"]["welfare"]:.0f}'), False),
+        ("deception rate", lambda d: bar(d["s"]["deception"]["deception_rate"], "var(--red)")
+                                     if d["s"]["deception"]["offers"] else '<span style="color:var(--mut)">—</span>', False),
     ]
-    head = "".join(f'<th>{html.escape(str(l))}</th>' for l, _, _, _ in data)
+    head = "".join(f'<th style="min-width:150px;vertical-align:bottom">{html.escape(str(d["label"]))}</th>'
+                   for d in data)
     body = ""
-    for name, fn in rows:
-        cells = "".join(f'<td>{fn(s, c, n)}</td>' for _, s, c, n in data)
-        body += f'<tr><td style="text-align:left;color:var(--mut)">{name}</td>{cells}</tr>'
-    return (f'<h1>Compare runs</h1>'
-            f'<p class="sub">key metrics side by side — e.g. hard wall vs soft wall '
-            f'(cooperation, reciprocity, survival)</p>'
-            f'<div style="overflow-x:auto"><table><tr>'
-            f'<th style="text-align:left">metric</th>{head}</tr>{body}</table></div>')
+    for name, fn, hot in rows:
+        hl = ' style="background:rgba(90,169,230,.07)"' if hot else ""
+        namecell = (f'<td style="text-align:left;color:{"var(--fg)" if hot else "var(--mut)"};'
+                    f'font-weight:{600 if hot else 400}">{name}</td>')
+        cells = "".join(f'<td>{fn(d)}</td>' for d in data)
+        body += f'<tr{hl}>{namecell}{cells}</tr>'
+    return (
+        f'<h1 style="margin-bottom:6px">The interdependence dial, run by run</h1>'
+        f'<p class="sub" style="max-width:70ch">Each column is one Qwen-3-32B vs Qwen-3-32B match, ordered '
+        f'left→right by how much the agents are <b>forced to depend on each other</b>. The headline is the '
+        f'<b style="color:var(--blue)">reciprocity</b> row (highlighted): it climbs from one-sided giving '
+        f'toward near-perfect mutual exchange as solo play becomes impossible.</p>'
+        f'<div style="overflow-x:auto;margin-top:18px"><table><tr>'
+        f'<th style="text-align:left;vertical-align:bottom">metric</th>{head}</tr>{body}</table></div>')
 
 
 def _write(in_path: str, out_path: str) -> None:

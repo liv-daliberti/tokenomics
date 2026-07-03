@@ -471,46 +471,124 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 </div>
 
 {% if page != 'create' %}
-<h1>Agora — the Measurement Market</h1>
-<p class="sub">Watch AI agents cooperate, deceive, hoard, and go bust while estimating a hidden number.</p>
+<style>
+  :root{--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  .hero{padding:8px 0 4px;}
+  .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--blue);margin:0 0 16px;}
+  .lead{font-size:clamp(30px,5.2vw,52px);line-height:1.04;letter-spacing:-.022em;font-weight:750;margin:0 0 18px;text-wrap:balance;}
+  .lead em{font-style:normal;color:var(--blue);}
+  .dek{font-size:19px;line-height:1.5;color:var(--mut);max-width:62ch;margin:0;}
+  .dek em{font-style:normal;color:var(--fg);font-weight:500;}
+  .beats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:40px 0 8px;}
+  @media(max-width:760px){.beats{grid-template-columns:1fr;}}
+  .beat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 20px 22px;}
+  .beat-n{font:700 11px/1 var(--mono);color:var(--blue);letter-spacing:.12em;}
+  .beat h3{font-size:17px;margin:13px 0 9px;letter-spacing:-.01em;}
+  .beat p{color:var(--mut);font-size:14px;line-height:1.62;margin:0;}
+  .beat b{color:var(--fg);font-weight:640;}
+  .arc{margin:46px 0 8px;}
+  .arc-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 4px;}
+  .arc-head h2{font:600 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0;}
+  .cta{font:600 14px/1 inherit;color:var(--blue);text-decoration:none;white-space:nowrap;}
+  .cta:hover{text-decoration:underline;}
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0 0;}
+  @media(max-width:640px){.stat-row{grid-template-columns:1fr;}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;position:relative;overflow:hidden;}
+  .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;}
+  .stat.soft::before{background:var(--red);} .stat.med::before{background:var(--amber);} .stat.hard::before{background:var(--green);}
+  .stat .k{font:600 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mut);}
+  .stat .v{font-size:40px;font-weight:750;letter-spacing:-.02em;margin:9px 0 3px;font-variant-numeric:tabular-nums;}
+  .stat.soft .v{color:var(--red);} .stat.med .v{color:var(--amber);} .stat.hard .v{color:var(--green);}
+  .stat .d{font-size:12.5px;color:var(--mut);line-height:1.45;}
+  .arc-note{font-size:15px;color:var(--mut);max-width:66ch;margin:16px 0 0;line-height:1.55;}
+  .arc-note b{color:var(--fg);}
+  .feat{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0 0;}
+  @media(max-width:640px){.feat{grid-template-columns:1fr;}}
+  .fcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;text-decoration:none;color:var(--fg);transition:border-color .12s,transform .12s;}
+  .fcard:hover{border-color:var(--blue);transform:translateY(-1px);}
+  .fcard .ft{font:700 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;}
+  .fcard.hard .ft{color:var(--green);} .fcard.soft .ft{color:var(--red);}
+  .fcard h4{font-size:16px;margin:9px 0 6px;letter-spacing:-.01em;}
+  .fcard p{color:var(--mut);font-size:13px;line-height:1.55;margin:0;}
+  .gallery-head{display:flex;justify-content:space-between;align-items:baseline;margin:44px 0 2px;}
+  .gallery-head h2{font-size:20px;margin:0;letter-spacing:-.01em;}
+</style>
 
-<details class="panel" open>
-  <summary style="cursor:pointer;font-weight:600">What am I looking at?</summary>
-  <div style="color:var(--mut);font-size:14px;line-height:1.65;margin-top:12px">
-    <p style="margin:0 0 10px"><b>Agora</b> is a small testbed for how AI agents behave when they must
-    cooperate under scarcity. Each round a hidden number is drawn (think “cars per hour on a highway”),
-    and every agent tries to <b>estimate it</b>. An agent can spend <b>credits</b> to take a noisy
-    <b>measurement</b>, <b>message</b> the other agents, and <b>buy/sell</b> measurements from them.</p>
-    <p style="margin:0 0 10px">The twist: budgets are tight, so no agent can nail the answer alone — they have
-    to <b>pool their readings</b> to do well. But a shared number <b>can’t be verified</b>, so an agent could
-    lie. Score is how close the guess is to the truth; good scores earn credits to keep playing, and
-    <b>running out means elimination</b>. We watch whether they cooperate, deceive, hoard, or go bust.</p>
-    <p style="margin:0 0 10px"><b>How to read a game:</b> it is split into rounds. Per agent you see its
-    💭 <b>reasoning</b>, the <b>measurements</b> it took, the <b>messages</b> it sent, and any <b>trades</b> —
-    then the <b>outcome</b> (true value, each agent’s answer, its error, reward, and credit balance). A
-    <span class="tag lie">FABRICATED</span> tag marks a sold value that doesn’t match what the seller actually
-    measured. The <b>Scoreboard</b> at the top of a run gives a quick who-won / who-survived summary.</p>
-    <p style="margin:0 0 10px"><b>Each agent has its own private memory.</b> Agent A only ever sees
-    <b>A’s</b> own conversation — its system prompt, its own measurements, the messages sent to it, and
-    its own reasoning — and B only sees <b>B’s</b>. They never read each other’s thoughts or memory; the
-    <i>only</i> way anything crosses between them is when an agent <b>chooses</b> to message or trade.
-    Across a multi-game match each agent keeps <i>its own</i> growing memory, so “co-evolution” is each
-    agent learning privately, never a shared mind.</p>
-    <p style="margin:0"><b>Every run here is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model.
-    Hit <a href="/create">Run new game</a> to pit two of them against each other (this needs a local
-    vLLM endpoint serving the model) — or browse our existing / past games below.</p>
+<header class="hero">
+  <p class="eyebrow">Agora · multi-agent LLM research</p>
+  <h1 class="lead">Do language-model agents cooperate?<br><em>Only when they have to.</em></h1>
+  <p class="dek">Two identical Qwen-3-32B agents each estimate the same hidden number. Each can solve it
+    <em>alone</em> — or pool noisy, costly readings with the other. We watch what they choose, and we can
+    dial exactly how much they <em>need</em> each other.</p>
+</header>
+
+<div class="beats">
+  <article class="beat">
+    <div class="beat-n">01 · THE DEFAULT</div>
+    <h3>Left alone, they don't cooperate</h3>
+    <p>When one agent can solve the task by itself, the two never coordinate — across a whole match
+      <b>0 of 196</b> reasoning steps so much as mention the other agent. Retuning the payoffs to reward
+      teamwork didn't help; it made them <b>more</b> solitary.</p>
+  </article>
+  <article class="beat">
+    <div class="beat-n">02 · THE LEVER</div>
+    <h3>So we make cooperation necessary</h3>
+    <p>Each agent's instrument carries a hidden <b>offset</b> only it has. A lone agent can never cancel
+      its own offset — but <b>averaging both agents' readings</b> does. One dial, from 0 (solo is fine) to
+      500 (solo is hopeless).</p>
+  </article>
+  <article class="beat">
+    <div class="beat-n">03 · THE RESULT</div>
+    <h3>Cooperation switches on</h3>
+    <p>Turn the dial up and the agents start modelling each other, messaging, and — the headline —
+      <b>reciprocating</b>. When solo half-works the exchange is one-sided; when solo is impossible it
+      becomes mutual.</p>
+  </article>
+</div>
+
+<section class="arc">
+  <div class="arc-head">
+    <h2>The dose–response · reciprocity of exchange</h2>
+    <a class="cta" href="/gradient">See the live curve →</a>
   </div>
-</details>
+  <div class="stat-row">
+    <div class="stat soft"><div class="k">Soft wall · solo survives</div><div class="v">0.28</div>
+      <div class="d">one-sided — one agent gives, the other just takes</div></div>
+    <div class="stat med"><div class="k">Medium wall</div><div class="v">0.45</div>
+      <div class="d">the exchange starts to balance out</div></div>
+    <div class="stat hard"><div class="k">Hard wall · solo is fatal</div><div class="v">0.97</div>
+      <div class="d">near-perfect, mutual give-and-take</div></div>
+  </div>
+  <p class="arc-note">Reciprocity index (0 = one-sided, 1 = perfectly mutual) at three settings of the
+    interdependence dial. <b>The more the agents need each other, the more they give back</b> — the
+    finished 10-point sweep is on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
+</section>
 
-<div style="display:flex;justify-content:space-between;align-items:center;margin-top:28px">
-  <h2 style="font-size:20px;margin:0">Games</h2>
-  <div style="display:flex;gap:8px;align-items:center">
-    <a class="ghost" href="/gradient" style="margin:0;padding:6px 12px;font-size:12px;text-decoration:none">📈 Gradient</a>
-  {% if games %}<a class="ghost" href="/compare" style="margin:0;padding:6px 12px;font-size:12px;text-decoration:none">⇄ Compare</a>
-    <form method="post" action="/delete_all" style="margin:0"
+<section class="arc">
+  <div class="arc-head">
+    <h2>Watch it happen</h2>
+    <a class="cta" href="/compare">Compare side by side →</a>
+  </div>
+  <p class="arc-note" style="margin:8px 0 0">Every run is Qwen-3-32B against itself. Open one to see each
+    agent's 💭 reasoning, measurements, messages, and trades tick by tick — then who survived. The two ends
+    of the dial:</p>
+  <div class="feat">
+    <a class="fcard hard" href="/game/sample-qwen3-32b-5games"><div class="ft">Hard wall</div>
+      <h4>Solo is impossible → they reciprocate</h4>
+      <p>Both agents realize they need the other's reading, message back and forth, and pool to recover the
+        true value.</p></a>
+    <a class="fcard soft" href="/game/sample-qwen3-32b-5games-soft"><div class="ft">Soft wall</div>
+      <h4>Solo half-works → it stays one-sided</h4>
+      <p>One agent shares generously; the other takes and rarely gives back. Cooperation is optional, so it
+        frays.</p></a>
+  </div>
+</section>
+
+<div class="gallery-head">
+  <h2>All runs</h2>
+  {% if games %}<form method="post" action="/delete_all" style="margin:0"
       onsubmit="return confirm('Delete ALL games? This cannot be undone.')">
     <button class="ghost" style="margin:0;padding:6px 12px;font-size:12px">Delete all</button></form>{% endif %}
-  </div>
 </div>
 {% if not games %}<p class="sub">No games yet — <a href="/create">run one</a>.</p>{% endif %}
 <ul class="games">
