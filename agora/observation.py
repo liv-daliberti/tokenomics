@@ -8,10 +8,12 @@ text).
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 from .config import GameConfig
-from .types import AgentState, Trade
+from .rewards import break_even_error
+from .types import AgentState, RoundResult, Trade
 
 
 def build_observation(
@@ -24,6 +26,7 @@ def build_observation(
     past_truths: List[float],
     eliminated: Optional[List[str]] = None,
     final_answer: bool = False,
+    last_result: Optional[RoundResult] = None,
 ) -> Dict[str, Any]:
     # NOTE (information isolation): an observation contains ONLY this agent's own
     # measurements, the messages/trades others chose to send it, and the publicly
@@ -62,7 +65,25 @@ def build_observation(
         "current_estimate": state.estimate,
         "past_truths": list(past_truths) if cfg.reveal_truth_after_round else [],
         "final_answer": final_answer,
+        # how accurate you must be to cover this round's survival cost (agent-facing
+        # so the survival math isn't a black box); +inf = no accuracy needed, None
+        # = even a perfect answer can't cover it.
+        "break_even_error": (break_even_error(cfg)
+                             if cfg.elimination_on_ruin and cfg.survival_cost > 0 else None),
     }
+    # Feedback on the round that just finished (only its own outcome; the truth is
+    # public post-round). Lets an agent see how it did and adapt across rounds/games.
+    if last_result is not None and cfg.reveal_truth_after_round:
+        aid = state.agent_id
+        obs["last_round"] = {
+            "round": last_result.round_index,
+            "truth": last_result.truth,
+            "estimate": last_result.estimates.get(aid),
+            "error": last_result.errors.get(aid),
+            "reward": last_result.rewards.get(aid),
+            "credits_start": last_result.credits_start.get(aid),
+            "credits_end": last_result.credits_end.get(aid),
+        }
     return obs
 
 
@@ -87,11 +108,32 @@ def render_observation(obs: Dict[str, Any]) -> str:
         f"({obs['messages_left']} left this round); a trade costs the agreed price; "
         f"transfer moves the amount you choose.",
     ]
+    lr = obs.get("last_round")
+    if lr and lr.get("estimate") is not None:
+        lines.append(
+            f"LAST ROUND (round {lr['round']}): the true value was {lr['truth']:.1f}; you guessed "
+            f"{lr['estimate']:.1f} (error {lr['error']:.1f}); you earned {lr['reward']:g} reward; "
+            f"your credits went {lr['credits_start']:g} → {lr['credits_end']:g}.")
+    elif lr:
+        lines.append(
+            f"LAST ROUND (round {lr['round']}): the true value was {lr['truth']:.1f}; you did not "
+            f"submit, so you were scored on the prior; credits {lr['credits_start']:g} → "
+            f"{lr['credits_end']:g}.")
     if obs.get("eliminate_on_ruin", True) and sc > 0:
         lines.append(
             f"SURVIVAL: {sc:g} credit(s) are deducted at the END of every round. If that leaves "
             f"you at zero you are ELIMINATED — so each round you must earn at least {sc:g} in "
             f"reward (more, once you subtract what you spend) or your credits bleed to zero.")
+        be = obs.get("break_even_error")
+        if be is None:
+            lines.append(
+                "Even a perfect answer cannot fully cover this round's survival cost — you will "
+                "lose some credits no matter what, so spend carefully.")
+        elif be != math.inf:
+            lines.append(
+                f"To break even you need reward enough to cover it: aim to land your final estimate "
+                f"within about ±{be:.0f} of the true value (anything you spend measuring/buying "
+                f"tightens this).")
     elif obs.get("eliminate_on_ruin", True):
         lines.append("SURVIVAL: if your credits ever hit zero you are ELIMINATED.")
     if obs["credits"] < obs["measure_cost"]:

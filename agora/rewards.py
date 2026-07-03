@@ -65,6 +65,49 @@ def reward_for(error: float, cfg: GameConfig, round_index: int = 0) -> float:
     return reward
 
 
+def reward_rule_text(cfg: GameConfig) -> str:
+    """A precise, agent-facing description of exactly how error becomes reward
+    (and reward becomes next-round credits), so an agent can reason about how
+    accurate it must be — not just 'closer is better'."""
+    rtc = cfg.reward_to_credits
+    tail = (f" Each reward token becomes {rtc:g} credit(s) of next-round budget"
+            + (f", plus a fixed {cfg.base_stipend:g}-credit stipend each round."
+               if cfg.base_stipend else "."))
+    if cfg.reward_rule == "normalized":
+        return ("Your reward scales with accuracy on a log scale: "
+                f"{cfg.reward_max} tokens for reaching the best precision pooling could "
+                f"achieve (~{noise_floor(cfg):.0f}), down to 0 for an error as large as the "
+                f"prior spread ({cfg.prior_sigma:g})." + tail)
+    b = cfg.bucket()
+    return (f"Your reward each round is reward = max(0, {cfg.reward_max} - floor(|your "
+            f"estimate - theta| / {b:g})). A perfect answer earns {cfg.reward_max}; every "
+            f"{b:g} units of error costs one token; an error of {b * cfg.reward_max:g} or "
+            f"more earns nothing." + tail)
+
+
+def break_even_error(cfg: GameConfig, extra_spend: float = 0.0,
+                     round_index: int = 0) -> Optional[float]:
+    """Largest |estimate - theta| whose reward still covers the round's survival
+    cost (plus ``extra_spend`` already spent). Returns +inf if survival needs no
+    reward, or None if even a perfect answer cannot cover it."""
+    rtc = cfg.reward_to_credits or 1.0
+    need = max(0.0, (cfg.survival_cost + extra_spend - cfg.base_stipend) / rtc)
+    need_tokens = math.ceil(need - 1e-9)
+    if need_tokens <= 0:
+        return math.inf
+    if reward_for(0.0, cfg, round_index) < need_tokens:
+        return None
+    hi = 4.0 * cfg.prior_sigma + 1.0
+    step = max(cfg.prior_sigma / 500.0, 1e-3)
+    best, e = 0.0, 0.0
+    while e <= hi:
+        if reward_for(e, cfg, round_index) >= need_tokens:
+            best, e = e, e + step
+        else:
+            break
+    return best
+
+
 def settle_round(
     states: Dict[str, AgentState],
     truth: float,

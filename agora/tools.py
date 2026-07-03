@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .config import GameConfig
+from .rewards import reward_rule_text
 from .types import Action, ActionType
 
 
@@ -227,9 +228,8 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         "",
         "Credits are your only budget. Measuring and buying both cost credits; "
         "with zero credits you can neither measure nor buy — you can only reason "
-        "from what you already know. Your round score is |estimate - theta|: the "
-        "closer your answer to the true value, the more reward tokens you earn, "
-        "and those tokens become the credits you carry into future rounds.",
+        "from what you already know.",
+        reward_rule_text(cfg),
         _elimination_text(cfg),
         "",
         "A stated measurement value from another agent is not verified by anyone. "

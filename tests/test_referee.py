@@ -169,6 +169,48 @@ def test_summary_is_complete():
         assert key in s
 
 
+def test_prompt_states_the_exact_reward_function():
+    # An agent must be told the precise error->reward mapping, not just "closer is
+    # better", so it can reason about how accurate it needs to be.
+    cfg = GameConfig(agent_ids=["A", "B"], reward_rule="quantized",
+                     reward_bucket=13.0, reward_max=10, reward_to_credits=1.0)
+    sp = system_prompt(cfg, "A", ["B"])
+    assert "max(0, 10 - floor(" in sp and "/ 13" in sp     # the exact step function
+    assert "reward token becomes 1 credit" in sp           # reward -> credits conversion
+
+
+def test_break_even_error_covers_the_survival_cost():
+    import math
+    from agora.rewards import break_even_error, reward_for
+    cfg = GameConfig(agent_ids=["A"], reward_rule="quantized", reward_bucket=13.0,
+                     reward_max=10, survival_cost=2.5, reward_to_credits=1.0,
+                     base_stipend=0.0, prior_sigma=150.0)
+    be = break_even_error(cfg)
+    assert be not in (None, math.inf)
+    # at/under the threshold you earn enough to cover survival; well past it you don't
+    assert reward_for(be, cfg) >= math.ceil(2.5)
+    assert reward_for(be + 3 * 13.0, cfg) < math.ceil(2.5)
+    # if a perfect answer still can't cover the cost, that is signalled with None
+    assert break_even_error(cfg.with_(survival_cost=999.0)) is None
+
+
+def test_per_round_feedback_is_own_outcome_only_and_resets_each_game():
+    from agora.observation import build_observation, render_observation
+    from agora.types import AgentState, RoundResult
+    cfg = GameConfig(agent_ids=["A", "B"], reveal_truth_after_round=True)
+    st = AgentState(agent_id="A", credits=7.0, tau=cfg.tau, messages_left=cfg.message_quota)
+    rr = RoundResult(round_index=0, truth=500.0,
+                     estimates={"A": 480.0, "B": 510.0}, errors={"A": 20.0, "B": 10.0},
+                     rewards={"A": 8.0, "B": 9.0}, credits_start={"A": 4.0, "B": 4.0},
+                     credits_end={"A": 7.0, "B": 8.0}, alive={"A": True, "B": True})
+    txt = render_observation(build_observation(st, cfg, 1, 0, ["B"], [], [500.0], last_result=rr))
+    assert "LAST ROUND" in txt and "480.0" in txt and "error 20" in txt and "earned 8 reward" in txt
+    assert "510" not in txt and "error 10" not in txt         # never B's private outcome
+    # no feedback at a game's first round (last_result is None)
+    txt0 = render_observation(build_observation(st, cfg, 0, 0, ["B"], [], [], last_result=None))
+    assert "LAST ROUND" not in txt0
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

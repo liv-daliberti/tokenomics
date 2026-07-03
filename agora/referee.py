@@ -92,6 +92,7 @@ class Referee:
         self.market = Market(self.states, self._next_trade_id)
         self.truth = float("nan")
         self.round_index = 0
+        self._last_result = None      # previous round's RoundResult (for feedback)
 
     def _next_trade_id(self) -> str:
         """Return a fresh unique trade id (T1, T2, ...)."""
@@ -175,6 +176,7 @@ class Referee:
                 if alive_before[a] and not self.states[a].alive:
                     self.tx.log("elimination", game_index=self.game_index, round=r, agent=a)
             past_truths.append(self.truth)
+            self._last_result = rr        # feed back to next round's observations
 
         self.tx.log("game_end", final_credits={a: self.states[a].credits
                                                for a in cfg.agent_ids})
@@ -227,8 +229,11 @@ class Referee:
         eliminated = [a for a in cfg.agent_ids if a != aid and not self.states[a].alive]
         pending = [t for t in self.market.trades.values()
                    if t.buyer == aid and t.status == "pending"]
+        # Feedback on the previous round is shown once, at the round's first tick.
+        last = self._last_result if (tick == 0 and not final) else None
         obs = build_observation(st, cfg, self.round_index, tick, peers, pending,
-                                past_truths, eliminated, final_answer=final)
+                                past_truths, eliminated, final_answer=final,
+                                last_result=last)
         st.inbox = []  # surfaced now; each message is shown once
         obs_text = render_observation(obs)
         self.tx.log("prompt", agent=aid, game_index=self.game_index,

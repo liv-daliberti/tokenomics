@@ -453,7 +453,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     agent learning privately, never a shared mind.</p>
     <p style="margin:0"><b>Every run here is Qwen-3-32B vs Qwen-3-32B</b> — two copies of the same open model.
     Hit <a href="/create">Run new game</a> to pit two of them against each other (this needs a local
-    vLLM endpoint serving the model).</p>
+    vLLM endpoint serving the model) — or browse our existing / past games below.</p>
   </div>
 </details>
 
