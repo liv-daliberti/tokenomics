@@ -582,9 +582,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <h2 class="sec-h">Multi-agent AI is coming. Does it actually collaborate?</h2>
   <div class="prose">
     <p>Agents that negotiate, delegate, and split work are arriving fast — but a basic question is unanswered:
-      when cooperation <b>would help</b>, do language-model agents take it, or go it alone? We built a small,
-      controlled world where cooperation is <b>measurable</b> and deception is <b>verifiable</b>, and watched
-      two copies of the same model play it out.</p>
+      when they can help each other, do language-model agents share <b>fairly</b>, or does one carry the other
+      while it takes? We built a small, controlled world where cooperation is <b>measurable</b> and deception
+      is <b>verifiable</b>, and watched two copies of the same model play it out.</p>
   </div>
 </section>
 
@@ -602,59 +602,49 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 </section>
 
 <section class="sec">
-  <p class="sec-eyebrow">What happened</p>
-  <h2 class="sec-h">We couldn't pay them to cooperate — so we made them need to.</h2>
+  <p class="sec-eyebrow">How we tested it</p>
+  <h2 class="sec-h">Make cooperation necessary — then dial exactly how much.</h2>
   <div class="steps">
     <div class="step"><div class="step-n">1</div><div>
-      <h4>Left alone, they don't cooperate</h4>
-      <p>When solo play works, the agents just solve it alone. In one match, <b>0 of 196</b> reasoning steps
-        even mentioned the other agent.</p></div></div>
+      <h4>The real question is reciprocity, not sharing</h4>
+      <p>Even when each agent could go it alone, they message and swap readings — cooperation as such isn't
+        the sticking point. What varies is whether the give-and-take is <b>mutual</b> or <b>one-sided</b>
+        (one agent gives, the other mostly takes). So we measure <b>reciprocity</b> and ask what makes it
+        mutual.</p></div></div>
     <div class="step"><div class="step-n">2</div><div>
-      <h4>Rewarding accuracy backfired</h4>
-      <p>We tried to fix it with payoffs — bigger rewards for good estimates, and we told each agent exactly
-        how close it had to get. But <b>accuracy isn't cooperation</b>: handed a clear target, each agent just
-        measured harder <b>on its own</b> to hit it instead of pooling with the other. Measuring costs credits,
-        so they burned through their budgets and <b>died even faster</b>.</p></div></div>
-    <div class="step"><div class="step-n">3</div><div>
-      <h4>So we made cooperation the only way to win</h4>
+      <h4>One dial: how badly they need each other</h4>
       <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
-        it. Only <b>averaging both agents' readings</b> cancels the offsets and recovers the truth
-        (<a class="cta" style="font-size:inherit" href="/game/sample-qwen3-32b-5games">watch a hard-wall match →</a>):</p>
+        it. Only <b>averaging both agents' readings</b> cancels it and recovers the truth. We turn that offset
+        from <b>0</b> (solo is fine) up to <b>500</b> (solo is hopeless):</p>
       <div class="mechanic">
         <div class="mech-truth">Hidden truth <b>θ = 480</b></div>
         <div class="mech-row"><span class="tg a">You read</span><span class="num">720</span>your instrument runs high</div>
         <div class="mech-row"><span class="tg b">Partner reads</span><span class="num">240</span>theirs runs low</div>
         <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
       </div></div></div>
-    <div class="step"><div class="step-n">4</div><div>
-      <h4>Cooperation switched on</h4>
-      <p>They immediately began modelling each other, messaging, and pooling — the exact behavior that never
-        appeared before.</p></div></div>
+    <div class="step"><div class="step-n">3</div><div>
+      <h4>50 matches across the dial</h4>
+      <p>We run the same game at <b>ten settings</b> of that offset, <b>five random seeds</b> each — 50
+        Qwen-vs-Qwen matches in all — holding everything else fixed, and watch how mutual the exchange
+        becomes as solo play gets harder.</p></div></div>
   </div>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
   <h2 class="sec-h">The more they need each other, the more they give back</h2>
-  <div class="prose"><p>We turned interdependence into a dial and measured <b>reciprocity</b> — whether the
-    exchange is mutual or one-sided. Across three clean settings, it goes from <b>one-sided</b> to
-    <b>fully mutual</b>:</p></div>
-  <div class="stat-row" title="Reciprocity index — how mutual the exchange is: 1 = both agents share equally, ~0 = one gives while the other only takes.">
-    <div class="stat soft"><div class="k">Soft wall · solo survives</div><div class="v">0.28</div>
-      <div class="d">one-sided — one gives, the other just takes</div></div>
-    <div class="stat med"><div class="k">Medium wall</div><div class="v">0.45</div>
-      <div class="d">the exchange starts to balance out</div></div>
-    <div class="stat hard"><div class="k">Hard wall · solo is fatal</div><div class="v">0.97</div>
-      <div class="d">near-perfect, mutual give-and-take</div></div>
-  </div>
+  <div class="prose"><p><b>Reciprocity</b> — how mutual the exchange is — against the offset, aggregated over
+    every finished seed with 95% confidence intervals. Below it: survival, cooperation, messaging, and how
+    much each agent reasons about the other.</p></div>
   {% if gradient_charts %}
-  <p class="note" style="margin-top:22px"><b>The full sweep</b> — {{ gradient_label }}, dialing the offset
-    0 → 500. Hover any point or caption for detail:</p>
+  <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.</p>
   {{ gradient_charts|safe }}
-  <p class="note"><b>Read the trend, not the points:</b> each point is a single match, so the middle is noisy
-    (a multi-seed run is underway). The far right shows a real limit — push the wall too hard and agents die
-    before they can establish cooperation. Full report &amp; table on the
+  <p class="note"><b>Still filling in:</b> the sweep is running, so the error bars are wide and the middle is
+    noisy — they tighten as seeds land. There's also a real ceiling at the far right: push the wall too hard
+    and agents die before they can establish cooperation. Full report &amp; table on the
     <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
+  {% else %}
+  <p class="note">The sweep is running — the charts appear here as runs finish.</p>
   {% endif %}
 </section>
 
