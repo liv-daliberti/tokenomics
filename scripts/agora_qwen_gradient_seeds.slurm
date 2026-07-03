@@ -30,6 +30,12 @@ BIAS=${BIASES[$SLURM_ARRAY_TASK_ID]}
 # ports while both drain on the same node (GPUs are still gated by SLURM gres).
 PORT=$(( ${PORT_BASE:-8900} + SLURM_ARRAY_TASK_ID ))
 SEEDS="${SEEDS:-0 1 2 3 4 5 6 7 8 9}"
+# PREFIX names the output family so a second sweep (e.g. the DE-CONFOUNDED control,
+# FRAMING=neutral STRATEGY_HINT=0) writes distinct files instead of mixing into — or
+# being skipped by the backfill against — the confounded grad_b* runs. Give a second
+# concurrent sweep its own PORT_BASE too (e.g. PREFIX=deconf PORT_BASE=8940).
+#   PREFIX=deconf PORT_BASE=8940 FRAMING=neutral STRATEGY_HINT=0 sbatch --array=0-9 ...
+PREFIX="${PREFIX:-grad}"
 
 VLLM_PY=/n/fs/similarity/Illusion-of-Reasoning/openr1/bin/python
 export LD_LIBRARY_PATH=/n/fs/similarity/Illusion-of-Reasoning/openr1/lib:${LD_LIBRARY_PATH:-}
@@ -40,10 +46,14 @@ export TOKENIZERS_PARALLELISM=false
 # Per-task torch.compile cache: the array tasks start together and would otherwise
 # race on one shared cache (~/.cache/vllm), corrupting it when a new config forces a
 # recompile. An isolated cache root per task removes the race.
-export VLLM_CACHE_ROOT="/n/fs/similarity/tokenomics/runs/qwen/.vllm_cache/t${SLURM_ARRAY_TASK_ID}"
+# Cache root is per-task AND per-PREFIX so a de-confounded sweep doesn't race the
+# confounded one on the same compile cache (grad keeps its original t<id> path).
+CACHE_TAG="t${SLURM_ARRAY_TASK_ID}"
+[ "$PREFIX" != grad ] && CACHE_TAG="${PREFIX}_t${SLURM_ARRAY_TASK_ID}"
+export VLLM_CACHE_ROOT="/n/fs/similarity/tokenomics/runs/qwen/.vllm_cache/${CACHE_TAG}"
 mkdir -p runs/qwen "$HF_HOME" "$VLLM_CACHE_ROOT"
 
-echo "=== task $SLURM_ARRAY_TASK_ID | bias_sigma=$BIAS | seeds=$SEEDS | port $PORT | node $(hostname) ==="
+echo "=== task $SLURM_ARRAY_TASK_ID | prefix=$PREFIX bias_sigma=$BIAS | framing=${FRAMING:-preset} hint=${STRATEGY_HINT:-preset} | seeds=$SEEDS | port $PORT | node $(hostname) ==="
 
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen3-32B --served-model-name qwen3-32b \
@@ -52,28 +62,29 @@ echo "=== task $SLURM_ARRAY_TASK_ID | bias_sigma=$BIAS | seeds=$SEEDS | port $PO
   --max-model-len 131072 \
   --rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}' \
   --gpu-memory-utilization 0.92 --disable-log-requests \
-  --port "$PORT" > "runs/qwen/vllm-grads-${BIAS}.log" 2>&1 &
+  --port "$PORT" > "runs/qwen/vllm-${PREFIX}s-${BIAS}.log" 2>&1 &
 VLLM_PID=$!
 for i in $(seq 1 120); do
-  if ! kill -0 "$VLLM_PID" 2>/dev/null; then echo "vllm exited early"; tail -30 "runs/qwen/vllm-grads-${BIAS}.log"; exit 1; fi
+  if ! kill -0 "$VLLM_PID" 2>/dev/null; then echo "vllm exited early"; tail -30 "runs/qwen/vllm-${PREFIX}s-${BIAS}.log"; exit 1; fi
   if curl -sf "http://localhost:$PORT/v1/models" >/dev/null 2>&1; then echo "=== serving on :$PORT ==="; break; fi
   sleep 10
 done
 
 for SEED in $SEEDS; do
-  OUT="runs/qwen/grad_b${BIAS}_s${SEED}"
+  OUT="runs/qwen/${PREFIX}_b${BIAS}_s${SEED}"
   # BACKFILL: skip seeds that already finished (a complete transcript ends with
   # match_end). Re-submitting the array only re-runs missing/partial matches — e.g.
   # the low-offset ones that overflowed the smaller window — and leaves good runs be.
   if grep -ql match_end "${OUT}.jsonl" 2>/dev/null; then
-    echo "=== bias=$BIAS seed=$SEED already complete — skip ==="
+    echo "=== $PREFIX bias=$BIAS seed=$SEED already complete — skip ==="
     continue
   fi
-  echo "=== bias=$BIAS seed=$SEED at $(date) ==="
+  echo "=== $PREFIX bias=$BIAS seed=$SEED at $(date) ==="
   MODEL=qwen3-32b BASE_URL="http://localhost:$PORT/v1" \
     PRESET=cooperative GAMES="${GAMES:-10}" ROUNDS="${ROUNDS:-5}" MAXTICKS="${MAXTICKS:-4}" SEED="$SEED" \
     BIAS_SIGMA="$BIAS" PRIOR_SIGMA="${PRIOR_SIGMA:-400}" \
-    OUT="runs/qwen/grad_b${BIAS}_s${SEED}" \
+    FRAMING="${FRAMING:-}" STRATEGY_HINT="${STRATEGY_HINT:-}" \
+    OUT="$OUT" \
     "$VLLM_PY" scripts/qwen_match.py
 done
 
