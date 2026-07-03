@@ -232,7 +232,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
     agents do.</p>
-  <p class="meta">{{N}} of 10 runs complete · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies · live, filling in</p>
+  <p class="meta">{{N}} offsets · Qwen-3-32B×2 · <b>one match (one seed) per point — preliminary</b> · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
   <p class="lede">Read the <b>trend, not the individual points</b> — each point here is a <b>single match</b>,
