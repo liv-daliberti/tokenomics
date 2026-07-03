@@ -576,10 +576,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
-  <h1 class="lead">Can you <em>force</em> language-model agents to reciprocate?<br><em>In our tests, no — you
-    mostly just kill them.</em></h1>
+  <h1 class="lead">Can you <em>force</em> language-model agents to reciprocate?<br><em>Not reliably — mostly
+    you just kill them.</em></h1>
   <p class="dek">We built a small world where two AI agents can go it alone or help each other, and a dial for
-    <em>how much they need to</em>. Turning it up raised mortality — not mutual give-and-take.</p>
+    <em>how much they need to</em>. Turning it up reliably raised mortality; mutual give-and-take stayed
+    noisy.</p>
 </header>
 
 <section class="sec">
@@ -637,19 +638,21 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">A null result: the wall raised mortality, not reciprocity</h2>
-  <div class="prose"><p>Across the sweep, <b>reciprocity did not track interdependence</b>. Point to point it's
-    swamped by seed-to-seed noise — the 95% intervals are about as wide as the scale itself, and the no-wall
-    baseline is as reciprocal as most walled settings. The one clean, monotone signal runs the other way:
-    <b>survival falls as the wall hardens</b>. Push solo play toward impossible and agents die earlier — which
-    also starves reciprocity, since a dead partner can't give anything back.</p></div>
+  <h2 class="sec-h">Mortality rose reliably. Reciprocity didn't.</h2>
+  <div class="prose"><p>Across the sweep, <b>reciprocity does not simply rise with interdependence</b>. It's
+    noisy and non-monotone: low where solo play is viable, a <b>suggestive bump in the mid-range</b> (offsets
+    ~150–250, where the wall bites but agents still mostly survive), then a <b>collapse at the hard end</b> —
+    because the agents die, and a dead partner can't reciprocate. The 95% intervals are wide, so read that bump
+    as a hint, not a law. The one clean, monotone signal runs the other way: <b>survival falls as the wall
+    hardens</b>.</p></div>
   {% if gradient_charts %}
   <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.
     Messaging is shown <b>per agent-round</b>, not as a raw total, so agents dying earlier under hard walls
     isn't mistaken for "they talked less."</p>
   {{ gradient_charts|safe }}
   <p class="note"><b>Still filling in:</b> the sweep is running, so the error bars are wide — they tighten as
-    seeds land, but the flat reciprocity trend is unlikely to reverse. Full report &amp; table on the
+    seeds land — the mid-range bump may firm up or wash out, but the survival decline is the robust result.
+    Full report &amp; table on the
     <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {% else %}
   <p class="note">The sweep is running — the charts appear here as runs finish.</p>
@@ -659,13 +662,13 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>In this design, <b>making the agents need each other did not make them reciprocate</b> — it mostly made
-      them die. Worth stating plainly as a negative result: interdependence pressure is not, by itself, a lever
-      for mutual cooperation between these language-model agents.</p>
-    <p class="sub">Why it comes out flat: individual matches swing wildly by random seed, and reciprocity is
-      counted only while both agents are alive — so the hard end, where it should peak, is exactly where the
-      denominator collapses. Whether a cleaner signal survives is what the full 50-run sweep is meant to
-      settle; so far it doesn't.</p>
+    <p>In this design, <b>making the agents need each other did not reliably make them reciprocate</b> — it
+      reliably made them die. Worth stating plainly as a mostly-negative result: interdependence pressure is
+      not, by itself, a dependable lever for mutual cooperation between these language-model agents.</p>
+    <p class="sub">Why it stays murky: individual matches swing wildly by random seed, and reciprocity is
+      counted only while both agents are alive — so the hard end, where you'd expect the strongest exchange, is
+      exactly where the denominator collapses. There's a hint of a mid-range sweet spot; whether it survives
+      more seeds is what the full 50-run sweep is meant to settle.</p>
   </div>
 </section>
 

@@ -225,7 +225,7 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
         val = (f"{y:.0%}" if unit == "pct" else (f"{y:.0f}" if ymax >= 4 else f"{y:.2f}"))
         ct = (f" ± {c:.0%}" if (has_ci and unit == "pct" and c > 0)
               else (f" ± {c:.1f}" if (has_ci and c > 0) else ""))
-        seedn = f"  (n={nn})" if nn > 1 else ""
+        seedn = f"  (n={nn})" if nn > 1 else "  (n=1 · single seed)"
         dots += (f'<circle class="mk" cx="{px(x):.1f}" cy="{py(y):.1f}" r="{4.5 if not hero else 5.5}" '
                  f'style="fill:{color}" data-x="{x:.0f}" data-y="{val}">'
                  f'<title>offset {x:.0f}  →  {val}{ct}{seedn}</title></circle>')
@@ -387,7 +387,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 </style>
 <div class="viz-root"><div class="wrap">
   <p class="eyebrow">Agora · multi-agent LLM · dose–response</p>
-  <h1>Making agents need each other raised mortality, not reciprocity</h1>
+  <h1>Making agents need each other raised mortality; reciprocity didn't reliably follow</h1>
   <p class="stand">Two Qwen-3-32B agents estimate the same hidden number. We dial one knob — an
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
@@ -395,13 +395,13 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
-  <p class="lede">The headline is a <b>null</b>: reciprocity (top) does <b>not</b> rise with the offset. Point to
-    point it's dominated by seed noise — the 95% intervals are about as wide as the scale, and the no-wall
-    baseline is as reciprocal as most walled settings. The one clean, monotone trend is <b>survival</b>, and it
-    falls: harder walls kill agents earlier, and a dead partner can't reciprocate, so the alive-gated
-    reciprocity denominator collapses right where the effect was supposed to appear. Messaging is shown
-    <b>per agent-round</b> so that earlier deaths aren't miscounted as "talked less." Read the <b>trend, not the
-    individual points</b> — each point is a mean over seeds with real spread.</p>
+  <p class="lede">Reciprocity (top) does <b>not</b> simply rise with the offset. It's noisy and non-monotone: low
+    where solo play is viable, a <b>suggestive bump in the mid-range</b> (offsets ~150–250, where the wall bites
+    but agents still mostly survive), then a <b>collapse at the hard end</b> — harder walls kill agents earlier,
+    and a dead partner can't reciprocate, so the alive-gated denominator falls apart right where the effect was
+    supposed to peak. The 95% intervals are wide, so read the bump as a hint, not a law. The one clean, monotone
+    trend is <b>survival</b>, and it falls. Messaging is shown <b>per agent-round</b> so that earlier deaths
+    aren't miscounted as "talked less." Read the <b>trend, not the individual points</b>.</p>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
