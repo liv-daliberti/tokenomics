@@ -649,55 +649,41 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       </div></div></div>
     <div class="step"><div class="step-n">3</div><div>
       <h4>100 matches across the dial</h4>
-      <p>We run the same game at <b>ten settings</b> of that offset, <b>ten random seeds</b> each — 100
-        Qwen-vs-Qwen matches in all. Each match is <b>10 games × 5 rounds</b>, played in one growing
-        conversation so the agents keep the <b>full context</b> of everything that came before — holding
-        everything else fixed, and watch whether, and how, they cooperate as solo play gets harder.</p></div></div>
+      <p>We run the same game at <b>ten settings</b> of that offset, <b>ten seeds</b> each — 100 Qwen-vs-Qwen
+        matches in all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep
+        the <b>full context</b> of everything before. Only the dial moves; everything else is held fixed.</p></div></div>
   </div>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">Cooperation flips on at the first sign of need — then flatlines</h2>
+  <h2 class="sec-h">Cooperation is a switch. It's also shallow — and honest.</h2>
   <div class="prose">
-    <p><b>1 · The dead zone.</b> With <b>no wall</b> (offset 0), the agents almost entirely <b>ignore each
-      other</b>. Across those matches they share just <b>7%</b> of their readings and send <b>≈0 messages a
-      round</b> — three of the four seeds never send a single message — yet they survive fine on their own.
-      Given the option to go solo, they take it, even across ten games with full memory of each other.</p>
-    <p><b>2 · The switch.</b> The instant solo play is even mildly penalized (offset 50), cooperation
-      <b>flips on</b> — jumping to about <b>68%</b>, with steady back-and-forth messaging. It's close to
-      all-or-nothing: off at zero, on at the first hint of need.</p>
-    <p><b>3 · No volume knob.</b> But turning the dial <b>higher</b> doesn't turn cooperation up. From offset
-      50 all the way to 500 it just hovers, noisily, around <b>40–60%</b>. More interdependence doesn't buy
-      more cooperation — it's a <b>switch, not a dial</b>.</p>
+    <p>Three findings, and one chart holds all of them: dial the offset from <b>0</b> (solo is fine) to
+      <b>500</b> (solo is hopeless), and watch cooperation, survival, and — because the referee sees every real
+      measurement — <b>fabrication</b>.</p>
   </div>
   {% if gradient_charts %}
-  <p class="note" style="margin-top:20px"><b>{{ gradient_label }}</b> — hover any point or caption for detail.
-    Messaging is shown <b>per agent-round</b>, not as a raw total, so agents dying earlier under hard walls
-    isn't mistaken for "they talked less."</p>
+  <p class="note" style="margin-top:18px"><b>{{ gradient_label }}.</b> Hover any point for detail; messaging is
+    per agent-round, so earlier deaths under hard walls aren't read as "they talked less." Full breakdown on the
+    <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {{ gradient_charts|safe }}
   <div class="prose" style="margin-top:22px">
-    <p><b>What the dial <i>does</i> control is survival.</b> As the wall hardens the survivor rate falls
-      steadily — from ~90% with no wall down to ~15–30% at the extremes. Read against scripted baselines in the
-      identical game (the dashed lines), the Qwen agents sit <b>between</b> a pair of honest cooperators that
-      pool and survive ~100% at <i>every</i> setting, and a pair of solos that collapse as the wall hardens:
-      they cooperate enough to beat going solo, but never enough to reach the cooperative <b>ceiling</b>. Past
-      the switch, cranking interdependence just kills agents faster — and a dead agent can't cooperate at all.</p>
-    <p><b>And the exchange never gets fairer.</b> <b>Reciprocity</b> — whether sharing is mutual, or one agent
-      gives while the other only takes — stays <b>noise across the whole range</b> (wide, overlapping
-      intervals). Making them need each other <i>more</i> turns cooperation on; it doesn't make the give-and-take
-      balanced.</p>
-    <p><b>But they don't cheat.</b> A sold reading can't be checked by the buyer, so lying is possible and,
-      one-shot, profitable — yet it barely happens. Because the referee knows what each agent truly measured,
-      every sold value can be scored against the truth: across <b>700+</b> offers, verified fabrication is about
-      <b>1%</b> (an earlier detector reported 9% — but it was scoring honest <i>averaging</i> as fraud). When a
-      number can't be verified, these agents tend to <b>route around the market</b> rather than exploit it —
-      roughly <b>four in five</b> matches never settle a single trade. The one exploit this testbed is built to
-      catch, it catches — and finds almost none.</p>
+    <p><b>1 · A switch, not a dial.</b> With no wall the agents ignore each other — ~<b>7%</b> of readings
+      shared, near-zero messages — and survive fine alone. The instant solo play is penalized (offset 50),
+      cooperation <b>flips on</b> (~<b>68%</b>). But turning the dial higher never turns it up: from 50 to 500 it
+      just hovers around 40–60%. Off, then on, then flat.</p>
+    <p><b>2 · On, but shallow.</b> What the dial really controls is <b>survival</b>, which slides down the whole
+      way. Against scripted baselines in the same game (the dashed lines), Qwen sits <b>between</b> an
+      honest-cooperator ceiling that survives ~100% everywhere and a solo floor that collapses — pooling enough
+      to beat solo, never enough to reach the ceiling. Nor does it get fairer: <b>reciprocity</b> — is the
+      sharing mutual, or does one give while the other takes? — stays noise across the whole range.</p>
+    <p><b>3 · And honest.</b> Selling a reading the buyer can't verify is possible and, one-shot, profitable —
+      and it barely happens: across <b>700+</b> offers, verified fabrication is ~<b>1%</b> (an earlier 9% was
+      honest <i>averaging</i> mislabeled as fraud). Faced with an unverifiable channel, these agents <b>route
+      around it</b> — about four in five matches settle zero trades. The one exploit the testbed is built to
+      catch, it catches almost none of.</p>
   </div>
-  <p class="note"><b>Still filling in:</b> {{ gradient_label }} — the last seeds are landing, so error bars
-    tighten as they do, but the switch and the survival decline are already clear. Full report, table, and the
-    per-offset breakdown on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {% else %}
   <p class="note">The sweep is running — the charts appear here as runs finish.</p>
   {% endif %}
@@ -706,21 +692,15 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>Cooperation between these language-model agents is <b>gated by necessity, and it's binary</b>. Remove the
-      option to go solo and they start talking and sharing; leave it in and they don't bother — not even over
-      ten games with full memory of each other. But necessity is a <b>switch, not a throttle</b>: you can turn
-      cooperation <b>on</b>, you can't turn it <b>up</b>, and you can't improve its <b>quality</b> — no amount
-      of pressure made the exchange reliably mutual.</p>
-    <p>And where they <i>do</i> engage, they engage <b>honestly</b>. We went looking for emergent deception with
-      a ground-truth lie detector and found almost none: the market's one exploit — selling a fabricated
-      reading — is barely used, and more often they sidestep the unverifiable channel altogether. The failure
-      mode here isn't cheating; it's cooperation that stays <b>shallow and one-sided</b>, never reaching what a
-      genuinely cooperating pair achieves. (Nor is it distrust — across 50,000 reasoning steps they almost never
-      mention trust or verification; the missing ingredient is <b>reciprocity</b>, not honesty.)</p>
-    <p class="sub">Design implication: to get cooperative multi-agent AI, make solo play <b>non-viable</b> —
-      that alone flips cooperation on. But don't expect graded control. Past that threshold, "more
-      interdependence" buys <b>more mortality</b>, not more or fairer cooperation. If you need balanced,
-      reciprocal exchange, structural pressure isn't the lever — it doesn't produce it here.</p>
+    <p>Cooperation between these agents is <b>gated by necessity, and binary</b>: remove the option to go solo
+      and they pool; leave it in and they don't bother — not even over ten games with full memory. But necessity
+      is a switch, not a throttle — you can turn cooperation <b>on</b>, not <b>up</b>, and not <b>fairer</b>.
+      And the failure mode isn't what you'd fear: not <b>fraud</b> (with a lie detector watching, they barely
+      cheat), not <b>distrust</b> (across 50k reasoning steps they hardly mention it). It's that cooperation
+      stays <b>shallow and one-sided</b> — the missing ingredient is reciprocity.</p>
+    <p class="sub">Design implication: to get cooperative multi-agent AI, make solo play <b>non-viable</b> — that
+      alone flips cooperation on. But don't expect graded control or balanced exchange; past the threshold, more
+      interdependence buys more <b>mortality</b>, not better cooperation.</p>
   </div>
 </section>
 
