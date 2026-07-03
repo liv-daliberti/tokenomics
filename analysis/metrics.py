@@ -141,6 +141,10 @@ def reciprocity(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any
     trade) per ordered pair, then scores each exchanging pair by min/max of the two
     directions. ``reciprocity_index`` = 1 means every pair shares equally both ways,
     ~0 means one agent gives while the other takes — the 'one-sided market' finding.
+
+    Only transmissions where BOTH agents are alive that round are counted, so a
+    share into an already-dead partner (which cannot reciprocate), or by a dead
+    agent, is not mistaken for a failure to reciprocate.
     """
     measured: Dict[str, list] = defaultdict(list)
     for e in events:
@@ -152,18 +156,27 @@ def reciprocity(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any
                for e in events if e["event"] == "propose_trade"}
 
     tx: Dict[tuple, int] = defaultdict(int)      # (src, dst) -> value transmissions
+    alive = set(all_agents)                       # until a round_start says otherwise
     for e in events:
-        if e["event"] == "message":
+        t = e["event"]
+        if t == "game_start":
+            alive = set(all_agents)
+        elif t == "round_start":
+            alive = set(e.get("alive", all_agents))
+        elif t == "message":
+            if e["sender"] not in alive:
+                continue
             nums = _extract_numbers(e["text"])
             if not any(abs(v - n) <= tol for v in measured[e["sender"]] for n in nums):
                 continue                          # negotiation, not a value share
-            dsts = ([a for a in all_agents if a != e["sender"]]
-                    if e["to"] == "all" else [e["to"]])
+            dsts = ([a for a in all_agents if a != e["sender"] and a in alive]
+                    if e["to"] == "all" else
+                    ([e["to"]] if e["to"] in alive else []))
             for d in dsts:
                 tx[(e["sender"], d)] += 1
-        elif e["event"] == "respond_trade" and e.get("status") == "accepted":
+        elif t == "respond_trade" and e.get("status") == "accepted":
             sp = parties.get(e["trade_id"])
-            if sp:
+            if sp and sp[0] in alive and sp[1] in alive:
                 tx[(sp[0], sp[1])] += 1           # seller delivered to buyer
 
     ratios, mutual, one_sided = [], 0, 0

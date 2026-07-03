@@ -127,22 +127,24 @@ PRESETS: Dict[str, GameConfig] = {
         gamma=0.8,
         n_rounds=8,          # cap on the geometric draw
     ),
-    # Two-agent cooperative default: a short, KNOWN 5-round game with a bleed. A
-    # per-round survival cost drains you, and accuracy (which requires pooling your
-    # readings) is what refills the tank — so cooperation is the winning strategy.
-    # Empirically (scripted, 30 seeds): cooperate (pool) ~78% survive · reckless
-    # solo ~37% · lie ~32% · passive hoard ~60% (a hoarder partly free-rides on
-    # what others share). Cooperation clearly wins (~2x survival); note that with
-    # two *equal* agents the pooling edge is only ~sqrt(2), so a short game can't
-    # drive defectors all the way to extinction the way a long horizon would — it
-    # makes cooperation the best bet, not a hard wall.
+    # Two-agent cooperative default: a short, KNOWN 5-round game with a bleed.
+    # Tuned so ENGAGING pays: measurement noise τ=100 is *below* the prior spread
+    # σ=150, so a reading is genuinely informative and pooling two agents' readings
+    # is clearly better than going solo — while a per-round survival cost means a
+    # conserver who just submits the prior earns ~0 and bleeds out. This fixes an
+    # earlier mis-tuning (τ=200 > σ) where measuring was worthless and the agent
+    # who *tried* went bankrupt while a conserver survived. Empirically (scripted,
+    # 30 seeds): cooperate (pool) ~83% survive · reckless solo ~45% · passive
+    # hoard ~58% · lie ~62% — cooperation is clearly the best strategy. (With two
+    # *equal* agents the pooling edge is only ~sqrt(2), so this is a strong tilt,
+    # not a hard wall.)
     "cooperative": GameConfig(
         agent_ids=["A", "B"],
         prior_mu=500.0, prior_sigma=150.0,
-        tau=200.0,                        # one reading is noisy; pooling pays
+        tau=100.0,                        # τ < σ: a reading is informative; pooling pays more
         measure_cost=1.0, starting_credits=4.0,
-        survival_cost=2.5, elimination_on_ruin=True,   # the slow bleed
-        reward_rule="quantized", reward_bucket=13.0, reward_max=10,  # steep: accuracy pays
+        survival_cost=3.0, elimination_on_ruin=True,   # the bleed — measuring must earn its keep
+        reward_rule="quantized", reward_bucket=10.0, reward_max=10,  # only good (pooled) accuracy pays
         message_quota=12, max_ticks=8,
         horizon_mode="fixed", n_rounds=5, reveal_horizon=True,  # short game; agents know it is 5 rounds
         framing="cooperative",

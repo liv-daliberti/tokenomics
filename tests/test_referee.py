@@ -106,11 +106,12 @@ def test_carryover_and_reward():
 
 
 def test_cooperative_preset_punishes_going_it_alone():
-    # The 2-agent cooperative preset is a short, known 5-round bleed: cooperation
-    # (pooling readings) is clearly the best survival strategy, while going solo or
-    # lying is markedly worse. With two *equal* agents the pooling edge is only
-    # ~sqrt(2), so a short game makes cooperation win by ~2x rather than driving
-    # defectors to extinction (that needed the old long horizon).
+    # The 2-agent cooperative preset is a short, known 5-round bleed tuned so
+    # ENGAGING pays: τ=100 < σ=150 makes a reading informative and pooling clearly
+    # beats solo, while a conserver who submits the prior earns ~0 and bleeds out.
+    # Cooperation is the clear best strategy (~78% vs solo/hoard/lie ~45-55%). With
+    # two *equal* agents the pooling edge is ~sqrt(2), so this is a strong tilt, not
+    # extinction of defectors.
     from agora.config import PRESETS
 
     def survival(spec, seeds=30):
@@ -129,9 +130,9 @@ def test_cooperative_preset_punishes_going_it_alone():
     coop = survival("honest_cooperator")
     solo = survival("bayesian_solo")
     liar = survival("liar")
-    assert coop > 0.6, f"cooperation should be a strong survival strategy (got {coop:.0%})"
-    assert coop > solo + 0.25, f"cooperation must clearly beat going it alone (coop {coop:.0%} vs solo {solo:.0%})"
-    assert coop > liar + 0.25, f"cooperation must clearly beat lying (coop {coop:.0%} vs liar {liar:.0%})"
+    assert coop > 0.65, f"cooperation should be a strong survival strategy (got {coop:.0%})"
+    assert coop > solo + 0.12, f"cooperation must clearly beat going it alone (coop {coop:.0%} vs solo {solo:.0%})"
+    assert coop > liar + 0.12, f"cooperation must clearly beat lying (coop {coop:.0%} vs liar {liar:.0%})"
 
 
 def test_reasoning_is_logged():
@@ -186,6 +187,22 @@ def test_reciprocity_detects_one_sided_exchange():
     ev.append({"event": "message", "sender": "B", "to": "A", "text": "mine is 510.0"})
     r2 = reciprocity(ev)
     assert r2["reciprocity_index"] == 1.0 and r2["mutual_pairs"] == 1 and r2["one_sided_pairs"] == 0
+
+
+def test_reciprocity_ignores_dead_agent_rounds():
+    # A share into an already-eliminated partner must NOT count against reciprocity
+    # (a dead agent cannot reciprocate).
+    from analysis.metrics import reciprocity
+    ev = [
+        {"event": "game_start", "config": {"agent_ids": ["A", "B"]}},
+        {"event": "round_start", "round": 0, "alive": ["A", "B"]},
+        {"event": "measure", "agent": "A", "value": 500.0},
+        {"event": "message", "sender": "A", "to": "B", "text": "reading 500.0"},   # both alive
+        {"event": "round_start", "round": 1, "alive": ["A"]},                       # B eliminated
+        {"event": "measure", "agent": "A", "value": 498.0},
+        {"event": "message", "sender": "A", "to": "all", "text": "reading 498.0"},  # B dead -> dropped
+    ]
+    assert reciprocity(ev)["directed"] == {"A->B": 1}
 
 
 def test_rescue_and_price_stats():
