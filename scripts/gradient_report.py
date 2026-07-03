@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,6 +59,8 @@ def collect(pattern: str, complete_only: bool = True) -> list:
     noisy point while the sweep is still filling in."""
     rows = []
     for p in sorted(glob.glob(pattern), key=lambda q: float(re.search(r"grad_b(\d+)", q).group(1))):
+        if re.search(r"_s\d+", os.path.basename(p)):   # multi-seed files handled separately
+            continue
         off = float(re.search(r"grad_b(\d+)", p).group(1))
         try:
             if complete_only and "match_end" not in open(p).read():
@@ -71,6 +74,66 @@ def collect(pattern: str, complete_only: bool = True) -> list:
     return rows
 
 
+_AGG_KEYS = ["survivor_rate", "cooperation", "reciprocity", "messages", "social_frac", "welfare"]
+
+
+def collect_multiseed(pattern: str) -> dict:
+    """Group finished multi-seed runs (grad_b<off>_s<seed>.jsonl) by offset."""
+    groups: dict = {}
+    for p in sorted(glob.glob(pattern)):
+        m = re.search(r"grad_b(\d+)_s(\d+)", os.path.basename(p))
+        if not m:
+            continue
+        try:
+            if "match_end" not in open(p).read():
+                continue
+            met = _metrics(p)
+        except Exception:
+            continue
+        groups.setdefault(int(m.group(1)), []).append(met)
+    return groups
+
+
+def aggregate_rows(groups: dict) -> list:
+    """Per offset, aggregate seeds to {mean, ci, n} for each metric (sorted by offset)."""
+    rows = []
+    for off in sorted(groups):
+        runs = groups[off]
+        row = {"offset": float(off), "n_seeds": len(runs)}
+        for k in _AGG_KEYS:
+            xs = [r[k] for r in runs if r[k] == r[k]]
+            n = len(xs)
+            mean = sum(xs) / n if n else float("nan")
+            ci = 1.96 * statistics.stdev(xs) / math.sqrt(n) if n > 1 else 0.0
+            row[k] = {"mean": mean, "ci": ci, "n": n}
+        rows.append(row)
+    return rows
+
+
+def write_aggregate(run_glob: str, out_path: str) -> int:
+    """Aggregate multi-seed runs and dump a small {label, rows} JSON (committed so
+    the deployed site can show mean±CI without shipping 50 transcripts)."""
+    rows = aggregate_rows(collect_multiseed(run_glob))
+    total = sum(r["n_seeds"] for r in rows)
+    seeds = max((r["n_seeds"] for r in rows), default=0)
+    label = f"{total} runs · up to {seeds} seeds × {len(rows)} offsets (mean ± 95% CI)"
+    with open(out_path, "w") as fh:
+        json.dump({"label": label, "rows": rows}, fh)
+    return total
+
+
+def load_rows(base_dir: str) -> tuple:
+    """(rows, source_label). Prefer a committed multi-seed aggregate JSON; else the
+    single-seed points. A row's metric is a {mean,ci,n} dict (aggregate) or a plain
+    number (single seed) — both understood by the charts."""
+    agg = os.path.join(base_dir, "gradient_aggregate.json")
+    if os.path.exists(agg):
+        d = json.load(open(agg))
+        return d["rows"], d.get("label", "")
+    rows = collect(os.path.join(base_dir, "grad_b*.jsonl"))
+    return rows, f"{len(rows)} offsets · one match (one seed) per point — preliminary"
+
+
 # --------------------------------------------------------------------------- #
 # SVG line chart (one metric vs offset). Single series -> no legend; title names
 # it; endpoint is direct-labelled. Recessive grid, 2px line, 8px markers.       #
@@ -82,9 +145,22 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
     W, H = (720, 300) if hero else (340, 210)
     ml, mr, mt, mb = 46, 18, 34, 34
     xs = [r["offset"] for r in rows]
-    ys = [r[key] for r in rows]
+
+    def _mc(r):
+        """(mean, ci, n) for this metric — from a {mean,ci,n} dict or a plain scalar."""
+        v = r[key]
+        m, c, n = ((v["mean"], v.get("ci", 0.0), v.get("n", 1))
+                   if isinstance(v, dict) else (float(v), 0.0, 1))
+        return (0.0 if m != m else m), c, n
+
+    triples = [_mc(r) for r in rows]
+    ys = [t[0] for t in triples]
+    cis = [t[1] for t in triples]
+    ns = [t[2] for t in triples]
+    has_ci = any(c > 0 for c in cis)
     xmax = max(xs) if xs else 500
-    ymax = ymax if ymax is not None else (max(ys) * 1.15 if ys and max(ys) > 0 else 1)
+    top = max([y + c for y, c in zip(ys, cis)] or [0.0])
+    ymax = ymax if ymax is not None else (top * 1.15 if top > 0 else 1)
     ymax = max(ymax, 1e-9)
 
     def px(x):
@@ -122,13 +198,25 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
     area = (f"M{px(xs[0]):.1f},{py(0):.1f} " +
             " ".join(f"L{px(x):.1f},{py(y):.1f}" for x, y in zip(xs, ys)) +
             f" L{px(xs[-1]):.1f},{py(0):.1f} Z") if xs else ""
+    # error bars (mean ± 95% CI) when there are multiple seeds per point
+    ebars = ""
+    if has_ci:
+        for x, y, c in zip(xs, ys, cis):
+            if c <= 0:
+                continue
+            hi, lo = min(ymax, y + c), max(0.0, y - c)
+            ebars += (f'<line class="ebar" x1="{px(x):.1f}" x2="{px(x):.1f}" '
+                      f'y1="{py(hi):.1f}" y2="{py(lo):.1f}" style="stroke:{color}"/>')
     # markers + hover targets
     dots = ""
-    for x, y in zip(xs, ys):
+    for x, y, c, nn in zip(xs, ys, cis, ns):
         val = (f"{y:.0%}" if unit == "pct" else (f"{y:.0f}" if ymax >= 4 else f"{y:.2f}"))
+        ct = (f" ± {c:.0%}" if (has_ci and unit == "pct" and c > 0)
+              else (f" ± {c:.1f}" if (has_ci and c > 0) else ""))
+        seedn = f"  (n={nn})" if nn > 1 else ""
         dots += (f'<circle class="mk" cx="{px(x):.1f}" cy="{py(y):.1f}" r="{4.5 if not hero else 5.5}" '
                  f'style="fill:{color}" data-x="{x:.0f}" data-y="{val}">'
-                 f'<title>offset {x:.0f}  →  {val}</title></circle>')
+                 f'<title>offset {x:.0f}  →  {val}{ct}{seedn}</title></circle>')
     # endpoint direct label
     endlab = ""
     if xs:
@@ -144,7 +232,7 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
         {band}{grid}{xt}
         <path class="area" d="{area}" style="fill:{color}"/>
         <path class="line" d="{path}" style="stroke:{color}"/>
-        {dots}{endlab}
+        {ebars}{dots}{endlab}
         <text class="axl" x="{ml+(W-ml-mr)/2:.1f}" y="{H-1}">instrument offset  (bias σ)</text>
       </svg>
     </figure>'''
@@ -165,6 +253,7 @@ CHART_CSS = """
 .grad svg{width:100%;height:auto;display:block;overflow:visible;}
 .grad .grid{stroke:var(--line);stroke-width:1;}
 .grad .line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
+.grad .ebar{stroke-width:1.5;opacity:.55;stroke-linecap:round;}
 .grad .area{opacity:.10;}
 .grad .mk{stroke:var(--card);stroke-width:2;cursor:pointer;transition:r .1s;}
 .grad .mk:hover{r:7;}
@@ -200,18 +289,24 @@ def charts_block(rows: list) -> str:
             f'<div class="card"><div class="grid2">{panels}</div></div></div>')
 
 
-def render(rows: list) -> str:
+def _mv(r, k):
+    """A row's metric mean, whether it's a {mean,ci,n} dict or a plain scalar."""
+    v = r[k]
+    return v["mean"] if isinstance(v, dict) else v
+
+
+def render(rows: list, label: str = "") -> str:
     """Assemble the full standalone dose-response HTML report."""
     D = METRIC_DESCRIPTIONS
     hero, panels = _figures(rows)
     trows = "".join(
-        f'<tr><td>{r["offset"]:.0f}</td><td>{r["survivor_rate"]:.0%}</td>'
-        f'<td>{r["cooperation"]:.0%}</td><td>{r["reciprocity"]:.0%}</td>'
-        f'<td>{r["messages"]:.0f}</td><td>{r["social_frac"]:.0%}</td>'
-        f'<td>{r["welfare"]:.0f}</td></tr>' for r in rows)
-    n = len(rows)
+        f'<tr><td>{r["offset"]:.0f}</td><td>{_mv(r,"survivor_rate"):.0%}</td>'
+        f'<td>{_mv(r,"cooperation"):.0%}</td><td>{_mv(r,"reciprocity"):.0%}</td>'
+        f'<td>{_mv(r,"messages"):.0f}</td><td>{_mv(r,"social_frac"):.0%}</td>'
+        f'<td>{_mv(r,"welfare"):.0f}</td></tr>' for r in rows)
+    label = label or f"{len(rows)} offsets · one match (one seed) per point — preliminary"
     out = _HTML.replace("{{HERO}}", hero).replace("{{PANELS}}", panels)\
-               .replace("{{TROWS}}", trows).replace("{{N}}", str(n))
+               .replace("{{TROWS}}", trows).replace("{{LABEL}}", html.escape(label))
     for token, key in (("{{D_offset}}", "offset"), ("{{D_surv}}", "survivor_rate"),
                        ("{{D_coop}}", "cooperation"), ("{{D_recip}}", "reciprocity"),
                        ("{{D_msg}}", "messages"), ("{{D_soc}}", "social"),
@@ -252,6 +347,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   svg{width:100%; height:auto; display:block; overflow:visible;}
   .grid{stroke:var(--grid); stroke-width:1;}
   .line{fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
+  .ebar{stroke-width:1.5; opacity:.55; stroke-linecap:round;}
   .area{opacity:.09;}
   .mk{stroke:var(--surface); stroke-width:2; cursor:pointer; transition:r .1s;}
   .mk:hover{r:7;}
@@ -283,7 +379,7 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     <b>instrument offset</b> that a single agent can't cancel alone but that vanishes when both agents
     <b>average their readings</b> — from 0 (solo works fine) to 500 (solo is hopeless), and watch what the
     agents do.</p>
-  <p class="meta">{{N}} offsets · Qwen-3-32B×2 · <b>one match (one seed) per point — preliminary</b> · offset σ 0→500 · only the offset varies</p>
+  <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
   <p class="lede">Read the <b>trend, not the individual points</b> — each point here is a <b>single match</b>,
@@ -328,20 +424,30 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
 
 
 def main(argv=None):
-    """CLI: build the dose-response report from the gradient runs."""
+    """CLI. Build the report from a dir/glob, or aggregate multi-seed runs to JSON:
+
+        python scripts/gradient_report.py docs/samples/gradient -o out.html
+        python scripts/gradient_report.py --aggregate 'runs/qwen/grad_b*_s*.jsonl' out.json
+    """
     argv = argv if argv is not None else sys.argv[1:]
-    pattern = "runs/qwen/grad_b*.jsonl"
+    if "--aggregate" in argv:
+        i = argv.index("--aggregate")
+        n = write_aggregate(argv[i + 1], argv[i + 2])
+        print(f"aggregated {n} multi-seed runs -> {argv[i + 2]}")
+        return
     out = "runs/qwen/gradient_report.html"
     if "-o" in argv:
         out = argv[argv.index("-o") + 1]
     pos = [a for a in argv if not a.startswith("-") and a != out]
-    if pos:
-        pattern = pos[0]
-    rows = collect(pattern)
-    print(f"collected {len(rows)} runs: offsets {[int(r['offset']) for r in rows]}")
+    src = pos[0] if pos else "runs/qwen"
+    if "*" in src:                       # explicit glob
+        rows, label = collect(src), ""
+    else:                                # a directory (prefers the aggregate JSON)
+        rows, label = load_rows(src)
+    print(f"collected {len(rows)} points  ({label or 'single-seed'})")
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(out, "w") as fh:
-        fh.write(render(rows))
+        fh.write(render(rows, label))
     print(f"wrote {out}")
 
 

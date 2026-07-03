@@ -308,26 +308,27 @@ def _preset_data() -> dict:
 
 
 def _gradient_charts() -> tuple:
-    """(embeddable dose-response charts HTML, its CSS) from the gradient data, or
-    ('', '') if there is none — used to show the graphs on the home story page."""
+    """(charts HTML, chart CSS, source label). Prefers the multi-seed aggregate
+    (mean ± CI over every finished seed) over the single-seed points; ('','','')
+    if there is no gradient data."""
     try:
         for base in ("docs/samples/gradient", "runs/qwen"):
-            rows = _gradient.collect(os.path.join(_REPO, base, "grad_b*.jsonl"))
+            rows, label = _gradient.load_rows(os.path.join(_REPO, base))
             if rows:
-                return _gradient.charts_block(rows), _gradient.CHART_CSS
+                return _gradient.charts_block(rows), _gradient.CHART_CSS, label
     except Exception:
         pass
-    return "", ""
+    return "", "", ""
 
 
 def _page_ctx(page: str) -> dict:
     """Shared template context (presets, policy names, preset-fill data, and the
     embedded dose-response charts) for the Games / Create tabs."""
-    charts, chart_css = _gradient_charts() if page != "create" else ("", "")
+    charts, chart_css, glabel = _gradient_charts() if page != "create" else ("", "", "")
     return dict(css=_CSS, page=page, presets=sorted(PRESETS),
                 policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
                 preset_data=json.dumps(_preset_data()),
-                gradient_charts=charts, chart_css=chart_css)
+                gradient_charts=charts, chart_css=chart_css, gradient_label=glabel)
 
 
 @app.route("/")
@@ -428,9 +429,9 @@ def compare():
 def gradient():
     """The interdependence dose-response report: offset (bias σ) vs cooperation,
     reciprocity, survival, and messaging, as small-multiple charts."""
-    rows = []
+    rows, label = [], ""
     for base in ("docs/samples/gradient", "runs/qwen"):  # committed data, then local runs
-        rows = _gradient.collect(os.path.join(_REPO, base, "grad_b*.jsonl"))
+        rows, label = _gradient.load_rows(os.path.join(_REPO, base))
         if rows:
             break
     if not rows:
@@ -441,7 +442,7 @@ def gradient():
     nav = ('<a href="/" style="position:fixed;top:12px;left:14px;z-index:99;'
            'font:13px/1 system-ui,sans-serif;color:#3987e5;text-decoration:none;'
            'background:rgba(20,22,30,.72);padding:7px 11px;border-radius:9px">← all games</a>')
-    return nav + _gradient.render(rows)
+    return nav + _gradient.render(rows, label)
 
 
 @app.route("/status/<job_id>")
@@ -573,7 +574,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
   <h1 class="lead">Do language-model agents cooperate?<br><em>Only when they have to.</em></h1>
   <p class="dek">We built a small world where two AI agents can either go it alone or help each other — and
-    a dial that controls <em>how much they need to</em>. This is what we did, what we found, and what it means.</p>
+    a dial that controls <em>how much they need to</em>.</p>
 </header>
 
 <section class="sec">
@@ -602,7 +603,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <section class="sec">
   <p class="sec-eyebrow">What happened</p>
-  <h2 class="sec-h">Incentives failed. Structure worked.</h2>
+  <h2 class="sec-h">We couldn't pay them to cooperate — so we made them need to.</h2>
   <div class="steps">
     <div class="step"><div class="step-n">1</div><div>
       <h4>Left alone, they don't cooperate</h4>
@@ -617,7 +618,8 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <div class="step"><div class="step-n">3</div><div>
       <h4>So we made cooperation the only way to win</h4>
       <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
-        it. Only <b>averaging both agents' readings</b> cancels the offsets and recovers the truth:</p>
+        it. Only <b>averaging both agents' readings</b> cancels the offsets and recovers the truth
+        (<a class="cta" style="font-size:inherit" href="/game/sample-qwen3-32b-5games">watch a hard-wall match →</a>):</p>
       <div class="mechanic">
         <div class="mech-truth">Hidden truth <b>θ = 480</b></div>
         <div class="mech-row"><span class="tg a">You read</span><span class="num">720</span>your instrument runs high</div>
@@ -635,8 +637,8 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="sec-eyebrow">What we found</p>
   <h2 class="sec-h">The more they need each other, the more they give back</h2>
   <div class="prose"><p>We turned interdependence into a dial and measured <b>reciprocity</b> — whether the
-    exchange is mutual or one-sided. Across three clean settings it climbs from free-riding to near-perfect
-    give-and-take:</p></div>
+    exchange is mutual or one-sided. Across three clean settings, it goes from <b>one-sided</b> to
+    <b>fully mutual</b>:</p></div>
   <div class="stat-row" title="Reciprocity index — how mutual the exchange is: 1 = both agents share equally, ~0 = one gives while the other only takes.">
     <div class="stat soft"><div class="k">Soft wall · solo survives</div><div class="v">0.28</div>
       <div class="d">one-sided — one gives, the other just takes</div></div>
@@ -646,8 +648,8 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <div class="d">near-perfect, mutual give-and-take</div></div>
   </div>
   {% if gradient_charts %}
-  <p class="note" style="margin-top:22px"><b>The full sweep</b> — dialing the offset 0 → 500. Hover any point
-    or caption for detail:</p>
+  <p class="note" style="margin-top:22px"><b>The full sweep</b> — {{ gradient_label }}, dialing the offset
+    0 → 500. Hover any point or caption for detail:</p>
   {{ gradient_charts|safe }}
   <p class="note"><b>Read the trend, not the points:</b> each point is a single match, so the middle is noisy
     (a multi-seed run is underway). The far right shows a real limit — push the wall too hard and agents die
@@ -660,7 +662,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
     <p>Language-model agents don't cooperate just because it would help. <b>They cooperate when they must</b> —
-      and mutual give-and-take, not one-sided free-riding, scales with how much they need each other.</p>
+      and the more they depend on each other, the more the exchange becomes <b>mutual</b> rather than one-sided.</p>
     <p class="sub">Design implication: to get cooperative multi-agent AI, build <b>interdependence into the
       task itself</b>. Tuning incentives isn't enough.</p>
   </div>
