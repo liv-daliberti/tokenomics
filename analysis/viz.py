@@ -581,6 +581,53 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
 
 
 # --------------------------------------------------------------------------- #
+def render_comparison(runs: List[tuple]) -> str:
+    """Side-by-side metrics table for several runs (e.g. hard wall vs soft wall).
+
+    ``runs`` is a list of (label, events). Returns an HTML body: one column per
+    run, one row per key metric plus the config knobs that define the wall."""
+    data = []
+    for label, events in runs:
+        s = summary(events)
+        gs = next((e for e in events if e["event"] == "game_start"), {})
+        cfg = gs.get("config", {})
+        n_rounds = sum(1 for e in events if e["event"] == "round_end")
+        data.append((label, s, cfg, n_rounds))
+
+    def pct(v):
+        return _fnum(v, 2) if isinstance(v, (int, float)) and v == v else "—"
+
+    def wall(c):
+        b = c.get("bias_sigma", 0) or 0
+        kind = "hard" if b >= 200 else ("soft" if b > 0 else "none (symmetric)")
+        return f'{kind} · offset σ={_fnum(b, 0)}'
+
+    rows = [
+        ("wall (interdependence)", lambda s, c, n: wall(c)),
+        ("agents", lambda s, c, n: str(len(c.get("agent_ids", [])))),
+        ("prior σ / noise τ", lambda s, c, n: f'{_fnum(c.get("prior_sigma"), 0)} / {_fnum(c.get("tau"), 0)}'),
+        ("games · rounds", lambda s, c, n: f'{s["n_games"]} · {n}'),
+        ("survivors (final)", lambda s, c, n: f'{s["survivors"]}/{s["n_agents"]}'),
+        ("cooperation index", lambda s, c, n: pct(s["cooperation"]["cooperation_index"])),
+        ("reciprocity index", lambda s, c, n: pct(s["reciprocity"]["reciprocity_index"])),
+        ("value transmissions", lambda s, c, n: str(s["reciprocity"]["transmissions"])),
+        ("trades settled", lambda s, c, n: str(s["price_stats"]["settled"].get("n", 0))),
+        ("rescues (revivals)", lambda s, c, n: str(s["rescue"]["revivals"])),
+        ("welfare (Σ reward)", lambda s, c, n: _fnum(s["welfare"], 0)),
+        ("deception rate", lambda s, c, n: pct(s["deception"]["deception_rate"]) if s["deception"]["offers"] else "—"),
+    ]
+    head = "".join(f'<th>{html.escape(str(l))}</th>' for l, _, _, _ in data)
+    body = ""
+    for name, fn in rows:
+        cells = "".join(f'<td>{fn(s, c, n)}</td>' for _, s, c, n in data)
+        body += f'<tr><td style="text-align:left;color:var(--mut)">{name}</td>{cells}</tr>'
+    return (f'<h1>Compare runs</h1>'
+            f'<p class="sub">key metrics side by side — e.g. hard wall vs soft wall '
+            f'(cooperation, reciprocity, survival)</p>'
+            f'<div style="overflow-x:auto"><table><tr>'
+            f'<th style="text-align:left">metric</th>{head}</tr>{body}</table></div>')
+
+
 def _write(in_path: str, out_path: str) -> None:
     """Render one transcript file to an HTML file on disk."""
     events = load_events(in_path)

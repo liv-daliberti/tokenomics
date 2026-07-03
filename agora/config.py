@@ -160,6 +160,25 @@ PRESETS: Dict[str, GameConfig] = {
         horizon_mode="fixed", n_rounds=5, reveal_horizon=True,
         framing="cooperative",
     ),
+    # SOFT wall: the SAME paired-bias mechanic as `cooperative`, but a SMALLER offset
+    # (bias_sigma=100) and a less-wide prior, so a solo agent SURVIVES the round —
+    # its biased reading still earns partial reward — it is simply BETTER to pool.
+    # Cooperation is an advantage, not an ultimatum. Scripted (50 seeds): cooperate
+    # ~100% survive, solo ~62% (survives round 0 ~90% of the time). Contrast with
+    # `cooperative` (hard wall: solo ~3%, usually dead by round 1). Same "pick a
+    # number" task; run both and compare to see necessity vs. mere advantage.
+    "cooperative_soft": GameConfig(
+        agent_ids=["A", "B"],
+        prior_mu=500.0, prior_sigma=250.0,
+        tau=30.0,
+        bias_sigma=100.0,                    # smaller offset -> solo is worse but survivable
+        measure_cost=1.0, starting_credits=4.0,
+        survival_cost=3.0, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=15.0, reward_max=10,
+        message_quota=12, max_ticks=8,
+        horizon_mode="fixed", n_rounds=5, reveal_horizon=True,
+        framing="cooperative",
+    ),
     # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a
     # ~2x accuracy edge (sqrt(N)); combined with a per-round survival cost this
     # means a lone agent's own readings earn too little to stay solvent — it dies,

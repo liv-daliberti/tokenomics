@@ -31,7 +31,7 @@ from agora.policies import REGISTRY, LLMPolicy
 from agora.referee import run_match
 from agora.transcripts import Transcript
 from analysis.metrics import load_events, summary as metric_summary
-from analysis.viz import _CSS, render_body, render_simple
+from analysis.viz import _CSS, render_body, render_comparison, render_simple
 
 RUNS = os.environ.get("AGORA_RUNS",
                       os.path.join(os.path.dirname(__file__), "..", "runs", "web"))
@@ -356,6 +356,21 @@ def game(job_id: str):
     return render_template_string(GAME, css=_CSS, body=body, meta=meta, view=view)
 
 
+@app.route("/compare")
+def compare():
+    """Side-by-side metrics table for the finished games (hard wall vs soft wall, etc.)."""
+    runs = []
+    for g in _all_games():
+        if g.get("status") not in (None, "done"):
+            continue
+        path = os.path.join(RUNS, f"{g['id']}.jsonl")
+        if os.path.exists(path):
+            runs.append((g.get("title") or g["id"], load_events(path)))
+    body = (render_comparison(runs) if runs else
+            '<h1>Compare runs</h1><p class="sub">No finished games to compare yet.</p>')
+    return render_template_string(COMPARE, css=_CSS, body=body)
+
+
 @app.route("/status/<job_id>")
 def status(job_id: str):
     """JSON status of a job, for the game page's auto-refresh poll."""
@@ -459,9 +474,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-top:28px">
   <h2 style="font-size:20px;margin:0">Games</h2>
-  {% if games %}<form method="post" action="/delete_all" style="margin:0"
+  <div style="display:flex;gap:8px;align-items:center">
+  {% if games %}<a class="ghost" href="/compare" style="margin:0;padding:6px 12px;font-size:12px;text-decoration:none">⇄ Compare</a>
+    <form method="post" action="/delete_all" style="margin:0"
       onsubmit="return confirm('Delete ALL games? This cannot be undone.')">
     <button class="ghost" style="margin:0;padding:6px 12px;font-size:12px">Delete all</button></form>{% endif %}
+  </div>
 </div>
 {% if not games %}<p class="sub">No games yet — <a href="/create">run one</a>.</p>{% endif %}
 <ul class="games">
@@ -603,6 +621,15 @@ GAME = _SHELL.replace("{{ inner|safe }}", """
 <p class="sub" style="font-size:13px;margin:10px 0 4px">Each round shows what each agent did — its
 💭 reasoning, measurements, messages, and trades — then the outcome. The <b>Scoreboard</b> summarizes
 who won and who survived. <a href="/">What is this?</a></p>
+{{ body|safe }}
+""")
+
+
+COMPARE = _SHELL.replace("{{ inner|safe }}", """
+<a class="back" href="/">← all games</a>
+<p class="sub" style="font-size:13px;margin:10px 0 14px">Every finished game, side by side.
+Use it to contrast setups — e.g. the <b>hard wall</b> (solo is fatal) vs the <b>soft wall</b>
+(solo survives but cooperation pays), and whether the agents actually reciprocate.</p>
 {{ body|safe }}
 """)
 
