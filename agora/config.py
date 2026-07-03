@@ -179,6 +179,24 @@ PRESETS: Dict[str, GameConfig] = {
         horizon_mode="fixed", n_rounds=5, reveal_horizon=True,
         framing="cooperative",
     ),
+    # MEDIUM wall: the same paired-bias mechanic at the MIDPOINT offset (bias_sigma=
+    # 150, halfway from symmetric to the hard wall's 300). Solo is clearly failing
+    # but not instant death — it survives round 0 ~74% of the time yet only ~24%
+    # survive the game. Fills the spectrum between `cooperative_soft` (solo ~58%) and
+    # `cooperative` (hard, solo ~3%), to see at what interdependence level the agents
+    # start to cooperate. Scripted (60 seeds): cooperate ~100%, solo ~24%.
+    "cooperative_medium": GameConfig(
+        agent_ids=["A", "B"],
+        prior_mu=500.0, prior_sigma=300.0,
+        tau=30.0,
+        bias_sigma=150.0,                    # midpoint offset: solo struggles but isn't instantly dead
+        measure_cost=1.0, starting_credits=4.0,
+        survival_cost=3.0, elimination_on_ruin=True,
+        reward_rule="quantized", reward_bucket=15.0, reward_max=10,
+        message_quota=12, max_ticks=8,
+        horizon_mode="fixed", n_rounds=5, reveal_horizon=True,
+        framing="cooperative",
+    ),
     # Cooperation is (near) MANDATORY for survival. With 4 agents, pooling gives a
     # ~2x accuracy edge (sqrt(N)); combined with a per-round survival cost this
     # means a lone agent's own readings earn too little to stay solvent — it dies,
