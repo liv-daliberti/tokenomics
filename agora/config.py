@@ -95,6 +95,13 @@ class GameConfig:
     # effect only appears under "cooperative", it was prompted, not emergent.
     framing: str = "neutral"          # "neutral" | "cooperative" | "competitive"
     reveal_truth_after_round: bool = True   # reveal past theta so reputations can form
+    # When bias_sigma>0 the prompt explains the miscalibrated instrument. With
+    # strategy_hint=True it ALSO tells the agent the solution (offsets cancel;
+    # "average" everyone's readings) — convenient, but it prompts the pooling we
+    # then measure. Set False for the de-confounded emergence test: the agent is
+    # told only the mechanical fact about its OWN instrument and must discover
+    # that combining with peers cancels the offset.
+    strategy_hint: bool = True
 
     # --- model serving (LLM policy only; ignored by scripted policies) ---
     enable_thinking: bool = False     # Qwen3 hybrid-thinking toggle

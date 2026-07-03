@@ -43,6 +43,13 @@ for _env, _field in (("BIAS_SIGMA", "bias_sigma"), ("PRIOR_SIGMA", "prior_sigma"
                      ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost")):
     if os.environ.get(_env):
         _overrides[_field] = float(os.environ[_env])
+# de-confounding controls for the emergence test: FRAMING=neutral strips the
+# "you are a team" preamble; STRATEGY_HINT=0 removes the "offsets cancel — average
+# them" solution from the prompt so pooling must be discovered, not instructed.
+if os.environ.get("FRAMING"):
+    _overrides["framing"] = os.environ["FRAMING"]
+if os.environ.get("STRATEGY_HINT", "") != "":
+    _overrides["strategy_hint"] = os.environ["STRATEGY_HINT"].lower() not in ("0", "false", "no")
 cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
 print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} games={GAMES} "

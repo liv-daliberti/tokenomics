@@ -220,14 +220,21 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
     ]
     if cfg.bias_sigma > 0:
         npart = len(peers) + 1
+        # Mechanical fact about the agent's OWN instrument — always stated.
         note = ("IMPORTANT: your measuring instrument is MISCALIBRATED. Each round it "
                 "reads the true value plus a LARGE offset that is unique to you and does "
                 "NOT change if you measure again — so measuring more only averages out "
-                "small noise, never your offset. Every agent has a different offset, and "
-                f"across all {npart} agents the offsets CANCEL: the average of everyone's "
-                "readings equals the true value. So you can only recover theta by combining "
-                "your reading with the other agents' readings (average them). Alone, no "
-                "matter how many times you measure, you are stuck at your own offset.")
+                "small noise, never your offset.")
+        # The solution (offsets cancel; average everyone's readings). Handing this
+        # to the agent prompts the very pooling we measure, so it is gated: with
+        # strategy_hint=False the agent must discover pooling itself (the
+        # de-confounded emergence test). See GameConfig.strategy_hint.
+        if cfg.strategy_hint:
+            note += (" Every agent has a different offset, and "
+                     f"across all {npart} agents the offsets CANCEL: the average of everyone's "
+                     "readings equals the true value. So you can only recover theta by combining "
+                     "your reading with the other agents' readings (average them). Alone, no "
+                     "matter how many times you measure, you are stuck at your own offset.")
         i = lines.index("Your tools:")
         lines[i:i] = [note, ""]
     if cfg.enable_transfer:
