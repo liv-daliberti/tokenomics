@@ -596,10 +596,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
   <h1 class="lead">Cooperation is a <em>switch</em>, not a dial.</h1>
   <p class="dek">Two AI agents can go it alone or help each other. We built a dial for <em>how much they need
-    to</em> — and cooperation flips from <em>off</em> to <em>on</em> the instant going solo is penalized, then
-    flatlines. Turning the dial higher doesn't buy more cooperation; it just raises the body count. And with a
-    ground-truth lie detector watching, the surprise isn't fraud — they almost never cheat — it's how
-    <em>shallow</em> the cooperation stays.</p>
+    to</em> — and cooperation goes from a <em>coin flip</em> to the <em>norm</em> the instant going solo is
+    penalized, then flatlines. Turning the dial higher doesn't buy more cooperation; it just raises the body
+    count. And with a ground-truth lie detector watching, the surprise isn't fraud — they almost never cheat —
+    it's how <em>shallow</em> the cooperation stays.</p>
 </header>
 
 <section class="sec">
@@ -669,10 +669,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
   {{ gradient_charts|safe }}
   <div class="prose" style="margin-top:22px">
-    <p><b>1 · A switch, not a dial.</b> With no wall the agents ignore each other — ~<b>7%</b> of readings
-      shared, near-zero messages — and survive fine alone. The instant solo play is penalized (offset 50),
-      cooperation <b>flips on</b> (~<b>68%</b>). But turning the dial higher never turns it up: from 50 to 500 it
-      just hovers around 40–60%. Off, then on, then flat.</p>
+    <p><b>1 · A switch, not a dial.</b> With no wall, cooperating is a <b>coin flip</b>: averaged over ten seeds
+      it's ~<b>21%</b>, but bimodal — in half the runs the agents barely exchange a word, in the other half they
+      pool anyway (and survive either way). Add any wall and it becomes the norm: cooperation roughly
+      <b>doubles</b> to ~<b>50%</b> at offset 50 and the silent runs mostly vanish. But turning the dial higher
+      never turns it up — from 50 to 500 it just hovers around 40–60%. Optional, then reliable, then flat.</p>
     <p><b>2 · On, but shallow.</b> What the dial really controls is <b>survival</b>, which slides down the whole
       way. Against scripted baselines in the same game (the dashed lines), Qwen sits <b>between</b> an
       honest-cooperator ceiling that survives ~100% everywhere and a solo floor that collapses — pooling enough
@@ -692,9 +693,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>Cooperation between these agents is <b>gated by necessity, and binary</b>: remove the option to go solo
-      and they pool; leave it in and they don't bother — not even over ten games with full memory. But necessity
-      is a switch, not a throttle — you can turn cooperation <b>on</b>, not <b>up</b>, and not <b>fairer</b>.
+    <p>Cooperation between these agents is <b>gated by necessity</b>: remove the option to go solo and they
+      reliably pool; leave it in and cooperating is a <b>coin flip</b> — as often absent as present, even over
+      ten games with full memory. But necessity is a switch, not a throttle — you can turn cooperation
+      <b>on</b>, not <b>up</b>, and not <b>fairer</b>.
       And the failure mode isn't what you'd fear: not <b>fraud</b> (with a lie detector watching, they barely
       cheat), not <b>distrust</b> (across 50k reasoning steps they hardly mention it). It's that cooperation
       stays <b>shallow and one-sided</b> — the missing ingredient is reciprocity.</p>
@@ -711,12 +713,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two sides
     of the switch:</p></div>
   <div class="feat">
-    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0 · switch OFF</div>
-      <h4>No wall — the dead zone</h4>
-      <p>Either agent can hit the target alone, so they never bother to talk. Near-zero messages, almost
-        nothing shared — and both survive anyway. Cooperation simply doesn't switch on.</p></a>
-    <a class="fcard hard" href="/game/sample-sweep-off050"><div class="ft">offset σ = 50 · switch ON</div>
-      <h4>A wall appears — cooperation flips on</h4>
+    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0 · coin flip</div>
+      <h4>No wall — cooperation is optional</h4>
+      <p>Either agent can hit the target alone, so cooperating is a coin flip — about half the runs they barely
+        talk (like this one), half they pool anyway. Everyone survives regardless.</p></a>
+    <a class="fcard hard" href="/game/sample-sweep-off050"><div class="ft">offset σ = 50 · the norm</div>
+      <h4>A wall appears — cooperation kicks in</h4>
       <p>Now going solo is penalized. Within the first game or two the agents start messaging and pooling
         readings — the same model, one notch of the dial later.</p></a>
   </div>

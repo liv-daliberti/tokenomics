@@ -60,25 +60,32 @@ def refresh_aggregate() -> int:
 
 
 def refresh_gallery() -> list:
-    """For each offset with a complete run, copy a representative match (first seed
-    with a survivor, else first complete) to docs/samples/sweep_offNNN.jsonl."""
+    """For each offset with a complete run, copy a representative match to
+    docs/samples/sweep_offNNN.jsonl. Default pick is the first surviving seed. At
+    offset 0 the finding is that cooperation is a coin flip, so we deliberately
+    feature a SILENT run (fewest messages) — the counterintuitive "they could
+    cooperate but don't" case — to match the gallery card."""
     updated = []
     for off in OFFSETS:
-        best = fallback = None
+        complete = []
         for seed in range(10):
             f = os.path.join(REPO, f"runs/qwen/grad_b{off}_s{seed}.jsonl")
-            if not (os.path.exists(f) and _complete(f)):
-                continue
-            s = summary(load_events(f))
-            if fallback is None:
-                fallback = f
-            if s["survivors"] >= 1:
-                best = f
-                break
-        chosen = best or fallback
-        if chosen:
-            shutil.copy(chosen, os.path.join(SAMPLE_DIR, f"sweep_off{off:03d}.jsonl"))
-            updated.append(off)
+            if os.path.exists(f) and _complete(f):
+                complete.append((seed, f, summary(load_events(f))))
+        if not complete:
+            continue
+        if off == 0:
+            # silent case: fewest messages (ties → first), among those a survivor
+            def _msgs(item):
+                """Message count of a (seed, path, summary) candidate."""
+                return sum(1 for e in load_events(item[1]) if e["event"] == "message")
+            survivors = [c for c in complete if c[2]["survivors"] >= 1] or complete
+            chosen = min(survivors, key=_msgs)[1]
+        else:
+            survived = [c for c in complete if c[2]["survivors"] >= 1]
+            chosen = (survived[0] if survived else complete[0])[1]
+        shutil.copy(chosen, os.path.join(SAMPLE_DIR, f"sweep_off{off:03d}.jsonl"))
+        updated.append(off)
     return updated
 
 
