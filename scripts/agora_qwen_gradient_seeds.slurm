@@ -1,8 +1,10 @@
 #!/bin/bash
 # Multi-seed interdependence gradient: one array task PER OFFSET, each serving Qwen
-# once and running SEEDS matches (default 5 seeds) so we can plot mean ± CI. 10
+# once and running SEEDS matches (default 10 seeds) so we can plot mean ± CI. 10
 # tasks, ~4 run at a time on node302's 8 A100s. Only bias_sigma varies; prior,
 # noise, budget, survival cost, horizon are fixed (prior σ = 400, wide).
+# Each match = 10 games x 5 rounds; agents keep the FULL match context (one growing
+# conversation, ~50k tokens by the end -> window bumped to 98304 so it always fits).
 #SBATCH -J agora-grad-seeds
 #SBATCH --account=mltheory
 #SBATCH --partition=mltheory
@@ -10,7 +12,7 @@
 #SBATCH --gres=gpu:a100:2
 #SBATCH --mem=100G
 #SBATCH --cpus-per-task=6
-#SBATCH --time=04:00:00
+#SBATCH --time=20:00:00
 #SBATCH --array=0-9
 #SBATCH -o /n/fs/similarity/tokenomics/runs/qwen/grads-%A_%a.out
 #SBATCH -e /n/fs/similarity/tokenomics/runs/qwen/grads-%A_%a.out
@@ -22,7 +24,7 @@ BIAS=${BIASES[$SLURM_ARRAY_TASK_ID]}
 # PORT_BASE lets a second seed-batch run alongside the first without colliding on
 # ports while both drain on the same node (GPUs are still gated by SLURM gres).
 PORT=$(( ${PORT_BASE:-8900} + SLURM_ARRAY_TASK_ID ))
-SEEDS="${SEEDS:-0 1 2 3 4}"
+SEEDS="${SEEDS:-0 1 2 3 4 5 6 7 8 9}"
 
 VLLM_PY=/n/fs/similarity/Illusion-of-Reasoning/openr1/bin/python
 export LD_LIBRARY_PATH=/n/fs/similarity/Illusion-of-Reasoning/openr1/lib:${LD_LIBRARY_PATH:-}
@@ -38,8 +40,8 @@ echo "=== task $SLURM_ARRAY_TASK_ID | bias_sigma=$BIAS | seeds=$SEEDS | port $PO
   --model Qwen/Qwen3-32B --served-model-name qwen3-32b \
   --tensor-parallel-size 2 \
   --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3 \
-  --max-model-len 65536 \
-  --rope-scaling '{"rope_type":"yarn","factor":2.0,"original_max_position_embeddings":32768}' \
+  --max-model-len 98304 \
+  --rope-scaling '{"rope_type":"yarn","factor":3.0,"original_max_position_embeddings":32768}' \
   --gpu-memory-utilization 0.92 --disable-log-requests \
   --port "$PORT" > "runs/qwen/vllm-grads-${BIAS}.log" 2>&1 &
 VLLM_PID=$!
@@ -52,7 +54,7 @@ done
 for SEED in $SEEDS; do
   echo "=== bias=$BIAS seed=$SEED at $(date) ==="
   MODEL=qwen3-32b BASE_URL="http://localhost:$PORT/v1" \
-    PRESET=cooperative GAMES="${GAMES:-3}" MAXTICKS="${MAXTICKS:-4}" SEED="$SEED" \
+    PRESET=cooperative GAMES="${GAMES:-10}" ROUNDS="${ROUNDS:-5}" MAXTICKS="${MAXTICKS:-4}" SEED="$SEED" \
     BIAS_SIGMA="$BIAS" PRIOR_SIGMA="${PRIOR_SIGMA:-400}" \
     OUT="runs/qwen/grad_b${BIAS}_s${SEED}" \
     "$VLLM_PY" scripts/qwen_match.py
