@@ -103,11 +103,11 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
         lab = (f"{yv:.0%}" if unit == "pct" else (f"{yv:.0f}" if ymax >= 4 else f"{yv:.1f}"))
         grid += (f'<line class="grid" x1="{ml}" y1="{yy:.1f}" x2="{W-mr}" y2="{yy:.1f}"/>'
                  f'<text class="ytick" x="{ml-8}" y="{yy+3.5:.1f}">{lab}</text>')
-    # x ticks
-    xt = ""
-    for xv in xs:
-        xx = px(xv)
-        xt += f'<text class="xtick" x="{xx:.1f}" y="{H-mb+18:.1f}">{xv:.0f}</text>'
+    # x-axis tick VALUES — all of them on the wide hero, a sparse set on the
+    # small panels so the labels don't collide.
+    show = xs if (hero or len(xs) <= 4) else [xs[0], xs[len(xs) // 2], xs[-1]]
+    xt = "".join(
+        f'<text class="xtick" x="{px(xv):.1f}" y="{H-mb+17:.1f}">{xv:.0f}</text>' for xv in show)
     # regime band shading (hero only): symmetric / soft / medium / hard
     band = ""
     if hero:
@@ -127,7 +127,8 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
     for x, y in zip(xs, ys):
         val = (f"{y:.0%}" if unit == "pct" else (f"{y:.0f}" if ymax >= 4 else f"{y:.2f}"))
         dots += (f'<circle class="mk" cx="{px(x):.1f}" cy="{py(y):.1f}" r="{4.5 if not hero else 5.5}" '
-                 f'style="fill:{color}" data-x="{x:.0f}" data-y="{val}"/>')
+                 f'style="fill:{color}" data-x="{x:.0f}" data-y="{val}">'
+                 f'<title>offset {x:.0f}  →  {val}</title></circle>')
     # endpoint direct label
     endlab = ""
     if xs:
@@ -140,17 +141,45 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc=""):
     return f'''<figure class="chart{' hero' if hero else ''}">
       {cap}
       <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} versus instrument offset">
-        {band}{grid}
+        {band}{grid}{xt}
         <path class="area" d="{area}" style="fill:{color}"/>
         <path class="line" d="{path}" style="stroke:{color}"/>
         {dots}{endlab}
-        <text class="axl" x="{ml+(W-ml-mr)/2:.1f}" y="{H-2}">instrument offset  (bias σ)</text>
+        <text class="axl" x="{ml+(W-ml-mr)/2:.1f}" y="{H-1}">instrument offset  (bias σ)</text>
       </svg>
     </figure>'''
 
 
-def render(rows: list) -> str:
-    """Assemble the full dose-response HTML report."""
+# Chart CSS mapped onto the site's own theme vars, scoped under `.grad`, so the
+# same charts can be EMBEDDED in the viewer (e.g. the home page) and match it.
+CHART_CSS = """
+.grad{--c-recip:var(--blue);--c-surv:var(--red);--c-coop:var(--green);--c-msg:var(--purple);
+  --c-soc:var(--amber);--zone-ink:#6b7688;--gmono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+.grad .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 10px;margin:14px 0;}
+.grad .card.hero{padding-bottom:12px;}
+.grad .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+@media(max-width:640px){.grad .grid2{grid-template-columns:1fr;}}
+.grad figure.chart{margin:0;}
+.grad figcaption{font-size:14px;font-weight:620;color:var(--fg);margin:2px 2px 5px;}
+.grad figure.chart.hero figcaption{font-size:16px;}
+.grad svg{width:100%;height:auto;display:block;overflow:visible;}
+.grad .grid{stroke:var(--line);stroke-width:1;}
+.grad .line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
+.grad .area{opacity:.10;}
+.grad .mk{stroke:var(--card);stroke-width:2;cursor:pointer;transition:r .1s;}
+.grad .mk:hover{r:7;}
+.grad .ytick,.grad .xtick,.grad .axl,.grad .endlab,.grad .zone-l{font-family:var(--gmono);}
+.grad .ytick{fill:var(--mut);font-size:10.5px;text-anchor:end;}
+.grad .xtick{fill:var(--mut);font-size:10px;text-anchor:middle;}
+.grad .axl{fill:var(--mut);font-size:10.5px;text-anchor:middle;letter-spacing:.02em;}
+.grad .endlab{font-size:13px;font-weight:700;text-anchor:end;}
+.grad .zone{fill:rgba(90,169,230,.06);}
+.grad .zone-l{fill:var(--zone-ink);font-size:10px;text-anchor:middle;letter-spacing:.06em;text-transform:uppercase;}
+"""
+
+
+def _figures(rows: list):
+    """Return (hero chart svg, small-multiple panels svg) for the dose-response."""
     D = METRIC_DESCRIPTIONS
     hero = _chart(rows, "reciprocity", title="Reciprocity of exchange", unit="pct",
                   color="var(--c-recip)", ymax=1.0, hero=True, desc=D["reciprocity"])
@@ -160,6 +189,21 @@ def render(rows: list) -> str:
         _chart(rows, "messages", title="Messages sent", unit="n", color="var(--c-msg)", desc=D["messages"]),
         _chart(rows, "social_frac", title="Reasoning about the partner", unit="pct", color="var(--c-soc)", ymax=1.0, desc=D["social"]),
     ])
+    return hero, panels
+
+
+def charts_block(rows: list) -> str:
+    """The dose-response charts (hero + small multiples) as EMBEDDABLE HTML — no
+    page chrome — to drop into another page; pair it with CHART_CSS."""
+    hero, panels = _figures(rows)
+    return (f'<div class="grad"><div class="card hero">{hero}</div>'
+            f'<div class="card"><div class="grid2">{panels}</div></div></div>')
+
+
+def render(rows: list) -> str:
+    """Assemble the full standalone dose-response HTML report."""
+    D = METRIC_DESCRIPTIONS
+    hero, panels = _figures(rows)
     trows = "".join(
         f'<tr><td>{r["offset"]:.0f}</td><td>{r["survivor_rate"]:.0%}</td>'
         f'<td>{r["cooperation"]:.0%}</td><td>{r["reciprocity"]:.0%}</td>'

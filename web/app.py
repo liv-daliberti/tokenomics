@@ -307,11 +307,27 @@ def _preset_data() -> dict:
     return out
 
 
+def _gradient_charts() -> tuple:
+    """(embeddable dose-response charts HTML, its CSS) from the gradient data, or
+    ('', '') if there is none — used to show the graphs on the home story page."""
+    try:
+        for base in ("docs/samples/gradient", "runs/qwen"):
+            rows = _gradient.collect(os.path.join(_REPO, base, "grad_b*.jsonl"))
+            if rows:
+                return _gradient.charts_block(rows), _gradient.CHART_CSS
+    except Exception:
+        pass
+    return "", ""
+
+
 def _page_ctx(page: str) -> dict:
-    """Shared template context (presets, policy names, preset-fill data) for the Games / Create tabs."""
+    """Shared template context (presets, policy names, preset-fill data, and the
+    embedded dose-response charts) for the Games / Create tabs."""
+    charts, chart_css = _gradient_charts() if page != "create" else ("", "")
     return dict(css=_CSS, page=page, presets=sorted(PRESETS),
                 policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
-                preset_data=json.dumps(_preset_data()))
+                preset_data=json.dumps(_preset_data()),
+                gradient_charts=charts, chart_css=chart_css)
 
 
 @app.route("/")
@@ -499,6 +515,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 {% if page != 'create' %}
 <style>
+  {{ chart_css|safe }}
   :root{--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
   .hero{padding:8px 0 4px;}
   .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--blue);margin:0 0 16px;}
@@ -506,19 +523,26 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   .lead em{font-style:normal;color:var(--blue);}
   .dek{font-size:19px;line-height:1.5;color:var(--mut);max-width:62ch;margin:0;}
   .dek em{font-style:normal;color:var(--fg);font-weight:500;}
-  .beats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:40px 0 8px;}
-  @media(max-width:760px){.beats{grid-template-columns:1fr;}}
-  .beat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 20px 22px;}
-  .beat-n{font:700 11px/1 var(--mono);color:var(--blue);letter-spacing:.12em;}
-  .beat h3{font-size:17px;margin:13px 0 9px;letter-spacing:-.01em;}
-  .beat p{color:var(--mut);font-size:14px;line-height:1.62;margin:0;}
-  .beat b{color:var(--fg);font-weight:640;}
-  .arc{margin:46px 0 8px;}
-  .arc-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 4px;}
-  .arc-head h2{font:600 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:0;}
+  .sec{margin:52px 0 0;scroll-margin-top:20px;}
+  .sec-eyebrow{font:600 12px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--blue);margin:0 0 8px;}
+  .sec-h{font-size:clamp(22px,3vw,29px);font-weight:730;letter-spacing:-.02em;line-height:1.12;margin:0 0 14px;text-wrap:balance;}
+  .prose{font-size:16px;line-height:1.64;color:var(--mut);max-width:64ch;}
+  .prose p{margin:0 0 13px;} .prose b{color:var(--fg);font-weight:600;} .prose:last-child{margin-bottom:0;}
+  .steps{display:flex;flex-direction:column;gap:12px;margin:6px 0 0;}
+  .step{display:flex;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px 20px;}
+  .step-n{flex:none;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 14px/1 var(--mono);color:var(--blue);border:1px solid var(--line);background:var(--bg);}
+  .step h4{font-size:16px;margin:3px 0 6px;letter-spacing:-.01em;}
+  .step p{color:var(--mut);font-size:14px;line-height:1.6;margin:0;} .step b{color:var(--fg);font-weight:640;}
+  .mechanic{margin:14px 0 2px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:15px 18px;}
+  .mech-truth{font-size:13px;color:var(--mut);margin:0 0 8px;} .mech-truth b{color:var(--fg);font-variant-numeric:tabular-nums;}
+  .mech-row{display:flex;align-items:center;gap:12px;padding:5px 0;font-size:14px;color:var(--mut);}
+  .mech-row .tg{font:700 10px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:5px;white-space:nowrap;}
+  .tg.a{color:var(--blue);background:rgba(90,169,230,.14);} .tg.b{color:var(--amber);background:rgba(230,179,90,.14);} .tg.ok{color:var(--green);background:rgba(90,209,154,.14);}
+  .mech-row .num{font-size:19px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;min-width:50px;}
+  .mech-row.avg{border-top:1px solid var(--line);margin-top:5px;padding-top:11px;}
   .cta{font:600 14px/1 inherit;color:var(--blue);text-decoration:none;white-space:nowrap;}
   .cta:hover{text-decoration:underline;}
-  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0 0;}
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 0;}
   @media(max-width:640px){.stat-row{grid-template-columns:1fr;}}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;position:relative;overflow:hidden;}
   .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;}
@@ -527,8 +551,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   .stat .v{font-size:40px;font-weight:750;letter-spacing:-.02em;margin:9px 0 3px;font-variant-numeric:tabular-nums;}
   .stat.soft .v{color:var(--red);} .stat.med .v{color:var(--amber);} .stat.hard .v{color:var(--green);}
   .stat .d{font-size:12.5px;color:var(--mut);line-height:1.45;}
-  .arc-note{font-size:15px;color:var(--mut);max-width:66ch;margin:16px 0 0;line-height:1.55;}
-  .arc-note b{color:var(--fg);}
+  .note{font-size:14px;color:var(--mut);max-width:66ch;margin:14px 0 0;line-height:1.55;} .note b{color:var(--fg);} .note a{color:var(--blue);}
+  .meaning{border-left:3px solid var(--blue);padding:2px 0 2px 20px;margin:6px 0 0;}
+  .meaning p{font-size:21px;line-height:1.4;color:var(--fg);font-weight:520;margin:0 0 14px;max-width:60ch;letter-spacing:-.01em;}
+  .meaning p b{color:var(--blue);}
+  .meaning .sub{font-size:15px;color:var(--mut);font-weight:400;line-height:1.55;} .meaning .sub b{color:var(--fg);}
   .feat{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0 0;}
   @media(max-width:640px){.feat{grid-template-columns:1fr;}}
   .fcard{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;text-decoration:none;color:var(--fg);transition:border-color .12s,transform .12s;}
@@ -537,68 +564,111 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   .fcard.hard .ft{color:var(--green);} .fcard.soft .ft{color:var(--red);}
   .fcard h4{font-size:16px;margin:9px 0 6px;letter-spacing:-.01em;}
   .fcard p{color:var(--mut);font-size:13px;line-height:1.55;margin:0;}
-  .gallery-head{display:flex;justify-content:space-between;align-items:baseline;margin:44px 0 2px;}
-  .gallery-head h2{font-size:20px;margin:0;letter-spacing:-.01em;}
+  .explore-links{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0 0;}
+  .gallery-head{display:flex;justify-content:space-between;align-items:baseline;margin:34px 0 2px;}
+  .gallery-head h2{font-size:18px;margin:0;letter-spacing:-.01em;color:var(--mut);font-weight:600;}
 </style>
 
 <header class="hero">
-  <p class="eyebrow">Agora · multi-agent LLM research</p>
+  <p class="eyebrow">Agora · a multi-agent LLM study</p>
   <h1 class="lead">Do language-model agents cooperate?<br><em>Only when they have to.</em></h1>
-  <p class="dek">Two identical Qwen-3-32B agents each estimate the same hidden number. Each can solve it
-    <em>alone</em> — or pool noisy, costly readings with the other. We watch what they choose, and we can
-    dial exactly how much they <em>need</em> each other.</p>
+  <p class="dek">We built a small world where two AI agents can either go it alone or help each other — and
+    a dial that controls <em>how much they need to</em>. This is what we did, what we found, and what it means.</p>
 </header>
 
-<div class="beats">
-  <article class="beat">
-    <div class="beat-n">01 · THE DEFAULT</div>
-    <h3>Left alone, they don't cooperate</h3>
-    <p>When one agent can solve the task by itself, the two never coordinate — across a whole match
-      <b>0 of 196</b> reasoning steps so much as mention the other agent. Retuning the payoffs to reward
-      teamwork didn't help; it made them <b>more</b> solitary.</p>
-  </article>
-  <article class="beat">
-    <div class="beat-n">02 · THE LEVER</div>
-    <h3>So we make cooperation necessary</h3>
-    <p>Each agent's instrument carries a hidden <b>offset</b> only it has. A lone agent can never cancel
-      its own offset — but <b>averaging both agents' readings</b> does. One dial, from 0 (solo is fine) to
-      500 (solo is hopeless).</p>
-  </article>
-  <article class="beat">
-    <div class="beat-n">03 · THE RESULT</div>
-    <h3>Cooperation switches on</h3>
-    <p>Turn the dial up and the agents start modelling each other, messaging, and — the headline —
-      <b>reciprocating</b>. When solo half-works the exchange is one-sided; when solo is impossible it
-      becomes mutual.</p>
-  </article>
-</div>
-
-<section class="arc">
-  <div class="arc-head">
-    <h2>The dose–response · reciprocity of exchange</h2>
-    <a class="cta" href="/gradient">See the live curve →</a>
+<section class="sec">
+  <p class="sec-eyebrow">Why we did this</p>
+  <h2 class="sec-h">Multi-agent AI is coming. Does it actually collaborate?</h2>
+  <div class="prose">
+    <p>Agents that negotiate, delegate, and split work are arriving fast — but a basic question is unanswered:
+      when cooperation <b>would help</b>, do language-model agents take it, or go it alone? We built a small,
+      controlled world where cooperation is <b>measurable</b> and deception is <b>verifiable</b>, and watched
+      two copies of the same model play it out.</p>
   </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What we built · Agora</p>
+  <h2 class="sec-h">Two agents, one hidden number, tight budgets</h2>
+  <div class="prose">
+    <p>Each round a hidden number is drawn. Two identical <b>Qwen-3-32B</b> agents each try to estimate it.
+      An agent can <b>measure</b> (a noisy reading that costs credits), <b>message</b> the other, <b>trade</b>
+      readings, or <b>give</b> credits. Scoring is non-competitive — you're judged only on your <b>own</b>
+      accuracy — but a survival cost bleeds you each round, so a bad estimate eventually means
+      <b>elimination</b>. The referee knows the true value, so we can see exactly who shared, who lied, and
+      who survived.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What happened</p>
+  <h2 class="sec-h">Incentives failed. Structure worked.</h2>
+  <div class="steps">
+    <div class="step"><div class="step-n">1</div><div>
+      <h4>Left alone, they don't cooperate</h4>
+      <p>When solo play works, the agents just solve it alone. In one match, <b>0 of 196</b> reasoning steps
+        even mentioned the other agent.</p></div></div>
+    <div class="step"><div class="step-n">2</div><div>
+      <h4>Paying them to cooperate backfired</h4>
+      <p>We retuned the economics to reward teamwork. With clearer stakes they doubled down individually,
+        ground out measurements alone, and <b>died faster</b>.</p></div></div>
+    <div class="step"><div class="step-n">3</div><div>
+      <h4>So we made cooperation the only way to win</h4>
+      <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
+        it. Only <b>averaging both agents' readings</b> cancels the offsets and recovers the truth:</p>
+      <div class="mechanic">
+        <div class="mech-truth">Hidden truth <b>θ = 480</b></div>
+        <div class="mech-row"><span class="tg a">You read</span><span class="num">720</span>your instrument runs high</div>
+        <div class="mech-row"><span class="tg b">Partner reads</span><span class="num">240</span>theirs runs low</div>
+        <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
+      </div></div></div>
+    <div class="step"><div class="step-n">4</div><div>
+      <h4>Cooperation switched on</h4>
+      <p>They immediately began modelling each other, messaging, and pooling — the exact behavior that never
+        appeared before.</p></div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What we found</p>
+  <h2 class="sec-h">The more they need each other, the more they give back</h2>
+  <div class="prose"><p>We turned interdependence into a dial and measured <b>reciprocity</b> — whether the
+    exchange is mutual or one-sided. Across three clean settings it climbs from free-riding to near-perfect
+    give-and-take:</p></div>
   <div class="stat-row" title="Reciprocity index — how mutual the exchange is: 1 = both agents share equally, ~0 = one gives while the other only takes.">
     <div class="stat soft"><div class="k">Soft wall · solo survives</div><div class="v">0.28</div>
-      <div class="d">one-sided — one agent gives, the other just takes</div></div>
+      <div class="d">one-sided — one gives, the other just takes</div></div>
     <div class="stat med"><div class="k">Medium wall</div><div class="v">0.45</div>
       <div class="d">the exchange starts to balance out</div></div>
     <div class="stat hard"><div class="k">Hard wall · solo is fatal</div><div class="v">0.97</div>
       <div class="d">near-perfect, mutual give-and-take</div></div>
   </div>
-  <p class="arc-note">Reciprocity index (0 = one-sided, 1 = perfectly mutual) at three settings of the
-    interdependence dial. <b>The more the agents need each other, the more they give back</b> — the
-    finished 10-point sweep is on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
+  {% if gradient_charts %}
+  <p class="note" style="margin-top:22px"><b>The full sweep</b> — dialing the offset 0 → 500. Hover any point
+    or caption for detail:</p>
+  {{ gradient_charts|safe }}
+  <p class="note"><b>Read the trend, not the points:</b> each point is a single match, so the middle is noisy
+    (a multi-seed run is underway). The far right shows a real limit — push the wall too hard and agents die
+    before they can establish cooperation. Full report &amp; table on the
+    <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
+  {% endif %}
 </section>
 
-<section class="arc">
-  <div class="arc-head">
-    <h2>Watch it happen</h2>
-    <a class="cta" href="/compare">Compare side by side →</a>
+<section class="sec">
+  <p class="sec-eyebrow">What it means</p>
+  <div class="meaning">
+    <p>Language-model agents don't cooperate just because it would help. <b>They cooperate when they must</b> —
+      and mutual give-and-take, not one-sided free-riding, scales with how much they need each other.</p>
+    <p class="sub">Design implication: to get cooperative multi-agent AI, build <b>interdependence into the
+      task itself</b>. Tuning incentives isn't enough.</p>
   </div>
-  <p class="arc-note" style="margin:8px 0 0">Every run is Qwen-3-32B against itself. Open one to see each
-    agent's 💭 reasoning, measurements, messages, and trades tick by tick — then who survived. The two ends
-    of the dial:</p>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">See for yourself</p>
+  <h2 class="sec-h">Explore the runs</h2>
+  <div class="prose"><p>Every run is Qwen-3-32B against itself. Open one to watch each agent reason, measure,
+    message, and trade — tick by tick — then who survived. The two ends of the dial:</p></div>
   <div class="feat">
     <a class="fcard hard" href="/game/sample-qwen3-32b-5games"><div class="ft">Hard wall</div>
       <h4>Solo is impossible → they reciprocate</h4>
@@ -608,6 +678,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       <h4>Solo half-works → it stays one-sided</h4>
       <p>One agent shares generously; the other takes and rarely gives back. Cooperation is optional, so it
         frays.</p></a>
+  </div>
+  <div class="explore-links">
+    <a class="cta" href="/compare">⇄ Compare every run side by side →</a>
+    <a class="cta" href="/gradient">📈 The full dose–response →</a>
   </div>
 </section>
 
