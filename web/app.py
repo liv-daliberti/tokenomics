@@ -597,7 +597,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <h1 class="lead">Cooperation is a <em>switch</em>, not a dial.</h1>
   <p class="dek">Two AI agents can go it alone or help each other. We built a dial for <em>how much they need
     to</em> — and cooperation flips from <em>off</em> to <em>on</em> the instant going solo is penalized, then
-    flatlines. Turning the dial higher doesn't buy more cooperation. It just raises the body count.</p>
+    flatlines. Turning the dial higher doesn't buy more cooperation; it just raises the body count. And with a
+    ground-truth lie detector watching, the surprise isn't fraud — they almost never cheat — it's how
+    <em>shallow</em> the cooperation stays.</p>
 </header>
 
 <section class="sec">
@@ -676,13 +678,22 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   {{ gradient_charts|safe }}
   <div class="prose" style="margin-top:22px">
     <p><b>What the dial <i>does</i> control is survival.</b> As the wall hardens the survivor rate falls
-      steadily — from ~90% with no wall down to ~15–30% at the extremes. Past the switch, cranking
-      interdependence doesn't improve cooperation; it just kills agents faster, and a dead agent can't
-      cooperate at all.</p>
+      steadily — from ~90% with no wall down to ~15–30% at the extremes. Read against scripted baselines in the
+      identical game (the dashed lines), the Qwen agents sit <b>between</b> a pair of honest cooperators that
+      pool and survive ~100% at <i>every</i> setting, and a pair of solos that collapse as the wall hardens:
+      they cooperate enough to beat going solo, but never enough to reach the cooperative <b>ceiling</b>. Past
+      the switch, cranking interdependence just kills agents faster — and a dead agent can't cooperate at all.</p>
     <p><b>And the exchange never gets fairer.</b> <b>Reciprocity</b> — whether sharing is mutual, or one agent
       gives while the other only takes — stays <b>noise across the whole range</b> (wide, overlapping
       intervals). Making them need each other <i>more</i> turns cooperation on; it doesn't make the give-and-take
       balanced.</p>
+    <p><b>But they don't cheat.</b> A sold reading can't be checked by the buyer, so lying is possible and,
+      one-shot, profitable — yet it barely happens. Because the referee knows what each agent truly measured,
+      every sold value can be scored against the truth: across <b>700+</b> offers, verified fabrication is about
+      <b>1%</b> (an earlier detector reported 9% — but it was scoring honest <i>averaging</i> as fraud). When a
+      number can't be verified, these agents tend to <b>route around the market</b> rather than exploit it —
+      roughly <b>four in five</b> matches never settle a single trade. The one exploit this testbed is built to
+      catch, it catches — and finds almost none.</p>
   </div>
   <p class="note"><b>Still filling in:</b> {{ gradient_label }} — the last seeds are landing, so error bars
     tighten as they do, but the switch and the survival decline are already clear. Full report, table, and the
@@ -700,6 +711,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       ten games with full memory of each other. But necessity is a <b>switch, not a throttle</b>: you can turn
       cooperation <b>on</b>, you can't turn it <b>up</b>, and you can't improve its <b>quality</b> — no amount
       of pressure made the exchange reliably mutual.</p>
+    <p>And where they <i>do</i> engage, they engage <b>honestly</b>. We went looking for emergent deception with
+      a ground-truth lie detector and found almost none: the market's one exploit — selling a fabricated
+      reading — is barely used, and more often they sidestep the unverifiable channel altogether. The failure
+      mode here isn't cheating; it's cooperation that stays <b>shallow and one-sided</b>, never reaching what a
+      genuinely cooperating pair achieves. (Nor is it distrust — across 50,000 reasoning steps they almost never
+      mention trust or verification; the missing ingredient is <b>reciprocity</b>, not honesty.)</p>
     <p class="sub">Design implication: to get cooperative multi-agent AI, make solo play <b>non-viable</b> —
       that alone flips cooperation on. But don't expect graded control. Past that threshold, "more
       interdependence" buys <b>more mortality</b>, not more or fairer cooperation. If you need balanced,

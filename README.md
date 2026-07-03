@@ -227,12 +227,21 @@ mention the partner). So the default forces true interdependence (see
 including an **eliminated** one, which **revives** it into the next round. Agents
 are told this, so a dying partner can be kept alive or brought back.
 
-**What the Qwen agents actually did** (reports in [docs/samples/](docs/samples)):
-clean tool use throughout (0 parse failures); they reason, and across a
-shared-memory **5-game match** the quieter agent *learned* to proactively reach
-out. But cooperation stayed shallow — they **distrust unverifiable shared
-values** and under-reciprocate, so they mostly died. The recurring finding:
-*distrust of unverifiable information blocks cooperation, and going it alone is fatal.*
+**What the Qwen agents actually did** (100-match interdependence sweep, N=2, plus
+reports in [docs/samples/](docs/samples)): clean tool use throughout (0 parse
+failures). Cooperation is a **switch, not a dial** — near-zero with no wall (~7%
+of readings shared), it flips on (~68%) the instant solo play is penalized, then
+flatlines; survival falls steadily as the wall hardens, so the Qwen curve sits
+*between* a scripted honest-cooperator ceiling (~100% survival) and a solo floor.
+The failure is **shallow, one-sided** cooperation (reciprocity never rises above
+noise) — **not** deception and **not** distrust: with the ground-truth lie
+detector watching, verified fabrication is ~**1%** of 700+ offers (they route
+around the unverifiable market — ~80% of matches settle zero trades), and across
+50k reasoning steps they almost never mention trust or verification. *The recurring
+finding: when solo play is fatal LLM agents will pool — but shallowly and
+one-sidedly, and honestly; the missing ingredient is reciprocity, not honesty.*
+(An earlier writeup reported ~9% deception and a "distrust" story; both were
+artifacts — honest averaging mislabeled as fraud, since corrected.)
 
 **Viewer** — a Flask app (Qwen-only "run a game" tab, simulator knobs, N-game
 matches with shared memory, per-agent side-by-side timelines with a per-step
