@@ -648,10 +648,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
       </div></div></div>
     <div class="step"><div class="step-n">3</div><div>
-      <h4>100 matches across the dial</h4>
-      <p>We run the same game at <b>ten settings</b> of that offset, <b>ten seeds</b> each — 100 Qwen-vs-Qwen
-        matches in all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep
-        the <b>full context</b> of everything before. Only the dial moves; everything else is held fixed.</p></div></div>
+      <h4>~140 matches across the dial</h4>
+      <p>We run the same game at <b>ten settings</b> of that offset — plus <b>four finer steps</b> between 0 and
+        50 to pin down exactly where cooperation turns on — <b>ten seeds</b> each, ~140 Qwen-vs-Qwen matches in
+        all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep the
+        <b>full context</b> of everything before. Only the dial moves; everything else is held fixed.</p></div></div>
   </div>
 </section>
 
@@ -671,9 +672,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <div class="prose" style="margin-top:22px">
     <p><b>1 · A switch, not a dial.</b> With no wall, cooperating is a <b>coin flip</b>: averaged over ten seeds
       it's ~<b>21%</b>, but bimodal — in half the runs the agents barely exchange a word, in the other half they
-      pool anyway (and survive either way). Add any wall and it becomes the norm: cooperation roughly
-      <b>doubles</b> to ~<b>50%</b> at offset 50 and the silent runs mostly vanish. But turning the dial higher
-      never turns it up — from 50 to 500 it just hovers around 40–60%. Optional, then reliable, then flat.</p>
+      pool anyway (and survive either way). Add even the <b>smallest wall we tested</b> — offset 10 — and it more
+      than <b>doubles to ~55%</b> and stays there. The switch is <b>sharp and early</b>: it flips at the first
+      notch, not gradually, and turning the dial higher never turns it up — from 50 to 500 cooperation just
+      hovers around 40–60%. Optional, then reliable, then flat.</p>
     <p><b>2 · On, but shallow.</b> What the dial really controls is <b>survival</b>, which slides down the whole
       way. Against scripted baselines in the same game (the dashed lines), Qwen sits <b>between</b> an
       honest-cooperator ceiling that survives ~100% everywhere and a solo floor that collapses — pooling enough
