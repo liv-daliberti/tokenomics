@@ -105,10 +105,20 @@ def render() -> str:
                   unit="pct", color="var(--c-coop)", ymax=1.0, hero=True,
                   desc="Solid: the original prompt (cooperative framing + 'average them'). "
                        "Dashed: neutral framing, no strategy hint.", anchors=dec_overlay)
-    surv = _chart(conf, "survivor_rate", title="Survival — prompted vs de-confounded",
+    # survival also carries the scripted floor/ceiling, to show de-confounded LLMs
+    # track the SOLO floor, not the cooperator ceiling
+    anc_path = os.path.join(GRAD, "gradient_anchors.json")
+    anc = json.load(open(anc_path))["specs"] if os.path.exists(anc_path) else {}
+    surv_anchors = list(dec_overlay)
+    if anc.get("honest_cooperator"):
+        surv_anchors.append({"name": "cooperator ceiling", "rows": anc["honest_cooperator"], "color": "var(--c-ceil)"})
+    if anc.get("bayesian_solo"):
+        surv_anchors.append({"name": "solo floor", "rows": anc["bayesian_solo"], "color": "var(--c-floor)"})
+    surv = _chart(conf, "survivor_rate", title="Survival — de-confounded LLMs track the SOLO floor",
                   unit="pct", color="var(--c-surv)", ymax=1.0, hero=True,
-                  desc="Without the hint, agents don't pool — so at the wall they die.",
-                  anchors=dec_overlay)
+                  desc="Solid red: prompted LLMs. Dashed: de-confounded LLMs, and the scripted "
+                       "honest-cooperator (top) and solo (bottom) baselines in the same game.",
+                  anchors=surv_anchors)
 
     conf_wall = _wall_mean(conf, "cooperation")
     dec_wall = _wall_mean(dec, "cooperation")
