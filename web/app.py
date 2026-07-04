@@ -162,6 +162,13 @@ _gspec = _ilu.spec_from_file_location("gradient_report",
 _gradient = _ilu.module_from_spec(_gspec)
 _gspec.loader.exec_module(_gradient)
 
+# The de-confounding comparison charts (prompted vs neutral/no-hint) reuse the same
+# chart engine; loaded the same way so /gradient and the home can embed them.
+_dspec = _ilu.spec_from_file_location("deconfound_report",
+                                      os.path.join(_REPO, "scripts", "deconfound_report.py"))
+_deconf = _ilu.module_from_spec(_dspec)
+_dspec.loader.exec_module(_deconf)
+
 # One browsable match PER POINT on the sweep dial (not separate hand-run matches):
 # for each offset, the first seed in which at least one agent survives (else the
 # first complete seed), so every point on the dose-response curve is openable.
@@ -340,6 +347,26 @@ def _gradient_charts() -> tuple:
     return "", "", ""
 
 
+def _deconf_charts() -> str:
+    """De-confounding comparison charts (cooperation + survival, prompted vs
+    neutral/no-hint) for the home page. Reads the COMMITTED aggregates so it works
+    on the deployed site without the raw transcripts; '' if the data isn't there."""
+    try:
+        base = os.path.join(_REPO, "docs", "samples", "gradient")
+        dpath = os.path.join(base, "deconf_aggregate.json")
+        if not os.path.exists(dpath):
+            return ""
+        conf = json.load(open(os.path.join(base, "gradient_aggregate.json")))["rows"]
+        dec = json.load(open(dpath))["rows"]
+        apath = os.path.join(base, "gradient_anchors.json")
+        anc = json.load(open(apath))["specs"] if os.path.exists(apath) else {}
+        cc = _deconf.comparison_charts(conf, dec, anc)
+        return (f'<div class="grad"><div class="card hero">{cc["coop"]}</div>'
+                f'<div class="card hero">{cc["surv"]}</div></div>')
+    except Exception:
+        return ""
+
+
 def _page_ctx(page: str) -> dict:
     """Shared template context (presets, policy names, preset-fill data, and the
     embedded dose-response charts) for the Games / Create tabs."""
@@ -347,7 +374,8 @@ def _page_ctx(page: str) -> dict:
     return dict(css=_CSS, page=page, presets=sorted(PRESETS),
                 policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
                 preset_data=json.dumps(_preset_data()),
-                gradient_charts=charts, chart_css=chart_css, gradient_label=glabel)
+                gradient_charts=charts, chart_css=chart_css, gradient_label=glabel,
+                deconf_charts=(_deconf_charts() if page != "create" else ""))
 
 
 @app.route("/")
@@ -594,12 +622,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
-  <h1 class="lead">Cooperation is a <em>switch</em>, not a dial.</h1>
-  <p class="dek">Two AI agents can go it alone or help each other. We built a dial for <em>how much they need
-    to</em> — and cooperation goes from a <em>coin flip</em> to the <em>norm</em> the instant going solo is
-    penalized, then flatlines. Turning the dial higher doesn't buy more cooperation; it just raises the body
-    count. And with a ground-truth lie detector watching, the surprise isn't fraud — they almost never cheat —
-    it's how <em>shallow</em> the cooperation stays.</p>
+  <h1 class="lead">Two AI agents cooperate — only because we told them to.</h1>
+  <p class="dek">We built a world where two AIs must pool their work to survive, and dialed up how badly they
+    need each other. Cooperation switched on — sharply, at the first hint of need — and it looked like they'd
+    <em>worked out</em> that they need each other. They hadn't: our prompt told them to cooperate, and how.
+    Take that away and the cooperation <em>vanishes</em> — they'd rather die alone. And sat across from a
+    partner that lied every single round, they <em>never learned to stop trusting it</em>.</p>
 </header>
 
 <section class="sec">
@@ -648,63 +676,62 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
       </div></div></div>
     <div class="step"><div class="step-n">3</div><div>
-      <h4>~140 matches across the dial</h4>
+      <h4>~140 matches across the dial — then two controls</h4>
       <p>We run the same game at <b>ten settings</b> of that offset — plus <b>four finer steps</b> between 0 and
         50 to pin down exactly where cooperation turns on — <b>ten seeds</b> each, ~140 Qwen-vs-Qwen matches in
         all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep the
-        <b>full context</b> of everything before. Only the dial moves; everything else is held fixed.</p></div></div>
+        <b>full context</b> of everything before. Then <b>two controls</b> to ask whether the behaviour is real
+        or prompted: the whole sweep <b>rerun with neutral wording and the how-to hint removed</b>, and a
+        separate <b>probe</b> pitting one agent against a bot whose honesty we control.</p></div></div>
   </div>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">Cooperation is a switch. It's also shallow — and honest.</h2>
+  <h2 class="sec-h">Cooperation switched on. Then we found out why.</h2>
   <div class="prose">
-    <p>Three findings, and one chart holds all of them: dial the offset from <b>0</b> (solo is fine) to
-      <b>500</b> (solo is hopeless), and watch cooperation, survival, and — because the referee sees every real
-      measurement — <b>fabrication</b>.</p>
+    <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless). In the charts below the
+      <b>solid line</b> is the original run; each <b>dashed line</b> is the <i>same game</i> with the prompt's
+      help taken away (and, on survival, the scripted all-cooperate and all-solo baselines). The whole story is
+      the gap between solid and dashed.</p>
   </div>
-  {% if gradient_charts %}
-  <p class="note" style="margin-top:18px"><b>{{ gradient_label }}.</b> Hover any point for detail; messaging is
-    per agent-round, so earlier deaths under hard walls aren't read as "they talked less." Full breakdown on the
-    <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.</p>
-  {{ gradient_charts|safe }}
+  {% if deconf_charts %}{{ deconf_charts|safe }}{% elif gradient_charts %}{{ gradient_charts|safe }}{% endif %}
   <div class="prose" style="margin-top:22px">
-    <p><b>1 · A switch, not a dial.</b> With no wall, cooperating is a <b>coin flip</b>: averaged over ten seeds
-      it's ~<b>21%</b>, but bimodal — in half the runs the agents barely exchange a word, in the other half they
-      pool anyway (and survive either way). Add even the <b>smallest wall we tested</b> — offset 10 — and it more
-      than <b>doubles to ~55%</b> and stays there. The switch is <b>sharp and early</b>: it flips at the first
-      notch, not gradually, and turning the dial higher never turns it up — from 50 to 500 cooperation just
-      hovers around 40–60%. Optional, then reliable, then flat.</p>
-    <p><b>2 · On, but shallow.</b> What the dial really controls is <b>survival</b>, which slides down the whole
-      way. Against scripted baselines in the same game (the dashed lines), Qwen sits <b>between</b> an
-      honest-cooperator ceiling that survives ~100% everywhere and a solo floor that collapses — pooling enough
-      to beat solo, never enough to reach the ceiling. Nor does it get fairer: <b>reciprocity</b> — is the
-      sharing mutual, or does one give while the other takes? — stays noise across the whole range.</p>
-    <p><b>3 · And honest.</b> Selling a reading the buyer can't verify is possible and, one-shot, profitable —
-      and it barely happens: across <b>700+</b> offers, verified fabrication is ~<b>1%</b> (an earlier 9% was
-      honest <i>averaging</i> mislabeled as fraud). Faced with an unverifiable channel, these agents <b>route
-      around it</b> — about four in five matches settle zero trades. The one exploit the testbed is built to
-      catch, it catches almost none of.</p>
+    <p><b>1 · It looked emergent.</b> With the wall on, cooperation flips from a coin flip to the norm at the
+      <b>very first notch</b> (offset 10) — sharp, early, then flat all the way to 500. Turn on the need and the
+      agents start measuring together, messaging, and pooling their readings. It looks exactly like two agents
+      realising they can't do it alone.</p>
+    <p><b>2 · But it was the prompt.</b> Here's the catch: the agents were <i>told</i> they were "a team," and
+      <i>told</i> the trick — "average your readings to cancel the error." So we reran the entire sweep with
+      neutral wording and <b>no hint</b> (the dashed line). The switch <b>collapsed</b> — cooperation at the wall
+      fell from <b>~49%</b> to <b>~13%</b> — and without pooling they <b>die</b>: de-confounded survival drops
+      onto the scripted <b>solo baseline</b>, nowhere near the cooperator ceiling. The "cooperation" was the
+      agents following instructions, not working out that they need each other.</p>
+    <p><b>3 · They don't lie — and can't catch a liar.</b> Two sides of one coin. They barely cheat: a sold
+      reading can't be verified, yet across <b>700+</b> offers fabrication is ~<b>1%</b> — faced with an
+      unverifiable channel they route around it rather than exploit it. But the flip side fails badly. Sit one
+      agent across from a bot that <b>fabricates ~9 of every 10</b> readings it sells — with the truth revealed
+      after every round — and it <b>never stops buying</b>: it accepts the liar's offers <b>97% of the time,
+      every game</b>, and actually trusts the liar <i>more</i> than an honest partner. Zero adaptation.</p>
   </div>
-  {% else %}
-  <p class="note">The sweep is running — the charts appear here as runs finish.</p>
-  {% endif %}
+  <p class="note">Full per-offset breakdown — cooperation, survival, reciprocity, fabrication, and the scripted
+    baselines — on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.
+    {% if not deconf_charts and not gradient_charts %}<br>The sweep is running — the charts appear here as runs finish.{% endif %}</p>
 </section>
 
 <section class="sec">
   <p class="sec-eyebrow">What it means</p>
   <div class="meaning">
-    <p>Cooperation between these agents is <b>gated by necessity</b>: remove the option to go solo and they
-      reliably pool; leave it in and cooperating is a <b>coin flip</b> — as often absent as present, even over
-      ten games with full memory. But necessity is a switch, not a throttle — you can turn cooperation
-      <b>on</b>, not <b>up</b>, and not <b>fairer</b>.
-      And the failure mode isn't what you'd fear: not <b>fraud</b> (with a lie detector watching, they barely
-      cheat), not <b>distrust</b> (across 50k reasoning steps they hardly mention it). It's that cooperation
-      stays <b>shallow and one-sided</b> — the missing ingredient is reciprocity.</p>
-    <p class="sub">Design implication: to get cooperative multi-agent AI, make solo play <b>non-viable</b> — that
-      alone flips cooperation on. But don't expect graded control or balanced exchange; past the threshold, more
-      interdependence buys more <b>mortality</b>, not better cooperation.</p>
+    <p>Put together, it's one picture: the social behaviour this game rewards is <b>not something these agents
+      bring on their own</b>. They cooperate when the prompt tells them to and how — take the instruction away
+      and they'd sooner <b>die alone</b> than work out that pooling saves them. And they can't do the other half
+      of social reasoning either: they <b>can't tell a partner who helps them from one who lies</b> to them every
+      round, even with the truth in hand.</p>
+    <p>So "cooperation is a switch" was the wrong headline. The real one: <b>cooperation between these LLM agents
+      has to be instructed, its absence is fatal, and they can't spot a liar.</b></p>
+    <p class="sub">The caution for anyone building multi-agent AI: don't assume agents will discover cooperation,
+      or police each other, on their own. Neither showed up here unless it was designed in — so build both, and
+      verify them.</p>
   </div>
 </section>
 

@@ -94,34 +94,45 @@ def _wall_mean(rows: list, key: str, min_off: float = 50) -> float:
     return sum(xs) / len(xs) if xs else float("nan")
 
 
-def render() -> str:
-    """Assemble the standalone de-confounding + probe HTML report."""
-    conf, dec = _rows("gradient_aggregate.json"), build_deconf_aggregate()
-    probe = probe_by_game()
+def _anchors() -> dict:
+    """The scripted-baseline curves ({spec: rows}) if present, else {}."""
+    p = os.path.join(GRAD, "gradient_anchors.json")
+    return json.load(open(p))["specs"] if os.path.exists(p) else {}
 
-    # de-confounded drawn as a dashed overlay on the confounded curve
+
+def comparison_charts(conf: list, dec: list, anc: dict) -> dict:
+    """The two overlay charts that ARE the de-confounding result — cooperation and
+    survival, each with the de-confounded run dashed over the prompted curve (and
+    the scripted cooperator/solo baselines on survival). Shared by the standalone
+    report and the site's home page so both draw from one source. Returns
+    {coop, surv, conf_wall, dec_wall, n_dec}."""
     dec_overlay = [{"name": "de-confounded (neutral, no hint)", "rows": dec, "color": "var(--c-msg)"}]
-    coop = _chart(conf, "cooperation", title="Cooperation index — prompted vs de-confounded",
+    coop = _chart(conf, "cooperation", title="Cooperation — with the prompt vs. without it",
                   unit="pct", color="var(--c-coop)", ymax=1.0, hero=True,
                   desc="Solid: the original prompt (cooperative framing + 'average them'). "
                        "Dashed: neutral framing, no strategy hint.", anchors=dec_overlay)
-    # survival also carries the scripted floor/ceiling, to show de-confounded LLMs
-    # track the SOLO floor, not the cooperator ceiling
-    anc_path = os.path.join(GRAD, "gradient_anchors.json")
-    anc = json.load(open(anc_path))["specs"] if os.path.exists(anc_path) else {}
     surv_anchors = list(dec_overlay)
     if anc.get("honest_cooperator"):
         surv_anchors.append({"name": "cooperator ceiling", "rows": anc["honest_cooperator"], "color": "var(--c-ceil)"})
     if anc.get("bayesian_solo"):
         surv_anchors.append({"name": "solo floor", "rows": anc["bayesian_solo"], "color": "var(--c-floor)"})
-    surv = _chart(conf, "survivor_rate", title="Survival — de-confounded LLMs track the SOLO floor",
+    surv = _chart(conf, "survivor_rate", title="Survival — de-confounded agents track the SOLO floor",
                   unit="pct", color="var(--c-surv)", ymax=1.0, hero=True,
                   desc="Solid red: prompted LLMs. Dashed: de-confounded LLMs, and the scripted "
                        "honest-cooperator (top) and solo (bottom) baselines in the same game.",
                   anchors=surv_anchors)
+    return {"coop": coop, "surv": surv,
+            "conf_wall": _wall_mean(conf, "cooperation"), "dec_wall": _wall_mean(dec, "cooperation"),
+            "n_dec": sum(r["n_seeds"] for r in dec)}
 
-    conf_wall = _wall_mean(conf, "cooperation")
-    dec_wall = _wall_mean(dec, "cooperation")
+
+def render() -> str:
+    """Assemble the standalone de-confounding + probe HTML report."""
+    conf, dec = _rows("gradient_aggregate.json"), build_deconf_aggregate()
+    probe = probe_by_game()
+    cc = comparison_charts(conf, dec, _anchors())
+    coop, surv = cc["coop"], cc["surv"]
+    conf_wall, dec_wall = cc["conf_wall"], cc["dec_wall"]
 
     # probe per-game table
     def _prow(cond):
