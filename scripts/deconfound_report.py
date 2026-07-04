@@ -115,6 +115,7 @@ def render() -> str:
 
     # probe per-game table
     def _prow(cond):
+        """One table row: the partner condition and its per-game acceptance rates."""
         r = probe[cond]
         cells = "".join(f"<td>{v:.0%}</td>" for v in r["rate"])
         return f'<tr><th>{cond}</th>{cells}</tr>'
