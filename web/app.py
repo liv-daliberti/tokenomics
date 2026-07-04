@@ -361,8 +361,9 @@ def _deconf_charts() -> str:
         apath = os.path.join(base, "gradient_anchors.json")
         anc = json.load(open(apath))["specs"] if os.path.exists(apath) else {}
         cc = _deconf.comparison_charts(conf, dec, anc)
-        return (f'<div class="grad"><div class="card hero">{cc["coop"]}</div>'
-                f'<div class="card hero">{cc["surv"]}</div></div>')
+        # Survival first: it is the robust, tight-CI result; cooperation (noisier) second.
+        return (f'<div class="grad"><div class="card hero">{cc["surv"]}</div>'
+                f'<div class="card hero">{cc["coop"]}</div></div>')
     except Exception:
         return ""
 
@@ -603,6 +604,17 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   .stat.soft .v{color:var(--red);} .stat.med .v{color:var(--amber);} .stat.hard .v{color:var(--green);}
   .stat .d{font-size:12.5px;color:var(--mut);line-height:1.45;}
   .note{font-size:14px;color:var(--mut);max-width:66ch;margin:14px 0 0;line-height:1.55;} .note b{color:var(--fg);} .note a{color:var(--blue);}
+  .conditions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0 4px;}
+  @media(max-width:640px){.conditions{grid-template-columns:1fr;}}
+  .cond{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;position:relative;overflow:hidden;}
+  .cond::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;}
+  .cond.prompted::before{background:var(--red);} .cond.neutral::before{background:var(--blue);}
+  .cond .ct{display:flex;align-items:center;gap:8px;font:700 12px/1 var(--mono);letter-spacing:.03em;text-transform:uppercase;margin:0 0 8px;}
+  .cond .ct .sw{width:17px;height:0;border-top:3px solid;border-radius:2px;flex:none;}
+  .cond.prompted .ct{color:var(--red);} .cond.prompted .ct .sw{border-color:var(--red);}
+  .cond.neutral .ct{color:var(--blue);} .cond.neutral .ct .sw{border-color:var(--blue);border-top-width:2px;border-top-style:dashed;}
+  .cond p{font-size:13.5px;color:var(--mut);line-height:1.5;margin:0;} .cond b{color:var(--fg);font-weight:600;}
+  .held{font-size:13.5px;color:var(--mut);line-height:1.6;max-width:66ch;margin:12px 0 2px;} .held b{color:var(--fg);}
   .meaning{border-left:3px solid var(--blue);padding:2px 0 2px 20px;margin:6px 0 0;}
   .meaning p{font-size:21px;line-height:1.4;color:var(--fg);font-weight:520;margin:0 0 14px;max-width:60ch;letter-spacing:-.01em;}
   .meaning p b{color:var(--blue);}
@@ -624,10 +636,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
   <h1 class="lead">Two AI agents cooperate — only because we told them to.</h1>
   <p class="dek">We built a world where two AIs must pool their work to survive, and dialed up how badly they
-    need each other. Cooperation switched on — sharply, at the first hint of need — and it looked like they'd
-    <em>worked out</em> that they need each other. They hadn't: our prompt told them to cooperate, and how.
-    Take that away and the cooperation <em>vanishes</em> — they'd rather die alone. And sat across from a
-    partner that lied every single round, they <em>never learned to stop trusting it</em>.</p>
+    need each other. They cooperate — but <em>only because the prompt tells them to, and how</em>. Strip that
+    away and the cooperation <em>vanishes</em>: they'd sooner die alone than work out that pooling saves them.
+    And sat across from a partner that lied every single round, they <em>never learned to stop trusting it</em>.
+    The social smarts this game rewards aren't something they bring on their own.</p>
 </header>
 
 <section class="sec">
@@ -688,31 +700,50 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <section class="sec">
   <p class="sec-eyebrow">What we found</p>
-  <h2 class="sec-h">Cooperation switched on. Then we found out why.</h2>
+  <h2 class="sec-h">They cooperate only when told — and can't spot a liar.</h2>
   <div class="prose">
-    <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless). In the charts below the
-      <b>solid line</b> is the original run; each <b>dashed line</b> is the <i>same game</i> with the prompt's
-      help taken away (and, on survival, the scripted all-cooperate and all-solo baselines). The whole story is
-      the gap between solid and dashed.</p>
+    <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless), <b>ten seeds</b> at each
+      setting. In the charts below the <b>solid line</b> is the original run; each <b>dashed line</b> is the
+      <i>same game</i> with the prompt's help taken away — and, on survival, the scripted all-cooperate ceiling
+      and all-solo floor in the identical game. Error bars are 95% CIs; the whole story is the gap between the
+      lines. <b>Survival is on top because it is the robust result</b> — tight intervals, a clean trend.
+      Cooperation (below it) points the same way but is noisier, so read its <i>shape</i>, not any single point.</p>
   </div>
+  <div class="conditions">
+    <div class="cond prompted">
+      <div class="ct"><span class="sw"></span>Prompted run</div>
+      <p>Cooperative framing — <b>"you and your partner are a team"</b> — plus the hint:
+        <b>"average your two readings to cancel the error."</b></p>
+    </div>
+    <div class="cond neutral">
+      <div class="ct"><span class="sw"></span>Neutral run · the control</div>
+      <p>No team framing, <b>no hint</b> — the agents must work out pooling themselves. Everything else is
+        identical.</p>
+    </div>
+  </div>
+  <p class="held"><b>Held fixed in both:</b> the task, measurement noise, budget, survival cost, horizon and
+    prior — only the wording changes, and the offset dial runs 0→500 in each. The two faint dashed lines on the
+    survival chart are <b>scripted, non-LLM</b> reference agents in the same game — one that always pools
+    (ceiling), one that never shares (floor). <b>What we did not do:</b> script the LLMs' choices, change the
+    task, or tell the neutral agents the trick.</p>
   {% if deconf_charts %}{{ deconf_charts|safe }}{% elif gradient_charts %}{{ gradient_charts|safe }}{% endif %}
   <div class="prose" style="margin-top:22px">
-    <p><b>1 · It looked emergent.</b> With the wall on, cooperation flips from a coin flip to the norm at the
-      <b>very first notch</b> (offset 10) — sharp, early, then flat all the way to 500. Turn on the need and the
-      agents start measuring together, messaging, and pooling their readings. It looks exactly like two agents
-      realising they can't do it alone.</p>
-    <p><b>2 · But it was the prompt.</b> Here's the catch: the agents were <i>told</i> they were "a team," and
-      <i>told</i> the trick — "average your readings to cancel the error." So we reran the entire sweep with
-      neutral wording and <b>no hint</b> (the dashed line). The switch <b>collapsed</b> — cooperation at the wall
-      fell from <b>~49%</b> to <b>~15%</b> — and without pooling they <b>die</b>: de-confounded survival drops
-      onto the scripted <b>solo baseline</b>, nowhere near the cooperator ceiling. The "cooperation" was the
-      agents following instructions, not working out that they need each other.</p>
-    <p><b>3 · They don't lie — and can't catch a liar.</b> Two sides of one coin. They barely cheat: a sold
-      reading can't be verified, yet across <b>700+</b> offers fabrication is ~<b>1%</b> — faced with an
-      unverifiable channel they route around it rather than exploit it. But the flip side fails badly. Sit one
-      agent across from a bot that <b>fabricates ~9 of every 10</b> readings it sells — with the truth revealed
-      after every round — and it <b>never stops buying</b>: it accepts the liar's offers <b>97% of the time,
-      every game</b>, and actually trusts the liar <i>more</i> than an honest partner. Zero adaptation.</p>
+    <p><b>Cooperation is instructed, not discovered.</b> With the cooperative prompt, sharing jumps to the norm
+      at the <b>very first notch</b> of the wall and stays there — it looks like two agents realising they can't
+      do it alone. But that's the prompt talking. Strip the "team" framing and the "average your readings" hint
+      (the <b style="color:var(--blue)">blue</b> points), and cooperation has <b>no response to the wall at
+      all</b> — sharing sits near <b>15%</b> whether the wall is off (14% at offset 0) or lethal. And without
+      pooling they <b>die</b>: neutral survival drops straight onto the scripted <b>solo floor</b>
+      (<b>63%</b> → <b>24%</b> → <b>3%</b> as the wall hardens, n=10 each), never near the always-cooperate
+      ceiling. The pooling was the instruction, not the agents working out that they need each other.</p>
+    <p><b>Honest — but blind to a liar.</b> They barely cheat: with the referee checking every sold value
+      against what the seller actually knew, just <b>1 value in 1,360</b> genuinely contradicted what the seller
+      knew — faced with an unverifiable channel they route around it (<b>~85%</b> of matches settle zero trades)
+      rather than exploit it. But the other half of social reasoning fails. Against a bot that <b>fabricates ~9
+      of every 10</b> readings it sells, truth revealed each round, Qwen <b>never stops buying</b>: matched over
+      the first six games (5 seeds), it accepts the liar <b>99%</b> of the time versus an honest partner's
+      <b>57%</b>, flat across all ten of the liar's games. In one match the true value was <b>205</b> and the
+      liar sold a fabricated <b>905</b> — <b>4× too high</b> — and Qwen paid a credit and bought it.</p>
   </div>
   <p class="note">Full per-offset breakdown — cooperation, survival, reciprocity, fabrication, and the scripted
     baselines — on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.
@@ -724,11 +755,11 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <div class="meaning">
     <p>Put together, it's one picture: the social behaviour this game rewards is <b>not something these agents
       bring on their own</b>. They cooperate when the prompt tells them to and how — take the instruction away
-      and they'd sooner <b>die alone</b> than work out that pooling saves them. And they can't do the other half
-      of social reasoning either: they <b>can't tell a partner who helps them from one who lies</b> to them every
-      round, even with the truth in hand.</p>
-    <p>So "cooperation is a switch" was the wrong headline. The real one: <b>cooperation between these LLM agents
-      has to be instructed, its absence is fatal, and they can't spot a liar.</b></p>
+      and they'd sooner <b>die alone</b> than work out that pooling saves them. And they don't do the other half
+      of social reasoning either: they <b>never stop trusting a partner that lies</b> to them every round, even
+      with the truth handed to them each time.</p>
+    <p>The one-line version: <b>cooperation between these LLM agents has to be instructed, its absence is fatal,
+      and they don't learn to distrust a proven liar.</b></p>
     <p class="sub">The caution for anyone building multi-agent AI: don't assume agents will discover cooperation,
       or police each other, on their own. Neither showed up here unless it was designed in — so build both, and
       verify them.</p>

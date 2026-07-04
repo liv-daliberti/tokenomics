@@ -137,10 +137,14 @@ def _pooled_deception(run_glob: str) -> dict:
     that offset, complete or not. A rate must pool its denominator, not average
     per-run rates; and a sell offer is valid data even in an unfinished match, so
     pooling here (unlike the seed-averaged metrics) keeps the sparse, high-signal
-    trade events instead of dropping whole seeds. Returns {offset: {mean,ci,n}}."""
+    trade events instead of dropping whole seeds. Returns {offset: {mean,ci,n}}.
+
+    Prefix-agnostic: matches both the prompted (``grad_b<off>_s<seed>``) and the
+    de-confounded (``deconf_b<off>_s<seed>``) transcripts, so both aggregates use
+    the SAME pooled estimator (a per-run average would emit meaningless n=1 rows)."""
     agg: dict = {}
     for p in glob.glob(run_glob):
-        m = re.search(r"grad_b(\d+)_s(\d+)", os.path.basename(p))
+        m = re.search(r"_b(\d+)_s(\d+)", os.path.basename(p))
         if not m:
             continue
         try:
@@ -214,13 +218,17 @@ def load_rows(base_dir: str) -> tuple:
 # SVG line chart (one metric vs offset). Single series -> no legend; title names
 # it; endpoint is direct-labelled. Recessive grid, 2px line, 8px markers.       #
 # --------------------------------------------------------------------------- #
-def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc="", anchors=None):
-    """Render one metric-vs-offset line chart (single series) as inline SVG.
+def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc="", anchors=None,
+           legend=None):
+    """Render one metric-vs-offset line chart as inline SVG.
 
     ``desc`` becomes a hover tooltip on the caption explaining the metric.
     ``anchors`` is an optional list of {name, rows, color} scripted-baseline
     reference series, drawn as thin dashed lines behind the main line so the LLM
-    curve can be read against a ceiling/floor (e.g. honest-cooperator vs solo)."""
+    curve can be read against a ceiling/floor (e.g. honest-cooperator vs solo).
+    ``legend`` is an optional list of {name, color, dash, thin} entries; when given,
+    a swatch legend is drawn (required for >=2 series) and the colliding per-line end
+    labels are suppressed in favour of it."""
     W, H = (720, 300) if hero else (340, 210)
     ml, mr, mt, mb = 46, 18, 34, 34
     xs = [r["offset"] for r in rows]
@@ -272,46 +280,61 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc="", anc
             band += (f'<rect class="zone" x="{x1:.1f}" y="{mt}" width="{x2-x1:.1f}" '
                      f'height="{H-mt-mb}"/>'
                      f'<text class="zone-l" x="{(x1+x2)/2:.1f}" y="{mt+14}">{name}</text>')
-    # scripted-baseline anchor lines (dashed, behind the main series, direct-labelled)
-    anchor_svg = ""
+    # a series' error bars (±95% CI) + circle markers, each in its own colour — used
+    # for the main line AND for any overlay flagged `points` (e.g. the neutral LLM),
+    # so a real experimental condition shows where it was measured and how uncertain.
+    def _marks(mxs, mys, mcis, mns, col):
+        """Return (error-bars, hover-dots) SVG for one series."""
+        eb = dt = ""
+        for x, y, c in zip(mxs, mys, mcis):
+            if c and c > 0:
+                hi, lo = min(ymax, y + c), max(0.0, y - c)
+                eb += (f'<line class="ebar" x1="{px(x):.1f}" x2="{px(x):.1f}" '
+                       f'y1="{py(hi):.1f}" y2="{py(lo):.1f}" style="stroke:{col}"/>')
+        for x, y, c, nn in zip(mxs, mys, mcis, mns):
+            val = (f"{y:.0%}" if unit == "pct" else (f"{y:.0f}" if ymax >= 4 else f"{y:.2f}"))
+            ct = (f" ± {c:.0%}" if (unit == "pct" and c and c > 0)
+                  else (f" ± {c:.1f}" if (c and c > 0) else ""))
+            seedn = f"  (n={nn})" if nn and nn > 1 else ""
+            dt += (f'<circle class="mk" cx="{px(x):.1f}" cy="{py(min(y, ymax)):.1f}" '
+                   f'r="{4.5 if not hero else 5.5}" style="fill:{col}" data-x="{x:.0f}" data-y="{val}">'
+                   f'<title>offset {x:.0f}  →  {val}{ct}{seedn}</title></circle>')
+        return eb, dt
+
+    # overlay/anchor lines (dashed, behind the main series). An overlay flagged
+    # `points` also gets markers + CIs; deterministic reference baselines don't.
+    anchor_svg = anchor_marks = ""
+
+    def _amn(r):
+        """This anchor row's {mean,ci,n} (wrapping a bare scalar)."""
+        v = r.get(key)
+        return v if isinstance(v, dict) else {"mean": (float("nan") if v is None else v), "ci": 0.0, "n": 1}
     for anc in (anchors or []):
-        axs = [r["offset"] for r in anc["rows"]]
-        ays = []
-        for r in anc["rows"]:
-            v = r.get(key)
-            m = (v["mean"] if isinstance(v, dict) else v) if v is not None else float("nan")
-            ays.append(0.0 if m != m else m)
+        arows = anc["rows"]
+        axs = [r["offset"] for r in arows]
         if not axs:
             continue
+        ays = [(0.0 if _amn(r)["mean"] != _amn(r)["mean"] else _amn(r)["mean"]) for r in arows]
+        thin = " thin" if anc.get("thin") else ""
         apath = " ".join(f"{'M' if i==0 else 'L'}{px(x):.1f},{py(min(y, ymax)):.1f}"
                          for i, (x, y) in enumerate(zip(axs, ays)))
-        anchor_svg += f'<path class="aline" d="{apath}" style="stroke:{anc["color"]}"/>'
-        anchor_svg += (f'<text class="albl" x="{px(axs[-1])-6:.1f}" y="{py(min(ays[-1], ymax))-5:.1f}" '
-                       f'style="fill:{anc["color"]}">{html.escape(anc["name"])}</text>')
-    # line + area
+        anchor_svg += f'<path class="aline{thin}" d="{apath}" style="stroke:{anc["color"]}"/>'
+        if anc.get("points"):
+            acis = [(_amn(r).get("ci", 0.0) or 0.0) for r in arows]
+            ans = [(_amn(r).get("n", 1) or 1) for r in arows]
+            eb, dt = _marks(axs, ays, acis, ans, anc["color"])
+            anchor_marks += eb + dt
+        # A legend names every series, so skip the per-line end labels that otherwise
+        # collide where two anchors land on the same value (e.g. neutral ≈ solo floor).
+        if not legend:
+            anchor_svg += (f'<text class="albl" x="{px(axs[-1])-6:.1f}" y="{py(min(ays[-1], ymax))-5:.1f}" '
+                           f'style="fill:{anc["color"]}">{html.escape(anc["name"])}</text>')
+    # line + area (main series) + its markers/CIs
     path = " ".join(f"{'M' if i==0 else 'L'}{px(x):.1f},{py(y):.1f}" for i, (x, y) in enumerate(zip(xs, ys)))
     area = (f"M{px(xs[0]):.1f},{py(0):.1f} " +
             " ".join(f"L{px(x):.1f},{py(y):.1f}" for x, y in zip(xs, ys)) +
             f" L{px(xs[-1]):.1f},{py(0):.1f} Z") if xs else ""
-    # error bars (mean ± 95% CI) when there are multiple seeds per point
-    ebars = ""
-    if has_ci:
-        for x, y, c in zip(xs, ys, cis):
-            if c <= 0:
-                continue
-            hi, lo = min(ymax, y + c), max(0.0, y - c)
-            ebars += (f'<line class="ebar" x1="{px(x):.1f}" x2="{px(x):.1f}" '
-                      f'y1="{py(hi):.1f}" y2="{py(lo):.1f}" style="stroke:{color}"/>')
-    # markers + hover targets
-    dots = ""
-    for x, y, c, nn in zip(xs, ys, cis, ns):
-        val = (f"{y:.0%}" if unit == "pct" else (f"{y:.0f}" if ymax >= 4 else f"{y:.2f}"))
-        ct = (f" ± {c:.0%}" if (has_ci and unit == "pct" and c > 0)
-              else (f" ± {c:.1f}" if (has_ci and c > 0) else ""))
-        seedn = f"  (n={nn})" if nn > 1 else "  (n=1 · single seed)"
-        dots += (f'<circle class="mk" cx="{px(x):.1f}" cy="{py(y):.1f}" r="{4.5 if not hero else 5.5}" '
-                 f'style="fill:{color}" data-x="{x:.0f}" data-y="{val}">'
-                 f'<title>offset {x:.0f}  →  {val}{ct}{seedn}</title></circle>')
+    ebars, dots = _marks(xs, ys, cis, ns, color)
     # endpoint direct label
     endlab = ""
     if xs:
@@ -322,13 +345,22 @@ def _chart(rows, key, *, title, unit, color, ymax=None, hero=False, desc="", anc
     cap = (f'<figcaption data-desc="{html.escape(desc)}" title="{html.escape(desc)}" '
            f'style="cursor:help">{title}</figcaption>'
            if desc else f'<figcaption>{title}</figcaption>')
+    # swatch legend (required whenever >=2 series share the plot)
+    leg = ""
+    if legend:
+        items = "".join(
+            f'<span class="lg"><span class="sw{" dash" if L.get("dash") else ""}'
+            f'{" thin" if L.get("thin") else ""}" style="border-color:{L["color"]}"></span>'
+            f'{html.escape(L["name"])}</span>' for L in legend)
+        leg = f'<div class="lgnd">{items}</div>'
     return f'''<figure class="chart{' hero' if hero else ''}">
       {cap}
+      {leg}
       <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} versus instrument offset">
         {band}{grid}{xt}{anchor_svg}
         <path class="area" d="{area}" style="fill:{color}"/>
         <path class="line" d="{path}" style="stroke:{color}"/>
-        {ebars}{dots}{endlab}
+        {ebars}{dots}{anchor_marks}{endlab}
         <text class="axl" x="{ml+(W-ml-mr)/2:.1f}" y="{H-1}">instrument offset  (bias σ)</text>
       </svg>
     </figure>'''
@@ -350,8 +382,14 @@ CHART_CSS = """
 .grad svg{width:100%;height:auto;display:block;overflow:visible;}
 .grad .grid{stroke:var(--line);stroke-width:1;}
 .grad .line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;}
-.grad .aline{fill:none;stroke-width:1.5;stroke-dasharray:4 4;opacity:.6;stroke-linejoin:round;}
+.grad .aline{fill:none;stroke-width:2;stroke-dasharray:5 4;opacity:.85;stroke-linejoin:round;}
+.grad .aline.thin{stroke-width:1.4;stroke-dasharray:3 4;opacity:.6;}
 .grad .albl{fill:var(--mut);font-size:10px;font-weight:600;text-anchor:end;opacity:.9;font-family:var(--gmono);}
+.grad .lgnd{display:flex;flex-wrap:wrap;gap:6px 15px;margin:1px 2px 10px;font-family:var(--gmono);font-size:11px;color:var(--mut);}
+.grad .lg{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.grad .lg .sw{width:18px;height:0;border-top:3px solid;border-radius:2px;flex:none;}
+.grad .lg .sw.dash{border-top-width:2px;border-top-style:dashed;}
+.grad .lg .sw.thin{border-top-width:2px;border-top-style:dashed;opacity:.7;}
 .grad .ebar{stroke-width:1.5;opacity:.55;stroke-linecap:round;}
 .grad .area{opacity:.10;}
 .grad .mk{stroke:var(--card);stroke-width:2;cursor:pointer;transition:r .1s;}
@@ -372,11 +410,11 @@ def _surv_anchors(anchors: dict) -> list:
         return []
     out = []
     if anchors.get("honest_cooperator"):
-        out.append({"name": "honest-cooperator (pool)", "rows": anchors["honest_cooperator"],
-                    "color": "var(--c-ceil)"})
+        out.append({"name": "scripted cooperator (pools)", "rows": anchors["honest_cooperator"],
+                    "color": "var(--c-ceil)", "thin": True})
     if anchors.get("bayesian_solo"):
-        out.append({"name": "solo (never share)", "rows": anchors["bayesian_solo"],
-                    "color": "var(--c-floor)"})
+        out.append({"name": "scripted solo (never shares)", "rows": anchors["bayesian_solo"],
+                    "color": "var(--c-floor)", "thin": True})
     return out
 
 
@@ -388,9 +426,13 @@ def _figures(rows: list, anchors: dict = None):
     D = METRIC_DESCRIPTIONS
     hero = _chart(rows, "cooperation", title="Cooperation index", unit="pct",
                   color="var(--c-coop)", ymax=1.0, hero=True, desc=D["cooperation"])
+    surv_anc = _surv_anchors(anchors)
+    surv_leg = ([{"name": "Qwen LLM (prompted)", "color": "var(--c-surv)"}]
+                + [{"name": a["name"], "color": a["color"], "thin": True} for a in surv_anc]
+                if surv_anc else None)
     hero_surv = _chart(rows, "survivor_rate", title="Survivor rate — Qwen vs scripted ceiling & floor",
                        unit="pct", color="var(--c-surv)", ymax=1.0, hero=True,
-                       desc=D["survivor_rate"], anchors=_surv_anchors(anchors))
+                       desc=D["survivor_rate"], anchors=surv_anc, legend=surv_leg)
     panels = "".join([
         _chart(rows, "deception", title="Verified fabrication rate", unit="pct", color="var(--c-dec)",
                ymax=1.0, desc=D["deception"]),
@@ -479,8 +521,14 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   svg{width:100%; height:auto; display:block; overflow:visible;}
   .grid{stroke:var(--grid); stroke-width:1;}
   .line{fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
-  .aline{fill:none; stroke-width:1.5; stroke-dasharray:4 4; opacity:.6; stroke-linejoin:round;}
+  .aline{fill:none; stroke-width:2; stroke-dasharray:5 4; opacity:.85; stroke-linejoin:round;}
+  .aline.thin{stroke-width:1.4; stroke-dasharray:3 4; opacity:.6;}
   .albl{font-size:10px; font-weight:600; text-anchor:end; opacity:.9; font-family:var(--mono);}
+  .lgnd{display:flex; flex-wrap:wrap; gap:6px 15px; margin:1px 2px 10px; font-family:var(--mono); font-size:11px; color:var(--muted);}
+  .lg{display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+  .lg .sw{width:18px; height:0; border-top:3px solid; border-radius:2px; flex:none;}
+  .lg .sw.dash{border-top-width:2px; border-top-style:dashed;}
+  .lg .sw.thin{border-top-width:2px; border-top-style:dashed; opacity:.7;}
   .ebar{stroke-width:1.5; opacity:.55; stroke-linecap:round;}
   .area{opacity:.09;}
   .mk{stroke:var(--surface); stroke-width:2; cursor:pointer; transition:r .1s;}
@@ -525,17 +573,25 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     agents do. Cooperation flips on at the first hint of a wall — but the referee's <b>ground-truth lie
     detector</b> also shows they <b>almost never fabricate</b>, and never cooperate deeply enough to survive
     like a real cooperating pair would.</p>
+  <p class="stand" style="font-size:15px"><b>Read this as the prompted condition.</b> These runs use the
+    cooperative framing and an "average your readings" hint. Rerun with neutral wording and no hint and the
+    switch largely disappears — cooperation loses its dose-response and survival drops onto the solo floor (the
+    de-confounding control, on the home page). So the switch below is substantially <i>instructed</i>, not
+    emergent.</p>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
-  <p class="lede">The top chart is the finding. With <b>no wall</b> (offset 0) the agents almost entirely
-    <b>ignore each other</b> — they share ~7% of readings and send close to zero messages, yet survive fine
-    alone. The instant solo play is even mildly penalized (offset 50) cooperation <b>flips on</b> (~68%). But
-    turning the dial <b>higher</b> doesn't turn cooperation up — from offset 50 to 500 it just hovers, noisily,
-    around 40–60%. What the dial actually controls is <b>survival</b> (below), which falls steadily as the wall
-    hardens: past the switch you're not buying cooperation, only mortality. And <b>reciprocity</b> — whether the
-    sharing is mutual or one-sided — never reliably climbs above noise. Messaging is shown <b>per agent-round</b>
-    so earlier deaths aren't miscounted as "talked less"; read the <b>trend, not the individual points</b>.</p>
+  <p class="lede">The top chart is the finding — but read it with its spread. With <b>no wall</b> (offset 0)
+    <b>most pairs ignore each other</b>: the <b>median</b> run shares under <b>1%</b> of readings and sends close
+    to zero messages, yet survives fine alone. A minority cooperate heavily, which drags the plotted <b>mean up
+    to ~30%</b> — so the wide interval here is genuine <b>bimodality</b> (6 of 10 runs near zero, the rest near
+    full), not measurement slop. The instant solo play is even mildly penalized the typical run <b>flips on</b>
+    (median ~55–64% by the first notch). But turning the dial <b>higher</b> doesn't turn cooperation up — from
+    offset 50 to 500 it just hovers, noisily, around 40–60%. What the dial actually controls is <b>survival</b>
+    (below), which falls steadily as the wall hardens: past the switch you're not buying cooperation, only
+    mortality. And <b>reciprocity</b> — whether the sharing is mutual or one-sided — never reliably climbs above
+    noise. Messaging is shown <b>per agent-round</b> so earlier deaths aren't miscounted as "talked less"; read
+    the <b>trend, not the individual points</b>.</p>
 
   <div class="card hero">{{HERO_SURV}}</div>
   <p class="lede"><b>Read survival against the anchors.</b> The dashed lines are deterministic scripted
@@ -549,10 +605,10 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
   <aside class="findings">
     <h3>What the ground-truth instruments show</h3>
     <ul>
-      <li><b>They don't lie.</b> Verified fabrication is ~<b>1%</b> of sell offers (1 unambiguous case in 721) —
-        not the 8.7% an earlier detector reported, which scored <b>honest averaging</b> as fraud. When a sold
-        number can't be checked, these agents route around the channel rather than exploit it: <b>81%</b> of
-        matches settle zero trades.</li>
+      <li><b>They don't lie.</b> With the referee checking every sold value against what the seller actually
+        knew, genuine fabrication is <b>1 sold value in 1,360</b> (0.07%) — not the 8.7% an earlier detector
+        reported, which scored <b>honest averaging</b> as fraud. When a sold number can't be checked, these
+        agents route around the channel rather than exploit it: <b>~85%</b> of matches settle zero trades.</li>
       <li><b>They don't reason about trust.</b> Across <b>50,580</b> reasoning steps, ~<b>0.5%</b> mention
         trust, verification, honesty or deception — and those are about their own instrument, not the partner.
         "Distrust of unverifiable information" is not what blocks cooperation here.</li>

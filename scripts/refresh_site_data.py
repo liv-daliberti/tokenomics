@@ -76,6 +76,12 @@ def refresh_deconf() -> int:
     if not groups:
         return 0
     rows = _gr.aggregate_rows(groups)
+    # Fabrication is POOLED per-offer (same estimator as the confounded aggregate via
+    # write_aggregate); a per-run average here emits junk n=1 rows. Keep the paths in sync.
+    pooled = _gr._pooled_deception(DECONF_GLOB)
+    for r in rows:
+        if r["offset"] in pooled:
+            r["deception"] = pooled[r["offset"]]
     tot = sum(r["n_seeds"] for r in rows)
     with open(DECONF_AGG, "w") as fh:
         json.dump({"label": f"{tot} de-confounded runs (neutral framing, no averaging hint) "

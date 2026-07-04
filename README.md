@@ -227,21 +227,34 @@ mention the partner). So the default forces true interdependence (see
 including an **eliminated** one, which **revives** it into the next round. Agents
 are told this, so a dying partner can be kept alive or brought back.
 
-**What the Qwen agents actually did** (100-match interdependence sweep, N=2, plus
-reports in [docs/samples/](docs/samples)): clean tool use throughout (0 parse
-failures). Cooperation is a **switch, not a dial** — near-zero with no wall (~7%
-of readings shared), it flips on (~68%) the instant solo play is penalized, then
-flatlines; survival falls steadily as the wall hardens, so the Qwen curve sits
-*between* a scripted honest-cooperator ceiling (~100% survival) and a solo floor.
-The failure is **shallow, one-sided** cooperation (reciprocity never rises above
-noise) — **not** deception and **not** distrust: with the ground-truth lie
-detector watching, verified fabrication is ~**1%** of 700+ offers (they route
-around the unverifiable market — ~80% of matches settle zero trades), and across
-50k reasoning steps they almost never mention trust or verification. *The recurring
-finding: when solo play is fatal LLM agents will pool — but shallowly and
-one-sidedly, and honestly; the missing ingredient is reciprocity, not honesty.*
-(An earlier writeup reported ~9% deception and a "distrust" story; both were
-artifacts — honest averaging mislabeled as fraud, since corrected.)
+**What the Qwen agents actually did** (interdependence sweep, N=2: **137 prompted +
+97 de-confounded** matches, plus reports in [docs/samples/](docs/samples)): clean
+tool use throughout (0 parse failures). With the **cooperative prompt**, cooperation
+*looked* like a **switch, not a dial** — ~30% of readings shared with no wall, flipping
+to ~55% the instant solo play is penalized, then flat; survival falls steadily as the
+wall hardens, so the Qwen curve sits *between* a scripted honest-cooperator ceiling
+(~100% survival) and a solo floor.
+
+But two controls show that behaviour is **instructed, not emergent**. *(1) De-confounding:*
+rerun with **neutral framing and the "average them" hint removed** and cooperation loses
+its dose-response — it sits near **~15%** whether the wall is off (14% at offset 0) or
+lethal — and, decisively, **survival drops straight onto the scripted solo floor** (63% →
+24% → **3%** as the wall hardens from σ100 to σ500, n=10 each), never near the cooperator
+ceiling. *(2) Trust probe:* against a bot that fabricates ~9 of every 10 values it sells,
+with the truth revealed each round, one Qwen seat **never stops buying** — matched over
+the first six games (the range both controls finished cleanly, 5 seeds each), it accepts
+the **liar 99%** of the time vs an **honest partner 57%** (it trusts the liar *more*), flat
+with zero adaptation across all ten of the liar's games.
+
+On the flip side they are **honest**: with the ground-truth lie detector checking every
+sold value against what the seller knew, genuine fabrication is **1 in 1,360** offers —
+faced with an unverifiable channel they route around it (**~85%** of matches settle zero
+trades) rather than exploit it, and across 50k reasoning steps they almost never mention
+trust or verification. *The recurring finding: cooperation here has to be instructed, its
+absence is fatal, and the agents don't learn to distrust a proven liar — the missing
+ingredient is emergent social reasoning, not honesty.* (An earlier writeup reported ~9%
+deception and billed the switch as emergent; the deception number was honest averaging
+mislabeled as fraud, and the switch was largely the prompt — both since corrected.)
 
 **Viewer** — a Flask app (Qwen-only "run a game" tab, simulator knobs, N-game
 matches with shared memory, per-agent side-by-side timelines with a per-step
