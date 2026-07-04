@@ -704,7 +704,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <p><b>2 · But it was the prompt.</b> Here's the catch: the agents were <i>told</i> they were "a team," and
       <i>told</i> the trick — "average your readings to cancel the error." So we reran the entire sweep with
       neutral wording and <b>no hint</b> (the dashed line). The switch <b>collapsed</b> — cooperation at the wall
-      fell from <b>~49%</b> to <b>~13%</b> — and without pooling they <b>die</b>: de-confounded survival drops
+      fell from <b>~49%</b> to <b>~15%</b> — and without pooling they <b>die</b>: de-confounded survival drops
       onto the scripted <b>solo baseline</b>, nowhere near the cooperator ceiling. The "cooperation" was the
       agents following instructions, not working out that they need each other.</p>
     <p><b>3 · They don't lie — and can't catch a liar.</b> Two sides of one coin. They barely cheat: a sold
