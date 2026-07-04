@@ -26,6 +26,8 @@ from analysis.metrics import load_events, summary  # noqa: E402
 
 RUN_GLOB = os.path.join(REPO, "runs/qwen/grad_b*_s*.jsonl")
 AGG = os.path.join(REPO, "docs/samples/gradient/gradient_aggregate.json")
+DECONF_GLOB = os.path.join(REPO, "runs/qwen/deconf_b*_s*.jsonl")
+DECONF_AGG = os.path.join(REPO, "docs/samples/gradient/deconf_aggregate.json")
 SAMPLE_DIR = os.path.join(REPO, "docs/samples")
 OFFSETS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 500]
 
@@ -59,6 +61,28 @@ def refresh_aggregate() -> int:
     return n
 
 
+def refresh_deconf() -> int:
+    """Rebuild the DE-CONFOUNDED aggregate (deconf_b<off>_s<seed>, neutral framing /
+    no hint) from complete runs; return the run count. The home + gradient report
+    read this for the de-confounding comparison. Built here (not via
+    gradient_report --aggregate, whose filename regex is hardcoded to grad_b*)."""
+    import json
+    groups: dict = {}
+    for p in glob.glob(DECONF_GLOB):
+        m = re.search(r"deconf_b(\d+)_s(\d+)", os.path.basename(p))
+        if not m or not _complete(p):
+            continue
+        groups.setdefault(int(m.group(1)), []).append(_gr._row_from_events(load_events(p)))
+    if not groups:
+        return 0
+    rows = _gr.aggregate_rows(groups)
+    tot = sum(r["n_seeds"] for r in rows)
+    with open(DECONF_AGG, "w") as fh:
+        json.dump({"label": f"{tot} de-confounded runs (neutral framing, no averaging hint) "
+                            f"· mean ± 95% CI", "rows": rows}, fh)
+    return tot
+
+
 def refresh_gallery() -> list:
     """For each offset with a complete run, copy a representative match to
     docs/samples/sweep_offNNN.jsonl. Default pick is the first surviving seed. At
@@ -90,14 +114,19 @@ def refresh_gallery() -> list:
 
 
 def git_commit_push(msg: str, push: bool) -> bool:
-    """Commit the refreshed data (and push) iff something actually changed."""
-    paths = [AGG] + glob.glob(os.path.join(SAMPLE_DIR, "sweep_off*.jsonl"))
+    """Commit the refreshed data (and push) iff something actually changed. Rebases
+    onto origin before pushing so a concurrent commit (a story edit, another refresh)
+    doesn't reject the push — important when this runs unattended from cron."""
+    paths = [AGG, DECONF_AGG] + glob.glob(os.path.join(SAMPLE_DIR, "sweep_off*.jsonl"))
+    paths = [p for p in paths if os.path.exists(p)]
     subprocess.run(["git", "-C", REPO, "add"] + paths, check=True)
     if subprocess.run(["git", "-C", REPO, "diff", "--cached", "--quiet"]).returncode == 0:
         return False  # nothing staged
     subprocess.run(["git", "-C", REPO, "commit", "-q", "-m", msg], check=True)
     if push:
-        subprocess.run(["git", "-C", REPO, "push", "origin", "main"], check=True)
+        # data files are only touched by this script, so a rebase won't conflict.
+        subprocess.run(["git", "-C", REPO, "pull", "--rebase", "origin", "main"])
+        subprocess.run(["git", "-C", REPO, "push", "origin", "main"])
     return True
 
 
@@ -105,13 +134,15 @@ def main() -> None:
     """Refresh aggregate + gallery from complete runs and commit if changed."""
     push = "--no-push" not in sys.argv
     n = refresh_aggregate()
+    n_dec = refresh_deconf()
     offs = refresh_gallery()
     complete = sum(1 for f in glob.glob(RUN_GLOB) if _complete(f))
-    print(f"complete runs: {complete}/100 | aggregate runs: {n} | gallery offsets refreshed: {offs}")
-    if n == 0:
+    print(f"complete runs: {complete} | confounded agg: {n} | de-confounded agg: {n_dec} "
+          f"| gallery offsets refreshed: {offs}")
+    if n == 0 and n_dec == 0:
         print("no complete runs yet — nothing to publish")
         return
-    msg = (f"Refresh site data: {n} complete 10-game runs "
+    msg = (f"Refresh site data: {n} confounded + {n_dec} de-confounded runs "
            f"({len(offs)} offsets browsable) [auto]")
     changed = git_commit_push(msg, push)
     print("committed + pushed" if changed else "no changes to commit")
