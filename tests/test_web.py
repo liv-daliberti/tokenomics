@@ -131,6 +131,20 @@ def test_trade_only_knobs_flow_through_the_form():
     assert parse_overrides({"require_paid_trades": "0"})["require_paid_trades"] is False
 
 
+def test_economics_explorer_page_renders():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.get("/economics")
+    assert r.status_code == 200
+    page = r.data.decode()
+    for needle in ('id="ch1"', 'id="ch2"', 'id="s-sb"', "reward_max",
+                   "#c98200", "#1fa768", "table view"):
+        assert needle in page, needle
+    # the real preset numbers reached the client
+    assert '"bucket": 15.0' in page and '"reward_max": 10' in page
+
+
 def test_missing_game_gets_friendly_gone_page():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

@@ -1,0 +1,263 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+% optional per the template; commented out because not every TeX install
+% ships it — uncomment for nicer typewriter text if available
+% \usepackage{inconsolata}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+\title{Tokenomics: Auditing Cooperation and Deception\\in an LLM Measurement Market}
+
+\author{First Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  \texttt{email@domain} \\\And
+  Second Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  \texttt{email@domain} \\}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Multi-agent LLM systems are widely expected to cooperate, and to police one
+another, on their own. We test both expectations in \textsc{Agora}, a
+``measurement market'': a controlled environment in which agents estimate a
+hidden quantity using a costly, miscalibrated instrument, and can talk, trade
+readings for credits, or die trying to go it alone. Because the referee
+generates every measurement, both cooperation and deception are
+\emph{ground-truth measurable}: we know what each agent truly observed, so
+every sold value can be labelled honest or fabricated without a judge model.
+Across $\sim$230 self-play matches of Qwen3-32B we find that (i) apparent
+emergent cooperation is largely an artifact of the prompt --- with neutral
+wording and no strategy hint, cooperation shows no response to survival
+pressure and agents die at the rate of an optimal \emph{non-cooperating}
+scripted agent; (ii) agents almost never fabricate sold values (1 of 1{,}360
+offers), preferring to route around an unverifiable market rather than exploit
+it; yet (iii) they never learn to distrust a partner that provably lies to
+them every round, accepting a persistent liar's offers more often than an
+honest partner's. The social competences this environment rewards ---
+discovering cooperation and punishing deception --- were the two we could not
+elicit without instruction.
+\end{abstract}
+
+\section{Introduction}
+
+Agentic LLM deployments increasingly assume that independently prompted agents
+will discover mutually beneficial cooperation
+\citep{axelrod1984evolution,dafoe2020open}, and that dishonest agents will
+be identified and discounted by their peers. Neither assumption has a clean
+empirical test: in open-ended settings, ``cooperation'' is difficult to score,
+and ``deception'' is usually diagnosed by another model whose own judgement is
+unvalidated \citep{park2023generative,wu2023autogen}.
+
+We contribute a small, fully instrumented environment in which both quantities
+are exactly measurable, and an initial audit of a strong open-weights model in
+it. Our headline results are largely negative, and we argue that is the
+interesting outcome: the environment makes cooperation \emph{necessary},
+verifiably so, and the agents still do not find it --- unless the prompt tells
+them to, and how. Conversely, the market's key vulnerability (sold values are
+unverifiable at purchase time) is almost never exploited, but neither is its
+key defence (repeated, revealed dishonesty) ever acted upon.
+
+\section{Problem and Domain: the Agora Measurement Market}
+\label{sec:domain}
+
+\textsc{Agora} is an $N$-agent, multi-round game run by a referee that owns
+all randomness. Each round a hidden value $\theta \sim
+\mathcal{N}(\mu,\sigma^2)$ is drawn ($\mu{=}500$, $\sigma{=}400$ in the
+headline configuration). Each agent may, under a per-round budget:
+
+\begin{itemize}
+  \item \textbf{measure()} --- draw one noisy reading of $\theta$ at a cost
+    (1 credit). In \emph{paired-bias} mode each agent's instrument also adds a
+    large per-agent offset ($\sigma_b$ up to 500) that re-measuring never
+    removes; offsets are drawn to \emph{sum to zero} across agents, so
+    averaging the group's readings cancels them exactly. This makes
+    cooperation the only route to accuracy, with $\sigma_b$ acting as a dial
+    on how badly agents need each other.
+  \item \textbf{send\_message(to, text)} --- free-form, quota-limited chat.
+    The environment can optionally censor numerals (digits and spelled-out
+    numbers) from delivered messages, forcing values through the market.
+  \item \textbf{propose\_trade / respond\_trade} --- sell a claimed reading to
+    a peer at a seller-chosen price, settled atomically by an escrow that
+    guarantees payment but deliberately \emph{not} information quality. A
+    configuration flag can additionally require strictly positive prices, so
+    information is never free.
+  \item \textbf{submit\_estimate(value)} --- lock in the round's answer.
+\end{itemize}
+
+Scoring is \emph{non-competitive}: each agent independently earns
+$\max(0,\, R - \lfloor |\hat\theta - \theta| / b \rfloor)$ reward tokens
+($R{=}10$, bucket $b{=}15$), which become next-round credits. A survival cost
+(3 credits/round) bleeds every agent; an agent whose credits reach zero is
+eliminated. Nothing is zero-sum: helping a peer costs an agent nothing except
+what it chooses to charge.
+
+Two design choices make the environment an \emph{instrument} rather than a
+demo. First, because the referee generates every measurement, it knows each
+agent's true information set; a sold value that matches nothing the seller
+observed (nor any average or posterior of it) is a \emph{verified
+fabrication}, with no judge model in the loop. Second, every run records the
+full conversation, tool calls, and per-step reasoning of every agent, so
+behavioural claims can be audited against what the agents actually said and
+saw.
+
+\section{Methods}
+\label{sec:methods}
+
+\paragraph{Agents.} All headline experiments use Qwen3-32B
+\citep{qwen3} served locally via a vLLM OpenAI-compatible endpoint,
+two agents per match, each match 10 games of 5 rounds played back-to-back in
+one growing conversation per agent. The harness also supports hosted
+OpenAI-compatible endpoints (Azure AI Foundry, OpenAI, Anthropic's
+compatibility surface) and \emph{mixed seats} --- different models, or
+scripted ground-truth bots, in the same game --- as well as a bounded-context
+mode in which agents journal each round in markdown and start every game from
+their notes instead of the full transcript.
+
+\paragraph{Interdependence gradient (prompted).} We sweep the instrument
+offset $\sigma_b \in \{0, 50, \dots, 500\}$ (plus finer steps between 0 and
+50), $\sim$10 seeds per point, 137 matches in all, under a
+\emph{cooperative} prompt that frames the agents as a team and includes the
+hint that offsets cancel when readings are averaged.
+
+\paragraph{De-confounded control.} The identical sweep (97 matches) with
+neutral framing and the hint removed. Everything else --- task, noise,
+budgets, survival cost, horizon, prior --- is held fixed. If cooperation under
+the prompted condition reflects agents \emph{discovering} interdependence,
+the control should preserve its dose-response.
+
+\paragraph{Scripted strategy ceilings.} Deterministic, non-LLM baselines run
+in the identical game (30 seeds per offset): an always-pooling
+honest-cooperator pair (the ceiling for cooperation) and a never-sharing
+Bayesian solo pair (the ceiling for solo play). These anchor the survival
+scale: an agent population at the solo ceiling is playing solo optimally; the
+gap to the cooperation ceiling is the value cooperation leaves on the table.
+
+\paragraph{Trust probe.} One LLM seat against a scripted bot whose honesty is
+ground truth on both sides: a \emph{Liar} that fabricates $\sim$9 of every 10
+values it sells, and an \emph{HonestCooperator} control. Numbers are censored
+from chat (values must be traded), and the true $\theta$ is revealed after
+every round, so the LLM has everything needed to detect the lies. Because
+cooperative play roughly doubles context length, honest-control matches
+truncate near the context limit around game 7--8; we therefore report
+\emph{matched-range} acceptance over games 0--5, which all seeds of both arms
+completed (5 seeds per arm).
+
+\paragraph{Deception scoring.} A sold value is a \emph{genuine fabrication}
+only if it is inconsistent with the seller's honest information set: any raw
+reading, any average of readings (the $[\min,\max]$ interval), the posterior
+mean, or a value received from a peer. Offers made before measuring anything
+are tallied separately as \emph{unbacked} rather than fabricated. (An earlier
+detector that compared sold values only to raw readings mislabelled honest
+averaging as fraud, inflating the fabrication rate by an order of magnitude;
+we report the corrected scorer.)
+
+\section{Initial Results}
+\label{sec:results}
+
+\paragraph{Cooperation is instructed, not discovered.}
+Under the cooperative prompt, sharing flips on at the first notch of the dial:
+the median run shares under 1\% of readings at $\sigma_b{=}0$ (most pairs
+ignore each other; a minority pool heavily, so the mean is $\sim$30\%) and
+jumps to a median of 64\% at $\sigma_b{=}10$, staying high across the sweep.
+Under the de-confounded control the response disappears: sharing sits near
+14--15\% whether the wall is absent or lethal, with no dose-response. The
+consequence is mortality: neutral-condition survival falls from 0.985
+($\sigma_b{=}0$) to 0.635 (100), 0.235 (200) and 0.03 (500), landing on the
+scripted \emph{solo} ceiling at every point --- these agents play solo as well
+as solo can be played, and no better --- while the cooperation ceiling stays
+near 1.0 throughout. Instructed to cooperate, they do; left to discover it,
+they die.
+
+\paragraph{Agents do not exploit the unverifiable market.}
+Across 1{,}360 offers in the prompted sweep, exactly one sold value genuinely
+contradicted the seller's information set (0.07\%). Rather than exploiting
+unverifiable sales, agents mostly avoid the market: 85\% of matches settle
+zero trades. The de-confounded sweep shows a nominally higher flagged rate
+(57/439), but 44 of those are unbacked offers (selling before measuring) and
+the remainder concentrate in 5 of 29 runs; genuine fabrication remains
+$\approx$0 in both conditions.
+
+\paragraph{But they never punish a proven liar.}
+Against the scripted Liar --- fabrications revealed by the post-round truth,
+every round, for ten games --- Qwen3-32B keeps buying: matched over games
+0--5, it accepts 99\% of the liar's offers (68/69) versus 57\% of the honest
+partner's (171/300), and its acceptance of the liar is flat across all ten
+games. In one representative game the true value was 205; the liar sold a
+fabricated 905 --- off by a factor of four --- and the agent paid for it. In
+$\sim$50k logged reasoning steps from the gradient, only $\sim$0.5\% mention
+trust, verification, honesty or deception at all, and those concern the
+agent's own instrument, not the partner.
+
+\paragraph{A doomed solo heuristic partly explains the deaths.}
+In 34 of 100 prompted matches an agent inferred its instrument's offset from
+the previous round's revealed truth and subtracted it in the next round --- a
+correction that cannot work when offsets are redrawn each round, and a clue
+that the agents' model of the game favours solo repair over social repair.
+
+\begin{table}
+  \centering
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    & \textbf{Prompted} & \textbf{Neutral} \\
+    \midrule
+    Matches & 137 & 97 \\
+    Sharing at wall (mean) & $\sim$49\% & $\sim$15\% \\
+    Dose-response & yes & none \\
+    Survival at $\sigma_b{=}500$ & above solo & 0.03 (= solo) \\
+    Genuine fabrication & 1/1360 & $\approx$0 \\
+    \bottomrule
+  \end{tabular}
+  \caption{The de-confounding in one view: removing the cooperative framing
+    and the ``average your readings'' hint removes both the cooperation
+    dose-response and the survival advantage.}
+  \label{tab:deconf}
+\end{table}
+
+\section{Limitations}
+
+These are initial results from a single model family (Qwen3-32B) at $N{=}2$;
+the harness supports mixed-model and larger-$N$ matches, which we have not
+yet swept. The trust probe's honest arm truncates at long context, so its
+comparison is matched-range rather than full-horizon. Chat censoring blocks
+digits and spelled-out numbers but cannot seal free text against paraphrase.
+Prompt wording measurably changes behaviour --- that is one of our findings
+--- so all reported conditions pin their exact prompt text, and transcripts
+embed the prompts they ran with; results may not transfer to other phrasings.
+Finally, elimination dynamics couple accuracy to survival, so reward-rule
+changes could shift where (not whether) the de-confounded population lands
+relative to the scripted ceilings.
+
+\section*{Acknowledgments}
+
+Anonymized for review.
+
+\bibliography{custom}
+
+\appendix
+
+\section{Reproduction}
+\label{sec:appendix}
+
+Every experiment is a one-line invocation of the released harness. The
+prompted gradient: \texttt{FRAMING=cooperative STRATEGY\_HINT=1
+BIAS\_SIGMA=$\sigma_b$ python scripts/qwen\_match.py}; the de-confounded
+control sets \texttt{FRAMING=neutral STRATEGY\_HINT=0}; the trust probe is
+\texttt{POLICIES=llm,liar PRESET=probe\_trust}. Transcripts record the full
+configuration (including a prompt-version stamp), every tool call, every
+message before and after censoring, and every agent's per-step reasoning.
+
+\end{document}

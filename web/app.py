@@ -625,6 +625,22 @@ def compare():
     return render_template_string(COMPARE, css=_CSS, body=body)
 
 
+@app.route("/economics")
+def economics():
+    """The interactive cost–utility explorer: the raw price tradeoff (measure
+    more vs buy the partner's reading) under the REAL reward rule, with sliders
+    for the knobs so you can watch the variables trade off. Pure client-side
+    math — exact closed forms, no simulation, no external libraries."""
+    c = PRESETS["cooperative"]
+    defaults = {
+        "tau": c.tau, "prior_sigma": c.prior_sigma, "measure_cost": c.measure_cost,
+        "reward_max": c.reward_max, "bucket": c.bucket(), "rtc": c.reward_to_credits,
+        "survival": c.survival_cost, "bias_sigma": c.bias_sigma,
+        "starting_credits": c.starting_credits,
+    }
+    return render_template_string(ECON, css=_CSS, defaults=json.dumps(defaults))
+
+
 @app.route("/gradient")
 def gradient():
     """The interdependence dose-response report: offset (bias σ) vs cooperation,
@@ -941,6 +957,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <div class="explore-links">
     <a class="cta" href="/compare">⇄ Compare every run side by side →</a>
     <a class="cta" href="/gradient">📈 The full dose–response →</a>
+    <a class="cta" href="/economics">💰 The cost–utility explorer →</a>
   </div>
 </section>
 
@@ -1213,6 +1230,247 @@ def _mark_interrupted() -> None:
                         error="The server restarted while this game was running, "
                               "so the run was interrupted. Start it again.")
             _write_meta(meta)
+
+
+ECON = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agora · cost–utility explorer</title><style>{{ css|safe }}
+.wrap{max-width:980px;}
+.lede{color:var(--mut);max-width:70ch;line-height:1.6;margin:6px 0 18px;}
+.lede b{color:var(--fg);}
+.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;background:var(--card);
+  border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:0 0 16px;}
+@media(max-width:760px){.controls{grid-template-columns:1fr 1fr;}}
+.ctl label{display:block;color:var(--mut);font-size:11px;text-transform:uppercase;
+  letter-spacing:.5px;margin:0 0 4px;}
+.ctl output{float:right;color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums;}
+.ctl input[type=range]{width:100%;accent-color:#5aa9e6;}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:0 0 16px;}
+@media(max-width:760px){.stats{grid-template-columns:1fr 1fr;}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+.tile .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+.tile .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px;}
+.tile .d{color:var(--mut);font-size:11.5px;margin-top:2px;line-height:1.4;}
+.chart-card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;margin:0 0 16px;}
+.chart-card h3{margin:0;font-size:15.5px;}
+.chart-card .sub2{color:var(--mut);font-size:12.5px;margin:2px 0 10px;}
+.lg{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin:0 0 6px;}
+.lg .sw{display:inline-block;width:16px;height:0;border-top:3px solid;border-radius:2px;
+  vertical-align:middle;margin-right:5px;}
+.lg .sw.dash{border-top-style:dashed;border-top-width:2px;}
+svg text{font:11px system-ui,sans-serif;fill:var(--mut);}
+svg .dl{font-weight:600;font-size:11.5px;}
+.tt{position:fixed;pointer-events:none;background:#0c0e13;border:1px solid var(--line);
+  border-radius:8px;padding:7px 10px;font-size:12px;color:var(--fg);display:none;z-index:50;
+  box-shadow:0 4px 14px rgba(0,0,0,.4);}
+.tt .r{display:flex;gap:8px;justify-content:space-between;}
+.tt .r span:first-child{color:var(--mut);}
+details.tbl{margin-top:8px;} details.tbl summary{cursor:pointer;color:var(--mut);font-size:12px;}
+details.tbl table{margin-top:6px;} details.tbl td,details.tbl th{font-size:12px;padding:3px 10px;}
+.note2{color:var(--mut);font-size:12.5px;line-height:1.55;max-width:74ch;}
+.note2 b{color:var(--fg);}
+</style></head><body><div class="wrap">
+<a href="/" style="color:#5aa9e6;text-decoration:none;font-size:14px">← all games</a>
+<h1 style="margin:10px 0 2px">Cost–utility explorer</h1>
+<p class="lede">The raw price tradeoff, computed exactly from the game's reward rule
+(<b>reward = max(0, R − ⌊error/bucket⌋)</b>, in credits). Two strategies each round:
+<b style="color:#c98200">measure only</b> (your instrument's offset never averages out) vs
+<b style="color:#1fa768">measure, then buy your partner's reading</b> at the asking price
+(the paired offsets cancel exactly). Drag the sliders and watch the variables trade.</p>
+
+<div class="controls">
+  <div class="ctl"><label>Instrument offset σ<sub>b</sub> <output id="o-sb"></output></label>
+    <input type="range" id="s-sb" min="0" max="500" step="25"></div>
+  <div class="ctl"><label>Measurement noise τ <output id="o-tau"></output></label>
+    <input type="range" id="s-tau" min="5" max="200" step="5"></div>
+  <div class="ctl"><label>Measure cost (credits) <output id="o-c"></output></label>
+    <input type="range" id="s-c" min="0" max="5" step="0.25"></div>
+  <div class="ctl"><label>Asking price (credits) <output id="o-p"></output></label>
+    <input type="range" id="s-p" min="0" max="10" step="0.25"></div>
+</div>
+
+<div class="stats">
+  <div class="tile"><div class="k">partner's reading is worth</div><div class="v" id="t-wtp">–</div>
+    <div class="d">max price a rational buyer pays (Δ expected reward, in credits)</div></div>
+  <div class="tile"><div class="k">best solo net / round</div><div class="v" id="t-solo">–</div>
+    <div class="d">expected reward − measuring − survival, at the best k</div></div>
+  <div class="tile"><div class="k">best trade net / round</div><div class="v" id="t-trade">–</div>
+    <div class="d">same, buying one partner reading at the asking price</div></div>
+  <div class="tile"><div class="k">verdict at this price</div><div class="v" id="t-verdict">–</div>
+    <div class="d" id="t-verdict-d">trade minus solo, best k each</div></div>
+</div>
+
+<div class="chart-card">
+  <h3>Net utility per round vs measurements taken</h3>
+  <p class="sub2">Expected reward (credits) minus everything spent. k = 0 means submitting
+    the prior mean (solo) or relying on the bought reading alone (trade).</p>
+  <div class="lg"><span><span class="sw" style="border-color:#c98200"></span>measure only</span>
+    <span><span class="sw" style="border-color:#1fa768"></span>measure + buy at asking price</span></div>
+  <svg id="ch1" viewBox="0 0 900 300" role="img" aria-label="Net utility versus measurements"></svg>
+  <details class="tbl"><summary>table view</summary><div id="tb1"></div></details>
+</div>
+
+<div class="chart-card">
+  <h3>What is the partner's reading worth as the offset grows?</h3>
+  <p class="sub2">Willingness to pay (credits) at each offset: each strategy's best expected
+    reward net of measuring, subtracted. Where the curve is above the dashed asking price,
+    trading is rational at that price.</p>
+  <div class="lg"><span><span class="sw" style="border-color:#1fa768"></span>value of the partner's reading</span>
+    <span><span class="sw dash" style="border-color:#9aa4b2"></span>asking price</span>
+    <span><span class="sw dash" style="border-color:#5f6a7a"></span>measure cost</span></div>
+  <svg id="ch2" viewBox="0 0 900 300" role="img" aria-label="Willingness to pay versus offset"></svg>
+  <details class="tbl"><summary>table view</summary><div id="tb2"></div></details>
+</div>
+
+<p class="note2"><b>Fixed here:</b> <span id="rule-note"></span> Offsets are drawn to
+<b>sum to zero</b> across the pair (each agent's effective offset is σ<sub>b</sub>/√2), so a plain
+average cancels them exactly — that is the entire value of the trade. <b>Symmetric swap:</b> if both
+agents buy from each other at the same price the payments cancel, and both walk away with the
+accuracy gain — the price only redistributes credits; what it really prices is <b>access</b>.
+Survival cost shifts both curves equally and never changes the verdict.</p>
+
+<div class="tt" id="tt"></div>
+<script>
+const D = {{ defaults|safe }};
+const SOLO = "#c98200", TRADE = "#1fa768", REF = "#9aa4b2", REF2 = "#5f6a7a";
+const KMAX = 12;
+function erf(x){ const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1/(1+0.3275911*x);
+  const y = 1-((((( 1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return s*y; }
+const pLess = (t,s) => s <= 0 ? 1 : erf(t/(s*Math.SQRT2));
+function expReward(s){ let e = 0;
+  for (let m = 1; m <= D.reward_max; m++) e += pLess(m*D.bucket, s);
+  return e; }
+const sSolo = (k,sb,tau) => k === 0 ? D.prior_sigma : Math.sqrt(sb*sb/2 + tau*tau/k);
+const sPool = (k,sb,tau) => k === 0 ? Math.sqrt(sb*sb/2 + tau*tau)
+                                    : 0.5*Math.sqrt(tau*tau/k + tau*tau);
+const P = { sb: D.bias_sigma, tau: D.tau, c: D.measure_cost, p: 1.0 };
+const uSolo  = (k,sb) => D.rtc*expReward(sSolo(k,sb,P.tau)) - k*P.c - D.survival;
+const uTrade = (k,sb) => D.rtc*expReward(sPool(k,sb,P.tau)) - k*P.c - P.p - D.survival;
+// Willingness to pay = (best pooled expected reward net of measuring) minus
+// (best solo ditto), each maximised over its OWN k — the largest price at
+// which trading still weakly beats going alone. Independent of the current
+// asking price, so the dashed price line is a fair comparison.
+function wtpMax(sb){ let pool = -1e9, solo = -1e9;
+  for (let k = 0; k <= KMAX; k++){
+    pool = Math.max(pool, D.rtc*expReward(sPool(k,sb,P.tau)) - k*P.c);
+    solo = Math.max(solo, D.rtc*expReward(sSolo(k,sb,P.tau)) - k*P.c);
+  }
+  return Math.max(0, pool - solo); }
+const fmt = v => (Math.round(v*100)/100).toFixed(2).replace(/\\.?0+$/,"");
+
+// ---- generic line chart into an <svg>, with crosshair hover + table ----
+function draw(svgId, tbId, xs, series, xlabel, refs){
+  const svg = document.getElementById(svgId);
+  const W = 900, H = 300, L = 52, R = 120, T = 14, B = 34;
+  let lo = 0, hi = -1e9;
+  series.forEach(s => s.ys.forEach(v => { lo = Math.min(lo,v); hi = Math.max(hi,v); }));
+  (refs||[]).forEach(r => { lo = Math.min(lo,r.y); hi = Math.max(hi,r.y); });
+  if (hi <= lo) hi = lo + 1;
+  const pad = (hi-lo)*0.08; lo -= pad; hi += pad;
+  const X = i => L + (W-L-R) * (xs[i]-xs[0]) / (xs[xs.length-1]-xs[0]);
+  const Y = v => T + (H-T-B) * (1 - (v-lo)/(hi-lo));
+  let g = "";
+  const steps = 5;
+  for (let i = 0; i <= steps; i++){
+    const v = lo + (hi-lo)*i/steps, y = Y(v);
+    g += `<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`
+       + `<text x="${L-8}" y="${y+4}" text-anchor="end">${fmt(v)}</text>`;
+  }
+  if (lo < 0 && hi > 0)
+    g += `<line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--mut)" stroke-width="1" opacity=".55"/>`;
+  const tick = Math.max(1, Math.round(xs.length/8));
+  xs.forEach((x,i) => { if (i % tick === 0)
+    g += `<text x="${X(i)}" y="${H-10}" text-anchor="middle">${x}</text>`; });
+  g += `<text x="${W-R+8}" y="${H-10}">${xlabel}</text>`;
+  (refs||[]).forEach(r => {
+    g += `<line x1="${L}" x2="${W-R}" y1="${Y(r.y)}" y2="${Y(r.y)}" stroke="${r.color}"`
+       + ` stroke-width="1.6" stroke-dasharray="5 4"/>`
+       + `<text class="dl" x="${W-R+8}" y="${Y(r.y)+4}" fill="${r.color}">${r.name} ${fmt(r.y)}</text>`;
+  });
+  series.forEach(s => {
+    const d = s.ys.map((v,i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.2" stroke-linejoin="round"/>`;
+    const li = s.ys.length-1;
+    g += `<text class="dl" x="${W-R+8}" y="${Y(s.ys[li])+4}" fill="${s.color}">${s.name}</text>`;
+    g += s.ys.map((v,i) =>
+      `<circle class="hv" data-i="${i}" cx="${X(i)}" cy="${Y(v)}" r="4.5" fill="${s.color}"`
+      + ` stroke="var(--card)" stroke-width="2" opacity="0"/>`).join("");
+  });
+  g += `<line id="${svgId}-x" y1="${T}" y2="${H-B}" stroke="var(--mut)" stroke-width="1"`
+     + ` opacity="0"/><rect x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML = g;
+
+  const tt = document.getElementById("tt");
+  svg.onmousemove = ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const m = pt.matrixTransform(svg.getScreenCTM().inverse());
+    let bi = 0, bd = 1e9;
+    xs.forEach((x,i) => { const d = Math.abs(X(i)-m.x); if (d < bd){ bd = d; bi = i; } });
+    const xl = document.getElementById(svgId + "-x");
+    xl.setAttribute("x1", X(bi)); xl.setAttribute("x2", X(bi)); xl.setAttribute("opacity", ".5");
+    svg.querySelectorAll(".hv").forEach(c =>
+      c.setAttribute("opacity", +c.dataset.i === bi ? "1" : "0"));
+    tt.style.display = "block";
+    tt.style.left = Math.min(ev.clientX + 14, window.innerWidth - 190) + "px";
+    tt.style.top = (ev.clientY + 12) + "px";
+    tt.innerHTML = `<div class="r"><span>${xlabel}</span><b>${xs[bi]}</b></div>`
+      + series.map(s => `<div class="r"><span style="color:${s.color}">${s.name}</span>`
+        + `<b>${fmt(s.ys[bi])}</b></div>`).join("");
+  };
+  svg.onmouseleave = () => { tt.style.display = "none";
+    document.getElementById(svgId + "-x").setAttribute("opacity", "0");
+    svg.querySelectorAll(".hv").forEach(c => c.setAttribute("opacity", "0")); };
+
+  let t = `<table><tr><th>${xlabel}</th>`
+    + series.map(s => `<th>${s.name}</th>`).join("") + "</tr>";
+  xs.forEach((x,i) => { t += `<tr><td>${x}</td>`
+    + series.map(s => `<td>${fmt(s.ys[i])}</td>`).join("") + "</tr>"; });
+  document.getElementById(tbId).innerHTML = t + "</table>";
+}
+
+function render(){
+  ["sb","tau","c","p"].forEach(k => {
+    document.getElementById("o-" + k).textContent = fmt(P[k]);
+  });
+  const ks = []; for (let k = 0; k <= KMAX; k++) ks.push(k);
+  draw("ch1", "tb1", ks, [
+    { name: "measure only", color: SOLO, ys: ks.map(k => uSolo(k, P.sb)) },
+    { name: "measure + buy", color: TRADE, ys: ks.map(k => uTrade(k, P.sb)) },
+  ], "readings k");
+  const sbs = []; for (let s = 0; s <= 500; s += 20) sbs.push(s);
+  draw("ch2", "tb2", sbs, [
+    { name: "reading's value", color: TRADE, ys: sbs.map(wtpMax) },
+  ], "offset σb", [
+    { name: "asking price", y: P.p, color: REF },
+    { name: "measure cost", y: P.c, color: REF2 },
+  ]);
+  let bs = -1e9, bt = -1e9;
+  for (let k = 0; k <= KMAX; k++){ bs = Math.max(bs, uSolo(k, P.sb)); bt = Math.max(bt, uTrade(k, P.sb)); }
+  const w = wtpMax(P.sb), dv = bt - bs;
+  document.getElementById("t-wtp").textContent = fmt(w) + " cr";
+  document.getElementById("t-solo").textContent = fmt(bs) + " cr";
+  document.getElementById("t-trade").textContent = fmt(bt) + " cr";
+  const vd = document.getElementById("t-verdict");
+  vd.textContent = (dv >= 0 ? "+" : "") + fmt(dv) + " cr";
+  vd.style.color = dv > 0.005 ? TRADE : (dv < -0.005 ? SOLO : "var(--mut)");
+  document.getElementById("t-verdict-d").textContent = dv > 0.005
+    ? "buying beats going solo at this price"
+    : (dv < -0.005 ? "at this price, measuring alone is better" : "a wash at this price");
+  document.getElementById("rule-note").textContent =
+    "the cooperative preset's reward rule (reward = max(0, " + D.reward_max
+    + " − ⌊error/" + fmt(D.bucket) + "⌋) credits), survival cost " + fmt(D.survival)
+    + ", and a symmetric partner who has taken the same number of readings and sells one.";
+}
+[["s-sb","sb"],["s-tau","tau"],["s-c","c"],["s-p","p"]].forEach(([id,k]) => {
+  const el = document.getElementById(id);
+  el.value = P[k];
+  el.addEventListener("input", () => { P[k] = parseFloat(el.value); render(); });
+});
+render();
+</script></div></body></html>"""
 
 
 # Populate the gallery at import so a fresh (ephemeral) deploy is never empty,
