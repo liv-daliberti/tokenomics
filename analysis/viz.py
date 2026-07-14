@@ -567,6 +567,9 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
     sub = (f'{len(agents)} agents · measurement noise τ={cfg.get("tau")} · '
            f'θ~N({cfg.get("prior_mu")},{cfg.get("prior_sigma")}²) · '
            f'horizon {horizon} · framing {cfg.get("framing","neutral")}')
+    seats = next((e.get("seats") for e in events if e["event"] == "match_start"), None)
+    if seats and len(set(seats.values())) > 1:   # only worth a line when seats differ
+        sub += " · seats: " + ", ".join(f"{a}={seats[a]}" for a in sorted(seats))
     if n_games > 1:
         sub += (f' · {n_games} games in a row (each agent keeps its OWN private memory '
                 'across games — A never sees B\'s memory)')

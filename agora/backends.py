@@ -66,17 +66,21 @@ class OpenAIBackend:
         self.model = model
         if provider not in (None, "", "vllm", "openai"):
             raise ValueError(f"unknown provider {provider!r}; use 'vllm' or 'openai'")
-        self.provider = provider or (
-            "openai" if ("azure" in base_url or "openai.com" in base_url) else "vllm")
+        hosted = any(h in base_url for h in ("azure", "openai.com", "anthropic.com"))
+        self.provider = provider or ("openai" if hosted else "vllm")
         # AGORA_API_KEY is an explicit opt-in and applies to any endpoint; the
-        # provider-brand vars apply ONLY to the hosted flavour, so a vLLM run
-        # never picks up (and transmits) a cloud key the user exported for
-        # something else. No key at all falls back to vLLM's accept-anything
-        # placeholder.
+        # provider-brand vars apply ONLY to the hosted flavour — matched to the
+        # host, so a mixed-model match resolves each seat's key from the right
+        # variable — and a vLLM run never picks up (and transmits) a cloud key
+        # the user exported for something else. No key at all falls back to
+        # vLLM's accept-anything placeholder.
         key = api_key or os.environ.get("AGORA_API_KEY")
         if not key and self.provider == "openai":
-            key = (os.environ.get("AZURE_OPENAI_API_KEY")
-                   or os.environ.get("OPENAI_API_KEY"))
+            if "anthropic.com" in base_url:
+                key = os.environ.get("ANTHROPIC_API_KEY")
+            elif "azure" in base_url:
+                key = os.environ.get("AZURE_OPENAI_API_KEY")
+            key = key or os.environ.get("OPENAI_API_KEY")
         self.client = OpenAI(base_url=base_url, api_key=key or "EMPTY")
 
     def generate(self, messages: List[Dict[str, Any]],
@@ -126,6 +130,7 @@ class MockBackend:
     def __init__(self, script: Callable[..., LLMResponse]):
         """Wrap a scripted (messages, tools, cfg) -> LLMResponse callable."""
         self.script = script
+        self.model = "mock"          # seat label in match_start, like a real backend
 
     def generate(self, messages, tools, cfg) -> LLMResponse:
         """Return the scripted response (for tests, no server)."""

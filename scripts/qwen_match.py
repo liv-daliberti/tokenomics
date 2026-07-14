@@ -68,9 +68,11 @@ if os.environ.get("MEMORY") in ("context", "markdown"):
     _overrides["memory"] = os.environ["MEMORY"]
 cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
-# POLICIES cycles over the seats: 'llm' (default, all Qwen) or a mix like
-# 'llm,liar' / 'llm,honest_cooperator' for the D1/D2 trust probe — one Qwen agent
-# against a scripted bot whose honesty is ground truth on both sides.
+# POLICIES cycles over the seats: 'llm' (default endpoint for every seat), a
+# scripted bot ('llm,liar' — the D1/D2 trust probe), or per-seat endpoints
+# 'model@base_url[#provider]' so DIFFERENT models play each other, e.g.
+#   POLICIES='gpt-5.4@https://liv.services.ai.azure.com/openai/v1,qwen3-32b@http://localhost:8765/v1'
+# (keys resolve per host: AZURE_OPENAI_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY).
 POLICIES = os.environ.get("POLICIES", "llm")
 print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} policies={POLICIES} "
       f"games={GAMES} rounds={cfg.n_rounds} ticks={cfg.max_ticks} "

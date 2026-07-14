@@ -30,30 +30,58 @@ from .transcripts import Transcript
 
 def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str,
                    n_games: int = 1, api_key: str = None,
-                   provider: str = None) -> Dict[str, object]:
-    """Build the per-agent policy map from a spec, cycled over the agents. Tokens
-    are 'llm' (an LLMPolicy on an OpenAI-compatible endpoint — local vLLM or a
-    hosted Azure/OpenAI model, see ``OpenAIBackend``) or a scripted baseline name.
-    A MIXED spec puts an LLM seat next to a ground-truth bot — e.g. 'llm,liar'
-    pits one LLM agent against a scripted liar (the D1/D2 probe: does the LLM
-    discount a proven liar, and does a judge recover the referee's lie label?).
-    ``n_games`` is passed to LLM seats so the system prompt announces the real
-    match length; ``api_key``/``provider`` are handed to the backend."""
+                   provider: str = None, api_keys: dict = None) -> Dict[str, object]:
+    """Build the per-agent policy map from a spec, cycled over the agents.
+
+    Tokens, mixable in one spec:
+      * 'llm'                          — an LLM seat on the DEFAULT endpoint
+                                         (the ``model``/``base_url`` arguments);
+      * '<model>@<base_url>[#provider]' — an LLM seat on its OWN endpoint, so
+                                         different models play each other in the
+                                         same game (e.g. 'gpt-5.4@https://liv.
+                                         services.ai.azure.com/openai/v1' vs
+                                         'qwen3-32b@http://node302:8765/v1');
+      * a scripted baseline name        — a ground-truth bot (e.g. 'liar').
+
+    Seats sharing an endpoint share one client. Every seat plays the identical
+    game — same prompt, tools, and rules; only the model behind it differs.
+    ``api_key`` is the default key; ``api_keys`` optionally maps a base_url (or
+    a substring of it, e.g. the host) to a key for that endpoint. ``n_games``
+    is passed to LLM seats so the system prompt announces the real match length."""
     ids = cfg.agent_ids
     names = [n.strip() for n in spec.split(",") if n.strip()]
-    unknown = [n for n in names if n != "llm" and n not in REGISTRY]
+    unknown = [n for n in names if n != "llm" and "@" not in n and n not in REGISTRY]
     if unknown:
-        raise SystemExit(f"unknown scripted policies: {unknown}; choose from {sorted(REGISTRY)} (or 'llm')")
-    backend = None
-    if "llm" in names:
-        from .backends import OpenAIBackend
-        backend = OpenAIBackend(model=model, base_url=base_url,
-                                api_key=api_key, provider=provider)
+        raise SystemExit(f"unknown scripted policies: {unknown}; choose from "
+                         f"{sorted(REGISTRY)}, 'llm', or 'model@base_url[#provider]'")
+
+    backends: Dict[tuple, object] = {}   # (model, url, provider) -> shared client
+
+    def _backend(m: str, u: str, p: str):
+        """One client per distinct endpoint, with that endpoint's key."""
+        sig = (m, u, p)
+        if sig not in backends:
+            from .backends import OpenAIBackend
+            key = None
+            if api_keys:
+                key = api_keys.get(u) or next(
+                    (v for h, v in api_keys.items() if h and h in u), None)
+            backends[sig] = OpenAIBackend(model=m, base_url=u,
+                                          api_key=key or api_key, provider=p)
+        return backends[sig]
 
     def _make(name: str, aid: str):
-        """One agent's policy: an LLM seat or a named scripted baseline."""
+        """One agent's policy: an LLM seat (default or per-seat endpoint) or a
+        named scripted baseline."""
+        peers = [p for p in ids if p != aid]
         if name == "llm":
-            return LLMPolicy(backend, cfg, aid, [p for p in ids if p != aid], n_games=n_games)
+            return LLMPolicy(_backend(model, base_url, provider), cfg, aid,
+                             peers, n_games=n_games)
+        if "@" in name:
+            m, _, rest = name.partition("@")
+            u, _, prov = rest.partition("#")
+            return LLMPolicy(_backend(m.strip(), u.strip(), prov.strip() or None),
+                             cfg, aid, peers, n_games=n_games)
         return REGISTRY[name](cfg, aid, ids)
 
     return {aid: _make(names[i % len(names)], aid) for i, aid in enumerate(ids)}

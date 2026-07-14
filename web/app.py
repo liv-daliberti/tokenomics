@@ -27,7 +27,7 @@ from flask import (Flask, abort, jsonify, redirect, render_template_string,
                    request, url_for)
 
 from agora.config import PRESETS, GameConfig
-from agora.policies import REGISTRY, LLMPolicy
+from agora.policies import REGISTRY
 from agora.referee import run_match
 from agora.transcripts import Transcript
 from analysis.metrics import load_events, summary as metric_summary
@@ -68,6 +68,26 @@ _FLOAT_KNOBS = {"tau": (0.0, 1e6), "prior_sigma": (0.0, 1e6), "prior_mu": (-1e9,
 def _clamp(v, lo, hi):
     """Clamp a value to the [lo, hi] range."""
     return max(lo, min(hi, v))
+
+
+def _parse_keys(raw: str) -> Dict[str, str]:
+    """Parse the API-key field: one bare key ({'*': key}, applied to every
+    cloud endpoint) or space/comma-separated host=key pairs for a mixed-model
+    run ({host: key}). Pairs win only if EVERY token parses as host=key with a
+    dotted host, so a bare key that happens to contain '=' (Azure keys can end
+    in '=') is never misread as pairs."""
+    raw = (raw or "").strip()
+    if not raw:
+        return {}
+    toks = [t for t in re.split(r"[,\s;]+", raw) if t]
+    pairs = {}
+    for t in toks:
+        h, sep, k = t.partition("=")
+        if sep and h and k and ("." in h or h == "localhost"):
+            pairs[h] = k
+    if pairs and len(pairs) == len(toks):
+        return pairs
+    return {"*": raw}
 
 
 def parse_overrides(form) -> dict:
@@ -314,16 +334,18 @@ def seed_samples() -> None:
 def _run_job(job_id: str, meta: dict) -> None:
     """Run one match (build config + policies, play it, write the transcript) and update the job's metadata/status; any failure is surfaced to the UI."""
     params = meta
-    # Pop the key up front so EVERY exit path (scripted backend, error before
-    # the LLM branch) evicts it from memory, and so the except block below can
-    # redact it from any error text that gets persisted.
-    api_key = _JOB_KEYS.pop(job_id, None)
+    # Pop the keys up front so EVERY exit path (scripted backend, error before
+    # the LLM branch) evicts them from memory, and so the except block below
+    # can redact them from any error text that gets persisted.
+    keys = _JOB_KEYS.pop(job_id, None) or {}
+    bare = keys.get("*")                                   # one key for all endpoints
+    pairs = {h: k for h, k in keys.items() if h != "*"} or None   # per-host keys
     # Without a visitor-supplied key, do NOT let the backend fall back to the
     # server's own env keys: base_url is form-controlled, so lending env keys
     # would let a visitor bounce them to an arbitrary host. A private operator
     # can opt in with AGORA_ALLOW_ENV_KEYS=1.
-    if api_key is None and not os.environ.get("AGORA_ALLOW_ENV_KEYS"):
-        api_key = "EMPTY"
+    if bare is None and not os.environ.get("AGORA_ALLOW_ENV_KEYS"):
+        bare = "EMPTY"
     try:
         with LOCK:
             if job_id in CANCELLED:
@@ -337,12 +359,15 @@ def _run_job(job_id: str, meta: dict) -> None:
                              else "hidden (γ=%.2f)" % cfg.gamma)
 
         if params["backend"] == "llm":
-            from agora.backends import OpenAIBackend
-            be = OpenAIBackend(model=params["model"], base_url=params["base_url"],
-                               api_key=api_key,
-                               provider=params.get("provider") or None)
-            policies = {a: LLMPolicy(be, cfg, a, [p for p in ids if p != a], n_games=n_games)
-                        for a in ids}
+            from agora.run import build_policies
+            # A model mix ("m1@url1, m2@url2#provider", cycled over seats) pits
+            # different models against each other in the identical game; blank
+            # mix = every seat on the single endpoint from the form.
+            spec = (params.get("models") or "").strip() or "llm"
+            policies = build_policies(cfg, spec, params["model"], params["base_url"],
+                                      n_games=n_games, api_key=bare,
+                                      provider=params.get("provider") or None,
+                                      api_keys=pairs)
         else:
             names = [n.strip() for n in params["policies"].split(",") if n.strip()]
             if not names:
@@ -381,8 +406,9 @@ def _run_job(job_id: str, meta: dict) -> None:
         # key material from provider error bodies (some echo a masked key, and a
         # user-pointed proxy could echo the whole Authorization header).
         err = f"{type(exc).__name__}: {exc}"
-        if api_key and api_key != "EMPTY":
-            err = err.replace(api_key, "***")
+        for k in list(keys.values()) + ([bare] if bare else []):
+            if k and k != "EMPTY":
+                err = err.replace(k, "***")
         err = re.sub(r"\bsk-[A-Za-z0-9_\-*.]{4,}", "sk-***", err)
         meta.update(status="error", error=err)
         with LOCK:
@@ -506,6 +532,8 @@ def new_game():
         "policies": (f.get("policies") or "").strip() or DEFAULT_POLICIES,
         "model": f.get("model", "qwen3-32b"),
         "base_url": f.get("base_url", "http://localhost:8000/v1"),
+        "models": (f.get("models") or "").strip(),   # optional per-seat mix
+
         "title": f.get("title", "").strip(),
         "overrides": parse_overrides(f),
     }
@@ -516,22 +544,34 @@ def new_game():
         abort(400, "unknown backend")
     if params["provider"] not in ("vllm", "openai"):
         abort(400, "unknown provider")
+    mix_models = []
+    if params["models"]:
+        toks = [t.strip() for t in params["models"].split(",") if t.strip()]
+        if any("@" not in t for t in toks):
+            abort(400, "model mix must be comma-separated model@base_url[#provider] tokens")
+        mix_models = [t.partition("@")[0].strip() for t in toks]
     job_id = uuid.uuid4().hex[:10]
-    # The key goes into the in-memory store only — never into params/meta,
-    # which are persisted to disk — and only for LLM runs, whose _run_job pops
-    # it on every path. A blank field reuses the last key entered for this
-    # exact provider+endpoint (so you type it once per server session).
-    api_key = (f.get("api_key") or "").strip() if params["backend"] == "llm" else ""
-    key_slot = (params["provider"], params["base_url"])
-    if api_key and _ALLOW_KEY_REUSE:
-        _LAST_KEYS[key_slot] = api_key
-    elif not api_key and _ALLOW_KEY_REUSE:
-        api_key = _LAST_KEYS.get(key_slot, "")
-    if api_key and params["backend"] == "llm":
-        _JOB_KEYS[job_id] = api_key
+    # Keys go into the in-memory store only — never into params/meta, which
+    # are persisted to disk — and only for LLM runs, whose _run_job pops them
+    # on every path. The field holds one key, or host=key pairs for a mix. A
+    # blank field reuses the last keys entered for this exact endpoint/mix
+    # (so you type them once per server session).
+    keys = _parse_keys(f.get("api_key")) if params["backend"] == "llm" else {}
+    key_slot = (params["provider"], params["models"] or params["base_url"])
+    if keys and _ALLOW_KEY_REUSE:
+        _LAST_KEYS[key_slot] = keys
+    elif not keys and _ALLOW_KEY_REUSE:
+        keys = _LAST_KEYS.get(key_slot, {})
+    if keys and params["backend"] == "llm":
+        _JOB_KEYS[job_id] = keys
     if not params["title"]:
         gtag = f"{params['games']} games · " if params["games"] > 1 else ""
-        mtag = params["model"] if params["backend"] == "llm" else params["backend"]
+        if params["backend"] != "llm":
+            mtag = params["backend"]
+        elif mix_models:
+            mtag = " vs ".join(dict.fromkeys(mix_models))
+        else:
+            mtag = params["model"]
         params["title"] = f"{params['preset']} · {mtag} · {gtag}seed {params['seed']}"
     _start_job(job_id, params)
     return redirect(url_for("game", job_id=job_id))
@@ -949,8 +989,16 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <div id="key-row" class="hide">
     <label>API key — kept in memory only, never written to disk</label>
     <input name="api_key" id="api_key" type="password" autocomplete="off"
-           placeholder="blank = reuse the key you entered earlier this session">
+           placeholder="one key, or host=key pairs for a model mix; blank = reuse this session's keys">
   </div>
+  <label>Model mix — optional: different models play each other</label>
+  <input name="models" id="models" autocomplete="off"
+         placeholder="e.g. gpt-5.4@https://liv.services.ai.azure.com/openai/v1, qwen3-32b@http://localhost:8000/v1">
+  <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
+    Comma-separated <code>model@base_url[#provider]</code>, cycled over the seats — leave blank to run
+    every seat on the single endpoint above. Each seat gets the identical game; only the model differs.
+    Cloud endpoints resolve keys per host: paste <code>host=key</code> pairs (space-separated) in the
+    API-key field, e.g. <code>liv.services.ai.azure.com=KEY1 api.anthropic.com=KEY2</code>.</p>
   <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
     Local: serve the model first (<code>scripts/serve_qwen.sh</code>). Cloud: paste your Azure AI Foundry
     key and use the resource's OpenAI-compatible URL, e.g.
@@ -1058,7 +1106,11 @@ const PROVIDER_DEFAULTS = {
 function syncKeyRow(){
   var sel = document.getElementById('provider');
   var k = document.getElementById('key-row');
-  if(sel && k) k.classList.toggle('hide', sel.value === 'vllm');
+  var mix = document.getElementById('models');
+  // the key field matters for the cloud provider OR whenever a model mix is
+  // set (a mix may include cloud endpoints regardless of the provider select)
+  var need = (sel && sel.value !== 'vllm') || (mix && mix.value.trim() !== '');
+  if(k) k.classList.toggle('hide', !need);
 }
 function fillProvider(){
   var sel = document.getElementById('provider'); if(!sel) return;
@@ -1076,6 +1128,8 @@ document.addEventListener('DOMContentLoaded', function(){
   // sync visibility on load too (browser back / autofill can restore the
   // select without firing change) — but don't overwrite restored field values
   if(pv){ pv.addEventListener('change', fillProvider); syncKeyRow(); }
+  var mix = document.getElementById('models');
+  if(mix){ mix.addEventListener('input', syncKeyRow); }
 });
 </script>
 {% endif %}

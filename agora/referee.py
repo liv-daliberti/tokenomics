@@ -70,7 +70,12 @@ def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
     the "co-evolving within a context window" setting.
     """
     tx = transcript or Transcript()
-    tx.log("match_start", config=cfg, n_games=n_games)
+    # who is in each seat — the served model name for an LLM seat (so mixed-
+    # model matches are self-describing), the policy class for a scripted bot
+    seats = {aid: (getattr(getattr(p, "backend", None), "model", None)
+                   or type(p).__name__)
+             for aid, p in policies.items()}
+    tx.log("match_start", config=cfg, n_games=n_games, seats=seats)
     games: List[GameResult] = []
     for g in range(n_games):
         for pol in policies.values():
