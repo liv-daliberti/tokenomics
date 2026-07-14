@@ -102,6 +102,11 @@ class GameConfig:
     # prime cooperation/competition. Framing is a first-class ablation: if an
     # effect only appears under "cooperative", it was prompted, not emergent.
     framing: str = "neutral"          # "neutral" | "cooperative" | "competitive"
+    # Stamped into every transcript's config so runs made with different prompt
+    # WORDING (not just framing key) never pool silently in an aggregate. Bump
+    # when tools.py's preamble text changes. Runs before 2026-07-14 predate the
+    # field (absent = the original "team of agents" wording).
+    prompt_version: str = "2026-07-14-user-assist"
     reveal_truth_after_round: bool = True   # reveal past theta so reputations can form
     # When bias_sigma>0 the prompt explains the miscalibrated instrument. With
     # strategy_hint=True it ALSO tells the agent the solution (offsets cancel;

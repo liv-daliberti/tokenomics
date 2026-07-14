@@ -76,7 +76,7 @@ def test_form_overrides_agents_and_noise():
     assert meta["n_agents"] == 3 and meta["tau"] == 42.0 and meta["framing"] == "cooperative"
     # the prompt shown reflects the overridden framing + noise
     page = c.get(f"/game/{job_id}").data
-    assert b"working together" in page  # cooperative framing preamble
+    assert b"assisting a different user" in page  # cooperative framing preamble
 
 
 def test_build_config_preserves_privilege_and_switches_agents():
@@ -100,6 +100,20 @@ def test_cooperative_is_default_framing():
     import json as _json
     meta = _json.load(open(os.path.join(os.environ["AGORA_RUNS"], f"{job_id}.json")))
     assert meta["framing"] == "cooperative"
+
+
+def test_new_rejects_unknown_backend_and_provider():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    base = {"preset": "smoke", "policies": "bayesian_solo", "seed": "3"}
+    assert c.post("/new", data={**base, "backend": "bogus"}).status_code == 400
+    assert c.post("/new", data={**base, "backend": "scripted",
+                                "provider": "bogus"}).status_code == 400
+    # a key posted with a scripted run is dropped, not parked in memory forever
+    from web.app import _JOB_KEYS
+    r = c.post("/new", data={**base, "backend": "scripted", "api_key": "sk-oops"})
+    assert r.status_code == 302 and not _JOB_KEYS
 
 
 def test_nonnumeric_knobs_do_not_crash():

@@ -1,6 +1,8 @@
 # Runtime deps for the public viewer (Render). The core engine + analysis are
 # standard-library only; the web app needs Flask, served by gunicorn in prod.
-# (openai is NOT required for viewing or scripted games — it is lazy-imported
-# only when driving a live LLM endpoint, which the hosted viewer does not do.)
+# openai powers the "cloud endpoint" option on the Run-new-game form (an
+# Azure/OpenAI-compatible model driven with a visitor-supplied API key);
+# scripted games and viewing never touch it.
 flask>=3.0
 gunicorn>=21.0
+openai>=1.30

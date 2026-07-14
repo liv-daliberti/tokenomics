@@ -29,13 +29,16 @@ from .transcripts import Transcript
 
 
 def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str,
-                   n_games: int = 1) -> Dict[str, object]:
+                   n_games: int = 1, api_key: str = None,
+                   provider: str = None) -> Dict[str, object]:
     """Build the per-agent policy map from a spec, cycled over the agents. Tokens
-    are 'llm' (an LLMPolicy on the vLLM endpoint) or a scripted baseline name. A
-    MIXED spec puts an LLM seat next to a ground-truth bot — e.g. 'llm,liar' pits
-    one Qwen agent against a scripted liar (the D1/D2 probe: does the LLM discount
-    a proven liar, and does a judge recover the referee's lie label?). ``n_games``
-    is passed to LLM seats so the system prompt announces the real match length."""
+    are 'llm' (an LLMPolicy on an OpenAI-compatible endpoint — local vLLM or a
+    hosted Azure/OpenAI model, see ``OpenAIBackend``) or a scripted baseline name.
+    A MIXED spec puts an LLM seat next to a ground-truth bot — e.g. 'llm,liar'
+    pits one LLM agent against a scripted liar (the D1/D2 probe: does the LLM
+    discount a proven liar, and does a judge recover the referee's lie label?).
+    ``n_games`` is passed to LLM seats so the system prompt announces the real
+    match length; ``api_key``/``provider`` are handed to the backend."""
     ids = cfg.agent_ids
     names = [n.strip() for n in spec.split(",") if n.strip()]
     unknown = [n for n in names if n != "llm" and n not in REGISTRY]
@@ -44,7 +47,8 @@ def build_policies(cfg: GameConfig, spec: str, model: str, base_url: str,
     backend = None
     if "llm" in names:
         from .backends import OpenAIBackend
-        backend = OpenAIBackend(model=model, base_url=base_url)
+        backend = OpenAIBackend(model=model, base_url=base_url,
+                                api_key=api_key, provider=provider)
 
     def _make(name: str, aid: str):
         """One agent's policy: an LLM seat or a named scripted baseline."""
@@ -98,8 +102,13 @@ def main(argv: List[str] = None) -> None:
                     help="'llm', or comma-separated scripted policy names (cycled over agents)")
     ap.add_argument("--seed", type=int, help="override the config seed")
     ap.add_argument("--seeds", type=int, default=1, help="run this many consecutive seeds")
-    ap.add_argument("--model", default="qwen3-32b", help="served-model-name for the LLM backend")
+    ap.add_argument("--model", default="qwen3-32b",
+                    help="served-model-name (vLLM) or deployment name (Azure/OpenAI)")
     ap.add_argument("--base-url", default="http://localhost:8000/v1")
+    ap.add_argument("--api-key", default=None,
+                    help="key for a hosted endpoint (or set AZURE_OPENAI_API_KEY / OPENAI_API_KEY)")
+    ap.add_argument("--provider", choices=["vllm", "openai"], default=None,
+                    help="endpoint flavour; inferred from --base-url when omitted")
     ap.add_argument("--out", default=None, help="directory for JSONL transcripts")
     args = ap.parse_args(argv)
 
@@ -116,7 +125,8 @@ def main(argv: List[str] = None) -> None:
         if args.out:
             os.makedirs(args.out, exist_ok=True)
             tx = Transcript(os.path.join(args.out, f"seed{cfg.seed}.jsonl"))
-        policies = build_policies(cfg, args.policies, args.model, args.base_url)
+        policies = build_policies(cfg, args.policies, args.model, args.base_url,
+                                  api_key=args.api_key, provider=args.provider)
         result = Referee(cfg, policies, tx).run()
         summarize(result, args.policies)
         if tx:

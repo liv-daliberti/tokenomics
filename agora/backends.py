@@ -4,15 +4,21 @@ Keeping all generation behind ``Backend.generate`` means swapping the raw
 local-vLLM client for an Inspect ``get_model()`` bridge later is a one-file
 change. Two backends ship here:
 
-  * ``OpenAIBackend`` — drives a local vLLM OpenAI-compatible endpoint serving
-    Qwen3-32B. Uses the settings the 2026 serving recipe requires: non-stream,
-    tool_choice="auto", temperature>0, thinking toggled via chat_template_kwargs.
+  * ``OpenAIBackend`` — drives any OpenAI-compatible chat endpoint, in two
+    flavours. ``provider="vllm"`` is the local Qwen3-32B server and uses the
+    settings the 2026 serving recipe requires: non-stream, tool_choice="auto",
+    temperature>0, thinking toggled via chat_template_kwargs.
+    ``provider="openai"`` is a hosted endpoint — Azure AI Foundry's
+    OpenAI-compatible ``/openai/v1`` (e.g. a gpt-5.4 deployment) or
+    api.openai.com — whose reasoning models reject the vLLM-only sampling
+    knobs, so only the portable arguments are sent.
   * ``MockBackend`` — a scripted, dependency-free stand-in for testing the LLM
     policy plumbing with no server.
 """
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -36,37 +42,65 @@ class LLMResponse:
 
 
 class OpenAIBackend:
-    """Local Qwen3-32B behind vLLM's OpenAI-compatible server.
+    """Any OpenAI-compatible chat endpoint: local vLLM Qwen3-32B or a hosted cloud model.
 
-    Serve with (see scripts/serve_qwen.sh):
+    Local (provider="vllm"), serve with (see scripts/serve_qwen.sh):
         vllm serve Qwen/Qwen3-32B --served-model-name qwen3-32b \\
           --enable-auto-tool-choice --tool-call-parser hermes \\
           --reasoning-parser qwen3 --max-model-len 32768
+
+    Hosted (provider="openai"), e.g. an Azure AI Foundry deployment:
+        OpenAIBackend(model="gpt-5.4",
+                      base_url="https://<resource>.services.ai.azure.com/openai/v1",
+                      api_key="<key>")
     """
 
     def __init__(self, model: str = "qwen3-32b",
                  base_url: str = "http://localhost:8000/v1",
-                 api_key: str = "EMPTY"):
-        """Create an OpenAI-compatible client pointed at the local vLLM server."""
+                 api_key: Optional[str] = None,
+                 provider: Optional[str] = None):
+        """Create the client. ``provider`` is "vllm" or "openai"; left unset it is
+        inferred from the URL (Azure/OpenAI hosts -> "openai", else "vllm"). The
+        key falls back to AGORA_API_KEY / AZURE_OPENAI_API_KEY / OPENAI_API_KEY."""
         from openai import OpenAI  # lazy: only needed for real runs
         self.model = model
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
+        if provider not in (None, "", "vllm", "openai"):
+            raise ValueError(f"unknown provider {provider!r}; use 'vllm' or 'openai'")
+        self.provider = provider or (
+            "openai" if ("azure" in base_url or "openai.com" in base_url) else "vllm")
+        # AGORA_API_KEY is an explicit opt-in and applies to any endpoint; the
+        # provider-brand vars apply ONLY to the hosted flavour, so a vLLM run
+        # never picks up (and transmits) a cloud key the user exported for
+        # something else. No key at all falls back to vLLM's accept-anything
+        # placeholder.
+        key = api_key or os.environ.get("AGORA_API_KEY")
+        if not key and self.provider == "openai":
+            key = (os.environ.get("AZURE_OPENAI_API_KEY")
+                   or os.environ.get("OPENAI_API_KEY"))
+        self.client = OpenAI(base_url=base_url, api_key=key or "EMPTY")
 
     def generate(self, messages: List[Dict[str, Any]],
                  tools: List[Dict[str, Any]], cfg: GameConfig) -> LLMResponse:
-        """Call the chat endpoint (non-streaming, tool_choice=auto, temperature>0) and return a normalised LLMResponse."""
+        """Call the chat endpoint (non-streaming, tool_choice=auto) and return a normalised LLMResponse."""
+        sampling: Dict[str, Any] = {}
+        if self.provider == "vllm":
+            sampling = dict(
+                temperature=cfg.temperature,    # never 0 for Qwen3
+                top_p=0.8,
+                extra_body={
+                    "top_k": 20,
+                    "chat_template_kwargs": {"enable_thinking": cfg.enable_thinking},
+                },
+            )
+        # hosted reasoning models (gpt-5.x) reject temperature/top_p/top_k
+        # overrides and unknown body params, so "openai" sends none of them
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             tools=tools,
             tool_choice="auto",                 # "required" is buggy on Qwen3+vLLM
-            temperature=cfg.temperature,        # never 0 for Qwen3
-            top_p=0.8,
             stream=False,                       # streaming breaks hermes tool parsing
-            extra_body={
-                "top_k": 20,
-                "chat_template_kwargs": {"enable_thinking": cfg.enable_thinking},
-            },
+            **sampling,
         )
         msg = resp.choices[0].message
         calls: List[RawToolCall] = []

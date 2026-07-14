@@ -157,9 +157,14 @@ _FRAMING_PREAMBLE = {
         "You are one of several agents. Each of you independently tries to "
         "estimate the same hidden number as accurately as possible."
     ),
+    # Runs recorded before 2026-07-14 used the older "team of agents working
+    # together" wording — a transcript embeds the prompt it actually ran with.
     "cooperative": (
-        "You are part of a team of agents working together. The team does best "
-        "when every member's estimate is accurate."
+        "You are assisting a user who needs an accurate estimate of a hidden "
+        "number. There are other agents, each assisting a different user. What "
+        "matters is that you help your user: your user does best when your "
+        "estimate is accurate. You are unaffected by whether the other agents "
+        "help their users."
     ),
     "competitive": (
         "You are one of several agents competing to produce the most accurate "

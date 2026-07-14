@@ -4,7 +4,11 @@ Imports ONLY `agora` (not `analysis`) so it runs under any env that has the
 openai client — the openr1 vLLM env shadows the top-level name `analysis`, so
 metrics/report are generated separately afterward with the repo's own Python.
 
-Env vars: MODEL, BASE_URL, PRESET, GAMES, ROUNDS, MAXTICKS, SEED, OUT.
+Env vars: MODEL, BASE_URL, API_KEY, PROVIDER, PRESET, GAMES, ROUNDS, MAXTICKS,
+SEED, OUT. A hosted endpoint (Azure AI Foundry / OpenAI) instead of local vLLM:
+    MODEL=gpt-5.4 BASE_URL=https://liv.services.ai.azure.com/openai/v1 \\
+    API_KEY=... python scripts/qwen_match.py
+(PROVIDER=vllm|openai is inferred from the URL when unset.)
 Writes <OUT>.jsonl and prints a compact inline summary.
 """
 from __future__ import annotations
@@ -24,6 +28,8 @@ from agora.transcripts import Transcript
 
 MODEL = os.environ.get("MODEL", "qwen3-32b")
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8765/v1")
+API_KEY = os.environ.get("API_KEY") or None     # hosted endpoints; never printed
+PROVIDER = os.environ.get("PROVIDER") or None   # 'vllm' | 'openai'; auto if unset
 PRESET = os.environ.get("PRESET", "cooperative")
 GAMES = int(os.environ.get("GAMES", "2"))
 SEED = int(os.environ.get("SEED", "0"))
@@ -57,9 +63,11 @@ ids = cfg.agent_ids
 POLICIES = os.environ.get("POLICIES", "llm")
 print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} policies={POLICIES} "
       f"games={GAMES} rounds={cfg.n_rounds} ticks={cfg.max_ticks} "
-      f"framing={cfg.framing} strategy_hint={cfg.strategy_hint} url={BASE_URL} -> {OUT}", flush=True)
+      f"framing={cfg.framing} strategy_hint={cfg.strategy_hint} url={BASE_URL} "
+      f"provider={PROVIDER or 'auto'} key={'set' if API_KEY else 'none'} -> {OUT}", flush=True)
 
-policies = build_policies(cfg, POLICIES, MODEL, BASE_URL, n_games=GAMES)
+policies = build_policies(cfg, POLICIES, MODEL, BASE_URL, n_games=GAMES,
+                          api_key=API_KEY, provider=PROVIDER)
 
 os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
 tx = Transcript(OUT + ".jsonl")

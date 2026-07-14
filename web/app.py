@@ -41,6 +41,19 @@ app = Flask(__name__)
 JOBS: Dict[str, dict] = {}          # id -> {status, error} for in-flight runs
 LOCK = threading.Lock()
 
+# API keys for hosted endpoints (Azure/OpenAI) live in memory ONLY — they are
+# never written into the job metadata JSON (which is on disk and re-served).
+# Blank-field reuse is scoped to the exact (provider, base_url) the key was
+# entered for — otherwise a second visitor could aim base_url at their own
+# server and receive the stored key as a Bearer header — and is enabled only
+# on a private loopback server (not on Render or a 0.0.0.0 bind, where other
+# clients share the process; AGORA_ALLOW_KEY_REUSE=1 overrides).
+_JOB_KEYS: Dict[str, str] = {}        # job_id -> key for that run
+_LAST_KEYS: Dict[tuple, str] = {}     # (provider, base_url) -> last key entered
+_ALLOW_KEY_REUSE = bool(os.environ.get("AGORA_ALLOW_KEY_REUSE")) or (
+    not os.environ.get("RENDER")
+    and os.environ.get("HOST", "127.0.0.1") in ("127.0.0.1", "localhost", "::1"))
+
 DEFAULT_POLICIES = "honest_cooperator,bayesian_solo,liar,hoarder"
 
 # Simulator knobs the form may override (blank = keep the preset's value).
@@ -261,6 +274,16 @@ def seed_samples() -> None:
 def _run_job(job_id: str, meta: dict) -> None:
     """Run one match (build config + policies, play it, write the transcript) and update the job's metadata/status; any failure is surfaced to the UI."""
     params = meta
+    # Pop the key up front so EVERY exit path (scripted backend, error before
+    # the LLM branch) evicts it from memory, and so the except block below can
+    # redact it from any error text that gets persisted.
+    api_key = _JOB_KEYS.pop(job_id, None)
+    # Without a visitor-supplied key, do NOT let the backend fall back to the
+    # server's own env keys: base_url is form-controlled, so lending env keys
+    # would let a visitor bounce them to an arbitrary host. A private operator
+    # can opt in with AGORA_ALLOW_ENV_KEYS=1.
+    if api_key is None and not os.environ.get("AGORA_ALLOW_ENV_KEYS"):
+        api_key = "EMPTY"
     try:
         cfg = build_config(params)
         ids = cfg.agent_ids
@@ -272,7 +295,9 @@ def _run_job(job_id: str, meta: dict) -> None:
 
         if params["backend"] == "llm":
             from agora.backends import OpenAIBackend
-            be = OpenAIBackend(model=params["model"], base_url=params["base_url"])
+            be = OpenAIBackend(model=params["model"], base_url=params["base_url"],
+                               api_key=api_key,
+                               provider=params.get("provider") or None)
             policies = {a: LLMPolicy(be, cfg, a, [p for p in ids if p != a], n_games=n_games)
                         for a in ids}
         else:
@@ -307,7 +332,14 @@ def _run_job(job_id: str, meta: dict) -> None:
         with LOCK:
             JOBS[job_id] = {"status": "done", "error": None}
     except Exception as exc:  # surface any failure (e.g. no LLM endpoint) to the UI
-        meta.update(status="error", error=f"{type(exc).__name__}: {exc}")
+        # meta is persisted to disk and rendered on the error page, so scrub any
+        # key material from provider error bodies (some echo a masked key, and a
+        # user-pointed proxy could echo the whole Authorization header).
+        err = f"{type(exc).__name__}: {exc}"
+        if api_key and api_key != "EMPTY":
+            err = err.replace(api_key, "***")
+        err = re.sub(r"\bsk-[A-Za-z0-9_\-*.]{4,}", "sk-***", err)
+        meta.update(status="error", error=err)
         _write_meta(meta)
         with LOCK:
             JOBS[job_id] = {"status": "error", "error": meta["error"]}
@@ -421,6 +453,7 @@ def new_game():
         "seed": seed,
         "games": games,
         "backend": f.get("backend", "llm"),
+        "provider": f.get("provider", "vllm"),   # 'vllm' | 'openai' (Azure etc.)
         "policies": (f.get("policies") or "").strip() or DEFAULT_POLICIES,
         "model": f.get("model", "qwen3-32b"),
         "base_url": f.get("base_url", "http://localhost:8000/v1"),
@@ -430,10 +463,27 @@ def new_game():
     params["overrides"].setdefault("framing", "cooperative")  # cooperative by default
     if params["preset"] not in PRESETS:
         abort(400, "unknown preset")
+    if params["backend"] not in ("llm", "scripted"):
+        abort(400, "unknown backend")
+    if params["provider"] not in ("vllm", "openai"):
+        abort(400, "unknown provider")
     job_id = uuid.uuid4().hex[:10]
+    # The key goes into the in-memory store only — never into params/meta,
+    # which are persisted to disk — and only for LLM runs, whose _run_job pops
+    # it on every path. A blank field reuses the last key entered for this
+    # exact provider+endpoint (so you type it once per server session).
+    api_key = (f.get("api_key") or "").strip() if params["backend"] == "llm" else ""
+    key_slot = (params["provider"], params["base_url"])
+    if api_key and _ALLOW_KEY_REUSE:
+        _LAST_KEYS[key_slot] = api_key
+    elif not api_key and _ALLOW_KEY_REUSE:
+        api_key = _LAST_KEYS.get(key_slot, "")
+    if api_key and params["backend"] == "llm":
+        _JOB_KEYS[job_id] = api_key
     if not params["title"]:
         gtag = f"{params['games']} games · " if params["games"] > 1 else ""
-        params["title"] = f"{params['preset']} · {params['backend']} · {gtag}seed {params['seed']}"
+        mtag = params["model"] if params["backend"] == "llm" else params["backend"]
+        params["title"] = f"{params['preset']} · {mtag} · {gtag}seed {params['seed']}"
     _start_job(job_id, params)
     return redirect(url_for("game", job_id=job_id))
 
@@ -821,13 +871,25 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   </select>
 
   <input type="hidden" name="backend" value="llm">
-  <label>Agents — Qwen-3-32B via a local vLLM endpoint</label>
+  <label>Agents — model endpoint</label>
+  <select name="provider" id="provider">
+    <option value="vllm" selected>local vLLM — Qwen-3-32B (scripts/serve_qwen.sh)</option>
+    <option value="openai">cloud — Azure / OpenAI-compatible (e.g. gpt-5.4)</option>
+  </select>
   <div class="row">
-    <div><label>Model (served name)</label><input name="model" value="qwen3-32b"></div>
-    <div><label>vLLM base URL</label><input name="base_url" value="http://localhost:8000/v1"></div>
+    <div><label>Model (served / deployment name)</label><input name="model" id="model" value="qwen3-32b"></div>
+    <div><label>Base URL</label><input name="base_url" id="base_url" value="http://localhost:8000/v1"></div>
+  </div>
+  <div id="key-row" class="hide">
+    <label>API key — kept in memory only, never written to disk</label>
+    <input name="api_key" id="api_key" type="password" autocomplete="off"
+           placeholder="blank = reuse the key you entered earlier this session">
   </div>
   <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
-    Serve the model first (<code>scripts/serve_qwen.sh</code>); the match runs in the background.</p>
+    Local: serve the model first (<code>scripts/serve_qwen.sh</code>). Cloud: paste your Azure AI Foundry
+    key and use the resource's OpenAI-compatible URL, e.g.
+    <code>https://liv.services.ai.azure.com/openai/v1</code> with deployment <code>gpt-5.4</code>.
+    The match runs in the background either way.</p>
 
   <label>Games in a row — played back-to-back; the agents keep their memory across all of them</label>
   <input name="games" type="number" min="1" max="20" value="5">
@@ -897,9 +959,31 @@ function fillPreset(){
   });
   var hz = document.querySelector('select[name="horizon"]'); if(hz && p.horizon) hz.value = p.horizon;
 }
+const PROVIDER_DEFAULTS = {
+  vllm:   {model: 'qwen3-32b', base_url: 'http://localhost:8000/v1'},
+  openai: {model: 'gpt-5.4',   base_url: 'https://liv.services.ai.azure.com/openai/v1'}
+};
+function syncKeyRow(){
+  var sel = document.getElementById('provider');
+  var k = document.getElementById('key-row');
+  if(sel && k) k.classList.toggle('hide', sel.value === 'vllm');
+}
+function fillProvider(){
+  var sel = document.getElementById('provider'); if(!sel) return;
+  var d = PROVIDER_DEFAULTS[sel.value]; if(!d) return;
+  document.getElementById('model').value = d.model;
+  document.getElementById('base_url').value = d.base_url;
+  // a key typed for the other provider must not ride along hidden in the POST
+  document.getElementById('api_key').value = '';
+  syncKeyRow();
+}
 document.addEventListener('DOMContentLoaded', function(){
   var sel = document.querySelector('select[name=preset]');
   if(sel){ sel.addEventListener('change', fillPreset); fillPreset(); }
+  var pv = document.getElementById('provider');
+  // sync visibility on load too (browser back / autofill can restore the
+  // select without firing change) — but don't overwrite restored field values
+  if(pv){ pv.addEventListener('change', fillProvider); syncKeyRow(); }
 });
 </script>
 {% endif %}
@@ -919,8 +1003,11 @@ ERROR = _SHELL.replace("{{ inner|safe }}", """
 <div class="panel"><p class="sub" style="margin:0 0 8px">This game failed to run:</p>
 <pre style="color:var(--red);white-space:pre-wrap;margin:0">{{ meta.error }}</pre>
 {% if meta.backend == 'llm' %}<p class="m" style="color:var(--mut);margin-top:12px">
-Is the vLLM server up at <code>{{ meta.base_url }}</code>? Start it with <code>scripts/serve_qwen.sh</code>,
-and install the client with <code>pip install openai</code>.</p>{% endif %}</div>
+{% if meta.provider == 'openai' %}Check the endpoint URL <code>{{ meta.base_url }}</code>, the deployment
+name <code>{{ meta.model }}</code>, and the API key (keys live in memory only — re-enter it on the
+Run-new-game form after a server restart).{% else %}Is the vLLM server up at
+<code>{{ meta.base_url }}</code>? Start it with <code>scripts/serve_qwen.sh</code>,
+and install the client with <code>pip install openai</code>.{% endif %}</p>{% endif %}</div>
 """)
 
 GAME = _SHELL.replace("{{ inner|safe }}", """
