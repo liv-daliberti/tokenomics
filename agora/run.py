@@ -109,6 +109,9 @@ def main(argv: List[str] = None) -> None:
                     help="key for a hosted endpoint (or set AZURE_OPENAI_API_KEY / OPENAI_API_KEY)")
     ap.add_argument("--provider", choices=["vllm", "openai"], default=None,
                     help="endpoint flavour; inferred from --base-url when omitted")
+    ap.add_argument("--memory", choices=["context", "markdown"], default=None,
+                    help="LLM cross-game memory: full context (default) or per-round "
+                         "markdown notes with a context reset each game")
     ap.add_argument("--out", default=None, help="directory for JSONL transcripts")
     args = ap.parse_args(argv)
 
@@ -118,6 +121,8 @@ def main(argv: List[str] = None) -> None:
         base = PRESETS[args.preset or "smoke"]
     if args.seed is not None:
         base = base.with_(seed=args.seed)
+    if args.memory:
+        base = base.with_(memory=args.memory)
 
     for s in range(args.seeds):
         cfg = base.with_(seed=base.seed + s)

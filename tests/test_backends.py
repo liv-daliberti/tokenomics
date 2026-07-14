@@ -36,11 +36,16 @@ def _stub_client():
     return client, box
 
 
-def _generate(backend):
+_A_TOOL = [{"type": "function",
+            "function": {"name": "noop",
+                         "parameters": {"type": "object", "properties": {}}}}]
+
+
+def _generate(backend, tools=_A_TOOL):
     """Run one generate() through a stub client and return the captured kwargs."""
     backend.client, box = _stub_client()
     cfg = GameConfig(agent_ids=["A", "B"], seed=0)
-    resp = backend.generate([{"role": "user", "content": "hi"}], [], cfg)
+    resp = backend.generate([{"role": "user", "content": "hi"}], tools, cfg)
     assert resp.content == "ok" and resp.tool_calls == []
     return box["kwargs"], cfg
 
@@ -71,6 +76,16 @@ def test_hosted_flavour_sends_only_portable_arguments():
         assert banned not in kwargs
     assert kwargs["tool_choice"] == "auto" and kwargs["stream"] is False
     assert kwargs["model"] == "gpt-5.4"
+
+
+def test_empty_tools_are_omitted_from_the_request():
+    # A text-only call (the markdown note-writing step) must not send an empty
+    # tools array — hosted APIs reject `tools: []`.
+    if not _HAVE_OPENAI:
+        print("skip: openai not installed"); return
+    from agora.backends import OpenAIBackend
+    kwargs, _ = _generate(OpenAIBackend(), tools=[])
+    assert "tools" not in kwargs and "tool_choice" not in kwargs
 
 
 def test_provider_explicit_override_and_validation():

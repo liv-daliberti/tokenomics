@@ -95,6 +95,8 @@ def parse_overrides(form) -> dict:
         raw = form.get(k, "").strip()
         if raw:
             ov[k] = raw
+    if form.get("memory", "").strip() in ("context", "markdown"):
+        ov["memory"] = form.get("memory").strip()
     return ov
 
 
@@ -949,7 +951,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <code>https://liv.services.ai.azure.com/openai/v1</code> with deployment <code>gpt-5.4</code>.
     The match runs in the background either way.</p>
 
-  <label>Games in a row — played back-to-back; the agents keep their memory across all of them</label>
+  <label>Games in a row — played back-to-back</label>
   <input name="games" type="number" min="1" max="20" value="5">
 
   <div style="border-top:1px solid var(--line);margin:20px 0 4px;padding-top:14px">
@@ -984,8 +986,16 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <option value="neutral">neutral</option>
         <option value="competitive">competitive</option>
       </select></div>
-    <div></div>
+    <div><label>Memory across games (LLM agents)</label>
+      <select name="memory">
+        <option value="context" selected>full context — one growing conversation</option>
+        <option value="markdown">markdown notes — journal each round, context reset per game</option>
+      </select></div>
   </div>
+  <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
+    <b>Markdown notes</b>: after every round each agent writes what happened to its own notebook;
+    between games its conversation is cleared and only the notebook comes back. The notebooks
+    appear on the game page (📝 per round, plus a full per-agent document at the bottom).</p>
   <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--mut);font-size:13px">more knobs…</summary>
     <div class="row">
       <div><label>Starting credits</label><input name="starting_credits" placeholder="preset"></div>

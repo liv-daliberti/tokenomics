@@ -202,12 +202,22 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         if cfg.reveal_horizon
         else "The game may end after any round; you are not told how many remain."
     )
-    match_line = (
-        f"You will play {n_games} separate games, one after another. Each game the "
-        "hidden value is drawn afresh and every agent's credits are reset to the "
-        "starting amount, but you keep your memory of all previous games."
-        if n_games > 1 else ""
-    )
+    if n_games > 1 and cfg.memory == "markdown":
+        match_line = (
+            f"You will play {n_games} separate games, one after another. Each game the "
+            "hidden value is drawn afresh and every agent's credits are reset to the "
+            "starting amount. Your conversation is CLEARED between games: after every "
+            "round you will be asked to write markdown notes, and those notes are the "
+            "ONLY memory of past games you get back — so write down what matters."
+        )
+    elif n_games > 1:
+        match_line = (
+            f"You will play {n_games} separate games, one after another. Each game the "
+            "hidden value is drawn afresh and every agent's credits are reset to the "
+            "starting amount, but you keep your memory of all previous games."
+        )
+    else:
+        match_line = ""
     lines = [
         preamble,
         "",

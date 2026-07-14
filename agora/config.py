@@ -120,6 +120,15 @@ class GameConfig:
     enable_thinking: bool = False     # Qwen3 hybrid-thinking toggle
     temperature: float = 0.4
 
+    # --- cross-game memory (LLM policy only) ---
+    # "context":  one growing conversation across the whole match — the agent
+    #             remembers earlier games verbatim (token cost grows per game).
+    # "markdown": after every round the agent writes markdown notes; at each
+    #             game boundary its conversation is RESET to the system prompt
+    #             and the accumulated notes are supplied instead. Bounded
+    #             context; memory is only what the agent chose to write down.
+    memory: str = "context"           # "context" | "markdown"
+
     def bucket(self) -> float:
         """Reward-bucket width for the quantized rule (defaults to prior_sigma / reward_max)."""
         if self.reward_bucket is not None:

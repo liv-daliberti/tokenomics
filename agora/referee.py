@@ -175,12 +175,41 @@ class Referee:
             for a in cfg.agent_ids:
                 if alive_before[a] and not self.states[a].alive:
                     self.tx.log("elimination", game_index=self.game_index, round=r, agent=a)
+            # markdown memory: each agent that played this round journals it
+            # (one text-only model call); the note — not the transcript — is
+            # what the agent will "remember" at the next game boundary.
+            for a in cfg.agent_ids:
+                if not alive_before[a]:
+                    continue
+                writer = getattr(self.policies[a], "write_round_notes", None)
+                note = writer(self.game_index, r,
+                              self._round_outcome_text(a, rr)) if writer else None
+                if note:
+                    self.tx.log("notes", agent=a, game_index=self.game_index,
+                                round=r, text=note)
             past_truths.append(self.truth)
             self._last_result = rr        # feed back to next round's observations
 
         self.tx.log("game_end", final_credits={a: self.states[a].credits
                                                for a in cfg.agent_ids})
         return GameResult(cfg, self.states, rounds, self.tx)
+
+    def _round_outcome_text(self, aid: str, rr: "RoundResult") -> str:
+        """A one-line factual summary of the round for an agent's notes prompt —
+        only facts the agent is entitled to (truth only if it gets revealed)."""
+        bits = []
+        if self.cfg.reveal_truth_after_round:
+            bits.append(f"The true value was {rr.truth:.4g}.")
+        est = rr.estimates.get(aid)
+        if est is not None:
+            bits.append(f"You estimated {est:.4g} (error {rr.errors[aid]:.4g}, "
+                        f"reward {rr.rewards[aid]:.4g}).")
+        else:
+            bits.append("You submitted no estimate.")
+        bits.append(f"Your credits now: {rr.credits_end[aid]:.4g}.")
+        if not rr.alive[aid]:
+            bits.append("You were ELIMINATED this round.")
+        return " ".join(bits)
 
     def _reset_round(self, round_index: int) -> None:
         """Reset per-round agent state (quota, estimate, measurements, purchases) for a new round; unseen inbox messages are deliberately kept."""
@@ -236,9 +265,15 @@ class Referee:
                                 last_result=last)
         st.inbox = []  # surfaced now; each message is shown once
         obs_text = render_observation(obs)
+        policy = self.policies[aid]
+        # Fold in any pending game-boundary note (in markdown-memory mode it
+        # carries the agent's notebook) BEFORE logging, so the transcript shows
+        # exactly the text the model receives.
+        boundary = getattr(policy, "consume_boundary_note", lambda: "")()
+        if boundary:
+            obs_text = f"{boundary}\n\n{obs_text}"
         self.tx.log("prompt", agent=aid, game_index=self.game_index,
                     round=self.round_index, tick=tick, final=final, text=obs_text)
-        policy = self.policies[aid]
         policy.start_turn(obs_text, obs)
 
         substantive = False

@@ -58,6 +58,8 @@ h1 { font-size:26px; margin:0 0 4px; letter-spacing:-.3px; }
 .t-trade{color:var(--amber);}   .t-transfer{color:var(--green);}
 .t-submit{color:var(--purple);} .t-err{color:var(--red);}
 .t-idle{color:var(--mut);background:#20242e;}
+.t-notes{color:var(--amber);}
+.notesblk{margin:5px 0 7px;} .notesblk pre{border:0;}
 .ev.dim { opacity:.5; }         /* an offer that never became a sale */
 .lie { background:#3a1c1a; color:var(--red); border:1px solid #522; }
 .honest { background:#1c3a24; color:var(--green); border:1px solid #254; }
@@ -217,6 +219,12 @@ def _render_event(e: Dict[str, Any]) -> str:
         return (f'<div class="ev"><span class="who">{e.get("agent","?")}</span>'
                 f'<span class="txt"><span class="tag t-err">⚠ parse-fail</span> '
                 f'{html.escape(str(e.get("tool")))}: {html.escape(str(e.get("error")))}</span></div>')
+    if t == "notes":
+        return (f'<div class="ev"><span class="who">{e["agent"]}</span>'
+                f'<span class="txt"><details><summary style="cursor:pointer;color:var(--mut);'
+                f'font-size:12px">📝 round notes (markdown memory)</summary>'
+                f'<pre class="think" style="border:0;font-size:12px">'
+                f'{html.escape(e["text"])}</pre></details></span></div>')
     return ""
 
 
@@ -441,6 +449,14 @@ def _agent_actions(start: Dict[str, Any], evs: List[Dict[str, Any]],
             act(e["agent"], tag("t-transfer", "✨ revived",
                 "A peer transferred credits to this eliminated agent, bringing it back into the game.")
                 + ' — a peer funded me back into the game')
+        elif t == "notes":
+            push(e["agent"],
+                 f'<details class="notesblk"><summary style="cursor:pointer;font-size:12px">'
+                 f'<span class="tag t-notes" title="Markdown-memory mode: the note this agent '
+                 f'wrote after the round — its only memory of this game once the next one '
+                 f'starts.">📝 notes it wrote after this round</span></summary>'
+                 f'<pre class="think" style="font-size:12px">{html.escape(e["text"])}</pre>'
+                 f'</details>')
     return acts
 
 
@@ -531,6 +547,7 @@ def _simple_legend() -> str:
         ("🎯", "submitted its estimate"),
         ("💀", "eliminated (0 credits)"),
         ("💭", "its private reasoning"),
+        ("📝", "the notes it wrote after the round (markdown memory)"),
         ("💰 N", "credits left after that step"),
     ]
     chips = "".join(f'<span class="lkey"><b>{e}</b> {t}</span>' for e, t in items)
@@ -579,7 +596,41 @@ def render_simple(events: List[Dict[str, Any]], title: str = "Agora game") -> st
         else:
             parts.append(rounds_html)
 
+    parts.append(_notebooks_html(events, agents))
     return "".join(parts)
+
+
+def _notebooks_html(events: List[Dict[str, Any]], agents: List[str]) -> str:
+    """One collapsible notebook per agent: every round note it wrote (markdown
+    memory mode), under game/round headings — exactly the document the agent
+    is shown back at each new game. '' when the run wrote no notes."""
+    by_agent: Dict[str, list] = {}
+    for e in events:
+        if e["event"] == "notes":
+            by_agent.setdefault(e["agent"], []).append(e)
+    if not by_agent:
+        return ""
+    blocks = ""
+    for a in agents:
+        notes = by_agent.get(a)
+        if not notes:
+            continue
+        doc, last_game = [], None
+        for e in notes:
+            g = e.get("game_index", 0)
+            if g != last_game:
+                doc.append(f"# Game {g + 1}")
+                last_game = g
+            doc.append(f"## Round {e.get('round')}\n\n{e['text']}")
+        doc_md = "\n\n".join(doc)
+        blocks += (f'<details class="round"><summary><b>📝 {a}\'s notebook</b>'
+                   f'<span class="chip">{len(notes)} note(s)</span></summary>'
+                   f'<div class="body"><pre style="white-space:pre-wrap;margin:0;'
+                   f'color:var(--fg)">{html.escape(doc_md)}</pre></div></details>')
+    return (f'<h2 style="margin:18px 0 6px;font-size:16px">Agent notebooks '
+            f'<span class="chip" title="Markdown-memory mode: between games each agent\'s '
+            f'conversation is cleared; this document is all it gets back.">markdown memory</span></h2>'
+            + blocks) if blocks else ""
 
 
 # --------------------------------------------------------------------------- #

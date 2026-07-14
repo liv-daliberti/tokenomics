@@ -93,12 +93,15 @@ class OpenAIBackend:
                 },
             )
         # hosted reasoning models (gpt-5.x) reject temperature/top_p/top_k
-        # overrides and unknown body params, so "openai" sends none of them
+        # overrides and unknown body params, so "openai" sends none of them.
+        # A text-only call (e.g. the markdown note-writing step) passes no
+        # tools; the API rejects an EMPTY tools array, so omit it entirely.
+        if tools:
+            sampling["tools"] = tools
+            sampling["tool_choice"] = "auto"    # "required" is buggy on Qwen3+vLLM
         resp = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            tools=tools,
-            tool_choice="auto",                 # "required" is buggy on Qwen3+vLLM
             stream=False,                       # streaming breaks hermes tool parsing
             **sampling,
         )

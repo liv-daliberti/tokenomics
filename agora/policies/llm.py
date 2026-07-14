@@ -33,14 +33,32 @@ class LLMPolicy(Policy):
         self._game_prefix = ""
         self._thought: Optional[str] = None
         self.parse_failures = 0
+        # markdown-memory mode: the per-round notes this agent has written,
+        # as (game_index, round_index, markdown) — the source of its notebook.
+        self.notes: List[tuple] = []
 
     def reset_game(self, game_index: int, n_games: int = 1) -> None:
-        # Keep the whole conversation; just mark the boundary so the agent knows a
-        # fresh game has begun (and prepend it to the next observation to avoid
-        # two consecutive user turns).
-        """Mark a new-game boundary in the persisted history — memory is kept, not cleared."""
-        if game_index > 0:
-            total = max(n_games, self.n_games)
+        """Mark a new-game boundary. In "context" mode the whole conversation is
+        kept; in "markdown" mode it is RESET to the system prompt and the agent
+        gets its own accumulated notes instead."""
+        if game_index == 0:
+            return
+        total = max(n_games, self.n_games)
+        if self.cfg.memory == "markdown":
+            self.messages = self.messages[:1]   # keep only the system prompt
+            doc = self.notes_doc()
+            notes_block = (f"Your notes from the previous games:\n\n{doc}"
+                           if doc else "You have no notes from previous games.")
+            self._game_prefix = (
+                f"=== A NEW GAME (game {game_index + 1} of {total}) begins now. The hidden "
+                f"value is drawn afresh and every agent's credits are reset to the starting "
+                f"amount. You are playing the same agents as before. Your conversation from "
+                f"the previous games has been cleared — what you know about them is the "
+                f"notes you wrote. ===\n\n{notes_block}"
+            )
+        else:
+            # Keep the whole conversation; just mark the boundary (prepended to
+            # the next observation to avoid two consecutive user turns).
             self._game_prefix = (
                 f"=== A NEW GAME (game {game_index + 1} of {total}) begins now. The hidden "
                 f"value is drawn afresh and every agent's credits are reset to the starting "
@@ -48,11 +66,16 @@ class LLMPolicy(Policy):
                 f"from the previous games. ==="
             )
 
+    def consume_boundary_note(self) -> str:
+        """Hand the pending game-boundary note (with the notebook, in markdown
+        mode) to the referee, which prepends it to the next observation so the
+        logged prompt matches what the model actually receives."""
+        note, self._game_prefix = self._game_prefix, ""
+        return note
+
     def start_turn(self, observation_text: str, observation: Dict[str, Any]) -> None:
-        """Append this turn's observation (prefixed with any pending game-boundary note) as a user message."""
-        if self._game_prefix:
-            observation_text = f"{self._game_prefix}\n\n{observation_text}"
-            self._game_prefix = ""
+        """Append this turn's observation as a user message (the referee has
+        already folded in any game-boundary note)."""
         self.messages.append({"role": "user", "content": observation_text})
 
     def next_actions(self) -> List[ToolInvocation]:
@@ -104,3 +127,39 @@ class LLMPolicy(Policy):
                 {"role": "tool", "tool_call_id": call_id, "content": result}
             )
         self._pending_ids = []
+
+    # ------------------------------------------------------- markdown memory --
+    def write_round_notes(self, game_index: int, round_index: int,
+                          outcome_text: str = "") -> Optional[str]:
+        """One extra text-only model call asking the agent to journal the round.
+
+        Only active in "markdown" memory mode. The request (and the reply) stay
+        in the conversation, which is cleared at the next game boundary — the
+        note itself is what survives, via ``notes_doc``."""
+        if self.cfg.memory != "markdown":
+            return None
+        ask = (f"The round is over.{' ' + outcome_text if outcome_text else ''} "
+               f"Append concise markdown notes on what happened this round — what "
+               f"you measured, said, traded, estimated, how it turned out, and "
+               f"anything worth remembering for later games. At each new game your "
+               f"conversation is cleared and ONLY these notes are shown back to "
+               f"you, so write what your future self needs. Reply with ONLY the "
+               f"markdown to append (a few bullet points; no preamble).")
+        self.messages.append({"role": "user", "content": ask})
+        resp = self.backend.generate(self.messages, [], self.cfg)  # text-only: no tools
+        text = (resp.content or "").strip()
+        self.messages.append({"role": "assistant", "content": text})
+        if not text:
+            return None
+        self.notes.append((game_index, round_index, text))
+        return text
+
+    def notes_doc(self) -> str:
+        """The agent's whole notebook: every round note under game/round headings."""
+        parts, last_game = [], None
+        for g, r, text in self.notes:
+            if g != last_game:
+                parts.append(f"# Game {g + 1}")
+                last_game = g
+            parts.append(f"## Round {r}\n\n{text}")
+        return "\n\n".join(parts)

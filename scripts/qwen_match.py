@@ -55,6 +55,10 @@ if os.environ.get("FRAMING"):
     _overrides["framing"] = os.environ["FRAMING"]
 if os.environ.get("STRATEGY_HINT", "") != "":
     _overrides["strategy_hint"] = os.environ["STRATEGY_HINT"].lower() not in ("0", "false", "no")
+# MEMORY=markdown: agents journal each round and start every game from a reset
+# context plus their notes (bounded context; the cross-game-memory ablation).
+if os.environ.get("MEMORY") in ("context", "markdown"):
+    _overrides["memory"] = os.environ["MEMORY"]
 cfg = _base.with_(**_overrides)
 ids = cfg.agent_ids
 # POLICIES cycles over the seats: 'llm' (default, all Qwen) or a mix like

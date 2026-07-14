@@ -32,6 +32,15 @@ class Policy:
     def reset_round(self, round_index: int) -> None:
         """Called once at the start of each round."""
 
+    def consume_boundary_note(self) -> str:
+        """A pending new-game marker to prepend to this agent's next observation.
+
+        The referee prepends it BEFORE logging the prompt event, so the
+        transcript shows exactly what the agent was sent (in markdown-memory
+        mode this note carries the agent's whole notebook). Returned once then
+        cleared; '' when there is nothing pending."""
+        return ""
+
     def start_turn(self, observation_text: str, observation: Dict[str, Any]) -> None:
         """Called once at the start of an agent's turn within a tick."""
 
@@ -48,3 +57,16 @@ class Policy:
 
     def observe_results(self, results: List[Tuple[str, str]]) -> None:
         """Feed back (call_id, result_string) pairs for the calls just executed."""
+
+    def write_round_notes(self, game_index: int, round_index: int,
+                          outcome_text: str = "") -> Optional[str]:
+        """Called by the referee after each round when markdown memory is on.
+
+        Returns the markdown the agent wants to append to its running notes
+        document (logged to the transcript), or None to write nothing —
+        the default for scripted policies, which need no notebook."""
+        return None
+
+    def notes_doc(self) -> str:
+        """The agent's accumulated markdown notes document ('' if none)."""
+        return ""
