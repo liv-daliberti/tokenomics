@@ -253,6 +253,12 @@ class Referee:
             results = []
             ended = False
             for inv in invs:
+                if actions_taken >= cfg.max_actions_per_tick:
+                    results.append((inv.call_id, "ERROR: action limit reached for this tick"))
+                    continue
+                if ended:
+                    results.append((inv.call_id, "ERROR: turn already ended"))
+                    continue
                 if inv.action is None:
                     self.tx.log("parse_fail", agent=aid, tool=inv.name, error=inv.error)
                     results.append((inv.call_id, f"ERROR: {inv.error}"))

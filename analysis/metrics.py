@@ -191,27 +191,27 @@ def deception(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 def cooperation(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any]:
     """Cooperation index: the fraction of measurements whose value was transmitted to another agent (via a tagged message or an accepted trade)."""
-    measured = defaultdict(list)         # agent -> [values measured]
-    for e in events:
-        if e["event"] == "measure":
-            measured[e["agent"]].append(e["value"])
-
-    shared = defaultdict(set)            # agent -> indices of shared measurements
-    accepted = {e["trade_id"] for e in events
-                if e["event"] == "respond_trade" and e.get("status") == "accepted"}
-    for e in events:
-        if e["event"] == "message":
-            nums = _extract_numbers(e["text"])
-            for j, v in enumerate(measured[e["sender"]]):
-                if any(abs(v - n) <= tol for n in nums):
-                    shared[e["sender"]].add(j)
-        if e["event"] == "propose_trade" and e["trade_id"] in accepted:
-            for j, v in enumerate(measured[e["seller"]]):
-                if abs(v - e["claimed_value"]) <= tol:
-                    shared[e["seller"]].add(j)
-
-    total = sum(len(v) for v in measured.values())
-    n_shared = sum(len(v) for v in shared.values())
+    total = n_shared = 0
+    for gevs in _games(events):
+        for _r, revs in _round_groups(gevs):
+            measured = defaultdict(list)
+            accepted = {e["trade_id"] for e in revs
+                        if e["event"] == "respond_trade" and e.get("status") == "accepted"}
+            shared = defaultdict(set)
+            for e in revs:
+                if e["event"] == "measure":
+                    measured[e["agent"]].append(e["value"])
+                    total += 1
+                elif e["event"] == "message":
+                    nums = _extract_numbers(e["text"])
+                    for j, v in enumerate(measured[e["sender"]]):
+                        if any(abs(v - n) <= tol for n in nums):
+                            shared[e["sender"]].add(j)
+                elif e["event"] == "propose_trade" and e["trade_id"] in accepted:
+                    for j, v in enumerate(measured[e["seller"]]):
+                        if abs(v - e["claimed_value"]) <= tol:
+                            shared[e["seller"]].add(j)
+            n_shared += sum(len(v) for v in shared.values())
     return {
         "measurements": total,
         "shared": n_shared,
@@ -230,23 +230,28 @@ def reciprocity(events: List[Dict[str, Any]], tol: float = 5.0) -> Dict[str, Any
     share into an already-dead partner (which cannot reciprocate), or by a dead
     agent, is not mistaken for a failure to reciprocate.
     """
-    measured: Dict[str, list] = defaultdict(list)
-    for e in events:
-        if e["event"] == "measure":
-            measured[e["agent"]].append(e["value"])
     gstart = next((e for e in events if e["event"] == "game_start"), None)
-    all_agents = gstart["config"]["agent_ids"] if gstart else sorted(measured)
-    parties = {e["trade_id"]: (e["seller"], e["buyer"])
-               for e in events if e["event"] == "propose_trade"}
+    all_agents = gstart["config"]["agent_ids"] if gstart else sorted({
+        e["agent"] for e in events if e["event"] == "measure"})
 
     tx: Dict[tuple, int] = defaultdict(int)      # (src, dst) -> value transmissions
     alive = set(all_agents)                       # until a round_start says otherwise
+    measured: Dict[str, list] = defaultdict(list)
+    parties = {}
     for e in events:
         t = e["event"]
         if t == "game_start":
             alive = set(all_agents)
+            measured = defaultdict(list)
+            parties = {}
         elif t == "round_start":
             alive = set(e.get("alive", all_agents))
+            measured = defaultdict(list)
+            parties = {}
+        elif t == "measure":
+            measured[e["agent"]].append(e["value"])
+        elif t == "propose_trade":
+            parties[e["trade_id"]] = (e["seller"], e["buyer"])
         elif t == "message":
             if e["sender"] not in alive:
                 continue

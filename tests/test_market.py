@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sys
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -118,6 +119,24 @@ def test_non_buyer_cannot_respond():
         assert False
     except MarketError:
         pass
+
+
+def test_nonfinite_money_and_trade_values_are_rejected():
+    m, st = _market({"A": 5.0, "B": 5.0})
+    before = {a: s.credits for a, s in st.items()}
+    for amount in (math.nan, math.inf, -math.inf):
+        try:
+            m.transfer("A", "B", amount)
+            assert False, "non-finite transfer should raise"
+        except MarketError:
+            pass
+    for price, value in ((math.nan, 1.0), (1.0, math.inf)):
+        try:
+            m.propose_trade("A", "B", price, value, 0)
+            assert False, "non-finite trade should raise"
+        except MarketError:
+            pass
+    assert {a: s.credits for a, s in st.items()} == before
 
 
 if __name__ == "__main__":

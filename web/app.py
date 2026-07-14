@@ -39,6 +39,7 @@ os.makedirs(RUNS, exist_ok=True)
 
 app = Flask(__name__)
 JOBS: Dict[str, dict] = {}          # id -> {status, error} for in-flight runs
+CANCELLED = set()                   # deleted jobs whose workers must not publish results
 LOCK = threading.Lock()
 
 # API keys for hosted endpoints (Azure/OpenAI) live in memory ONLY — they are
@@ -154,6 +155,39 @@ def _all_games() -> list:
             except (OSError, ValueError):
                 continue
     return sorted(games, key=lambda m: m.get("created", 0), reverse=True)
+
+
+def _running_progress(job_id: str, meta: dict) -> tuple[list, dict]:
+    """Load the append-only transcript and summarize an in-flight match.
+
+    Transcript writes are flushed one complete JSON object at a time, so this
+    lets the running page show work immediately instead of waiting for the
+    match-level metrics pass at the end.  Be deliberately forgiving here: a
+    status refresh should still render if it races the very first write.
+    """
+    path = os.path.join(RUNS, f"{job_id}.jsonl")
+    events = []
+    if os.path.exists(path):
+        try:
+            events = load_events(path)
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            events = []
+
+    starts = [e for e in events if e.get("event") == "game_start"]
+    finished_games = sum(e.get("event") == "game_end" for e in events)
+    finished_rounds = sum(e.get("event") == "round_end" for e in events)
+    current_game = starts[-1].get("game_index", len(starts) - 1) + 1 if starts else 0
+    current_round = next((e.get("round") for e in reversed(events)
+                          if e.get("round") is not None), None)
+    progress = {
+        "games_done": finished_games,
+        "current_game": current_game,
+        "games_total": int(meta.get("games", meta.get("n_games", 1))),
+        "rounds_done": finished_rounds,
+        "current_round": current_round,
+        "events": len(events),
+    }
+    return events, progress
 
 
 def _start_job(job_id: str, params: dict) -> None:
@@ -285,6 +319,9 @@ def _run_job(job_id: str, meta: dict) -> None:
     if api_key is None and not os.environ.get("AGORA_ALLOW_ENV_KEYS"):
         api_key = "EMPTY"
     try:
+        with LOCK:
+            if job_id in CANCELLED:
+                return
         cfg = build_config(params)
         ids = cfg.agent_ids
         n_games = int(params.get("games", 1))
@@ -328,8 +365,10 @@ def _run_job(job_id: str, meta: dict) -> None:
             gini=s["gini_final_credits"], welfare=s["welfare"],
             parse_fail_rate=s["diagnostics"]["parse_fail_rate"],
         )
-        _write_meta(meta)
         with LOCK:
+            if job_id in CANCELLED:
+                return
+            _write_meta(meta)
             JOBS[job_id] = {"status": "done", "error": None}
     except Exception as exc:  # surface any failure (e.g. no LLM endpoint) to the UI
         # meta is persisted to disk and rendered on the error page, so scrub any
@@ -340,8 +379,10 @@ def _run_job(job_id: str, meta: dict) -> None:
             err = err.replace(api_key, "***")
         err = re.sub(r"\bsk-[A-Za-z0-9_\-*.]{4,}", "sk-***", err)
         meta.update(status="error", error=err)
-        _write_meta(meta)
         with LOCK:
+            if job_id in CANCELLED:
+                return
+            _write_meta(meta)
             JOBS[job_id] = {"status": "error", "error": meta["error"]}
 
 
@@ -426,13 +467,15 @@ def create():
 @app.route("/delete_all", methods=["POST"])
 def delete_all():
     """Clear the whole gallery (does not resurrect on restart — see seed marker)."""
-    for f in os.listdir(RUNS):
-        if (f.endswith(".json") or f.endswith(".jsonl")) and not f.startswith("."):
-            try:
-                os.remove(os.path.join(RUNS, f))
-            except OSError:
-                pass
-    JOBS.clear()
+    with LOCK:
+        CANCELLED.update(JOBS)
+        for f in os.listdir(RUNS):
+            if (f.endswith(".json") or f.endswith(".jsonl")) and not f.startswith("."):
+                try:
+                    os.remove(os.path.join(RUNS, f))
+                except OSError:
+                    pass
+        JOBS.clear()
     return redirect(url_for("index"))
 
 
@@ -492,17 +535,30 @@ def new_game():
 def game(job_id: str):
     """Render a finished game (simple or detailed view), or a running/error placeholder."""
     if not os.path.exists(_meta_path(job_id)):
-        abort(404)
+        # On the hosted free tier the runs dir is ephemeral: a redeploy or idle
+        # restart clears user-run games (samples re-seed). Say so instead of a
+        # bare 404 that reads like a broken link.
+        return render_template_string(GONE, css=_CSS, job_id=job_id), 404
     meta = _load_meta(job_id)
     status = JOBS.get(job_id, {}).get("status", meta.get("status", "done"))
 
     if status == "running":
-        return render_template_string(WAIT, css=_CSS, meta=meta)
+        events, progress = _running_progress(job_id, meta)
+        body = render_simple(events, meta.get("title", "Agora game")) if events else ""
+        return render_template_string(WAIT, css=_CSS, meta=meta, body=body,
+                                      progress=progress)
     if status == "error":
         return render_template_string(ERROR, css=_CSS, meta=meta)
 
     view = request.args.get("view", "simple")
-    events = load_events(os.path.join(RUNS, f"{job_id}.jsonl"))
+    transcript_path = os.path.join(RUNS, f"{job_id}.jsonl")
+    if not os.path.exists(transcript_path):
+        return render_template_string(GONE, css=_CSS, job_id=job_id), 404
+    try:
+        events = load_events(transcript_path)
+    except (OSError, ValueError, KeyError) as exc:
+        broken = dict(meta, error=f"The saved transcript is unreadable: {type(exc).__name__}: {exc}")
+        return render_template_string(ERROR, css=_CSS, meta=broken), 500
     title = meta.get("title", "Agora game")
     body = render_body(events, title) if view == "detailed" else render_simple(events, title)
     return render_template_string(GAME, css=_CSS, body=body, meta=meta, view=view)
@@ -569,11 +625,13 @@ def transcript(job_id: str):
 @app.route("/delete/<job_id>", methods=["POST"])
 def delete(job_id: str):
     """Delete one game's files and drop it from the gallery."""
-    for ext in (".json", ".jsonl"):
-        p = os.path.join(RUNS, f"{job_id}{ext}")
-        if os.path.exists(p):
-            os.remove(p)
-    JOBS.pop(job_id, None)
+    with LOCK:
+        CANCELLED.add(job_id)
+        for ext in (".json", ".jsonl"):
+            p = os.path.join(RUNS, f"{job_id}{ext}")
+            if os.path.exists(p):
+                os.remove(p)
+        JOBS.pop(job_id, None)
     return redirect(url_for("index"))
 
 
@@ -992,9 +1050,16 @@ document.addEventListener('DOMContentLoaded', function(){
 WAIT = _SHELL.replace("{{ inner|safe }}", """
 <meta http-equiv="refresh" content="2">
 <a class="back" href="/">← all games</a>
-<h1>{{ meta.title }}</h1>
-<div class="panel"><p class="sub" style="margin:0">⏳ Running the agents… this page refreshes automatically.
-{% if meta.backend == 'llm' %} Real Qwen games take a while (sequential turns, many model calls).{% endif %}</p></div>
+{% if not body %}<h1>{{ meta.title }}</h1>{% endif %}
+<div class="panel" style="margin-bottom:16px"><p class="sub" style="margin:0">
+⏳ Running the agents… showing live progress and refreshing every 2 seconds.
+{% if progress.current_game %} Game {{ progress.current_game }} of {{ progress.games_total }}
+{% if progress.current_round is not none %} · round {{ progress.current_round }}{% endif %}
+· {{ progress.rounds_done }} round(s) finished · {{ progress.events }} events logged.
+{% else %} The agents are being initialized.{% endif %}
+{% if meta.backend == 'llm' %} Model turns are sequential, so pauses between updates are normal.{% endif %}
+</p></div>
+{{ body|safe }}
 """)
 
 ERROR = _SHELL.replace("{{ inner|safe }}", """
@@ -1008,6 +1073,16 @@ name <code>{{ meta.model }}</code>, and the API key (keys live in memory only �
 Run-new-game form after a server restart).{% else %}Is the vLLM server up at
 <code>{{ meta.base_url }}</code>? Start it with <code>scripts/serve_qwen.sh</code>,
 and install the client with <code>pip install openai</code>.{% endif %}</p>{% endif %}</div>
+""")
+
+GONE = _SHELL.replace("{{ inner|safe }}", """
+<a class="back" href="/">← all games</a>
+<h1>This game is gone</h1>
+<div class="panel"><p class="sub" style="margin:0 0 8px">
+No game <code>{{ job_id }}</code> exists on this server anymore. Games run here are stored in
+<b>temporary storage</b>: when the server redeploys or wakes from an idle sleep (it runs on a free
+tier), user-run games are cleared. The curated sample runs are restored automatically.</p>
+<p class="sub" style="margin:0"><a href="/create">▶ Run a new game</a> · <a href="/">browse the samples</a></p></div>
 """)
 
 GAME = _SHELL.replace("{{ inner|safe }}", """
@@ -1034,8 +1109,28 @@ interdependence (offset σ). Use it to contrast points on the dial — e.g. <b>�
 """)
 
 
-# Populate the gallery at import so a fresh (ephemeral) deploy is never empty.
+def _mark_interrupted() -> None:
+    """Games run on daemon threads inside this process, so any meta still
+    'running' at process start was killed by a restart/redeploy — flag it so
+    its page stops waiting forever."""
+    for f in os.listdir(RUNS):
+        if not f.endswith(".json"):
+            continue
+        try:
+            meta = _load_meta(f[:-5])
+        except (OSError, ValueError):
+            continue
+        if meta.get("status") == "running":
+            meta.update(status="error",
+                        error="The server restarted while this game was running, "
+                              "so the run was interrupted. Start it again.")
+            _write_meta(meta)
+
+
+# Populate the gallery at import so a fresh (ephemeral) deploy is never empty,
+# and fail any runs a previous process left behind.
 seed_samples()
+_mark_interrupted()
 
 
 def main() -> None:

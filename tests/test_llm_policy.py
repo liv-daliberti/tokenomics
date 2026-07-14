@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,6 +17,20 @@ from agora.backends import LLMResponse, MockBackend, RawToolCall
 from agora.config import GameConfig
 from agora.policies import LLMPolicy
 from agora.referee import Referee
+from agora.tools import parse_action
+
+
+def test_nonfinite_tool_numbers_are_parse_failures():
+    for name, args in (
+        ("submit_estimate", {"value": math.nan}),
+        ("transfer_credits", {"to": "B", "amount": math.inf}),
+        ("propose_trade", {"to": "B", "price": 1, "claimed_value": -math.inf}),
+    ):
+        try:
+            parse_action(name, args)
+            assert False, f"{name} accepted a non-finite number"
+        except ValueError as exc:
+            assert "finite" in str(exc)
 
 
 def make_backend(cfg):

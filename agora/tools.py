@@ -8,6 +8,7 @@ framing ablation swaps only the system-prompt preamble, never the tool docs.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List
 
 from .config import GameConfig
@@ -317,17 +318,24 @@ def parse_action(name: str, args: Dict[str, Any]) -> Action:
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{name} argument {key!r} malformed: {exc}")
 
+    def number(key: str) -> float:
+        """Fetch a finite numeric argument."""
+        value = need(key, float)
+        if not math.isfinite(value):
+            raise ValueError(f"{name} argument {key!r} must be finite")
+        return value
+
     if atype in (ActionType.MEASURE, ActionType.END_TURN):
         return Action(atype)
     if atype is ActionType.SEND_MESSAGE:
         return Action(atype, {"to": str(need("to", str)), "text": str(need("text", str))})
     if atype is ActionType.TRANSFER:
-        return Action(atype, {"to": str(need("to", str)), "amount": need("amount", float)})
+        return Action(atype, {"to": str(need("to", str)), "amount": number("amount")})
     if atype is ActionType.PROPOSE_TRADE:
         return Action(atype, {
             "to": str(need("to", str)),
-            "price": need("price", float),
-            "claimed_value": need("claimed_value", float),
+            "price": number("price"),
+            "claimed_value": number("claimed_value"),
         })
     if atype is ActionType.RESPOND_TRADE:
         return Action(atype, {
@@ -335,5 +343,5 @@ def parse_action(name: str, args: Dict[str, Any]) -> Action:
             "accept": bool(need("accept", bool)),
         })
     if atype is ActionType.SUBMIT_ESTIMATE:
-        return Action(atype, {"value": need("value", float)})
+        return Action(atype, {"value": number("value")})
     raise ValueError(f"unhandled tool {name!r}")  # pragma: no cover

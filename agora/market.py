@@ -18,6 +18,7 @@ whole point of the study.
 """
 from __future__ import annotations
 
+import math
 from typing import Callable, Dict, List, Optional
 
 from .types import AgentState, Trade
@@ -61,8 +62,8 @@ class Market:
         fund it back into the game (the referee revives a funded agent at the
         next round boundary). Trades never set this — you cannot pay a dead
         agent for a value it can no longer deliver."""
-        if amount < 0:
-            raise MarketError("amount must be non-negative")
+        if not math.isfinite(amount) or amount < 0:
+            raise MarketError("amount must be finite and non-negative")
         s = self._live(src)
         d = self.states.get(dst)
         if d is None:
@@ -103,8 +104,10 @@ class Market:
         self._live(buyer)
         if seller == buyer:
             raise MarketError("cannot trade with self")
-        if price < 0:
-            raise MarketError("price must be non-negative")
+        if not math.isfinite(price) or price < 0:
+            raise MarketError("price must be finite and non-negative")
+        if not math.isfinite(claimed_value):
+            raise MarketError("claimed value must be finite")
         trade = Trade(
             trade_id=self._counter(),
             seller=seller,

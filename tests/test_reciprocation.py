@@ -79,6 +79,15 @@ def _cfg(**kw):
                       max_ticks=5, seed=0, **kw)
 
 
+def test_action_cap_applies_to_a_multi_call_batch():
+    cfg = _cfg(max_actions_per_tick=2, final_answer_pass=False,
+               starting_credits=10.0).with_(max_ticks=1)
+    A = Scripted([[Action(ActionType.MEASURE) for _ in range(5)]])
+    B = Scripted([[]])
+    result = Referee(cfg, {"A": A, "B": B}).run()
+    assert len(result.states["A"].measurements) == 2
+
+
 def test_messages_are_delivered_both_directions():
     # Both send on turn 0; each must SEE the other's message in a later observation.
     cfg = _cfg()
