@@ -108,9 +108,9 @@ def tool_schemas(cfg: GameConfig) -> List[Dict[str, Any]]:
                 "description": (
                     "Offer to sell a measurement value to another agent. YOU set the "
                     "price: the buyer pays you that many credits if they accept. "
-                    + (f"The price must be at least {cfg.min_trade_price:g} credit(s) — "
-                       "values cannot be given away in this game. "
-                       if cfg.min_trade_price > 0 else
+                    + ("The price must be greater than 0 — any positive amount, even a "
+                       "fraction of a credit, but never free. "
+                       if cfg.require_paid_trades else
                        "The price can be 0 (a gift) or any positive amount — you decide "
                        "what your information is worth. ")
                     + "The value you state is delivered "
@@ -274,11 +274,12 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         revive = (" (including an eliminated agent, which revives it next round)"
                   if cfg.elimination_on_ruin else "")
         lines.append(f"  - transfer_credits(to, amount): give credits to another agent{revive}.")
-    if cfg.enable_trading and cfg.min_trade_price > 0:
+    if cfg.enable_trading and cfg.require_paid_trades:
         lines.append("  - propose_trade / respond_trade: sell/buy a measurement value. "
-                     "The SELLER sets the price (in credits) the buyer pays on accept, "
-                     f"and it must be at least {cfg.min_trade_price:g} credit(s) — values "
-                     "cannot be given away; sharing information always costs the buyer.")
+                     "The SELLER sets the price (in credits) the buyer pays on accept. "
+                     "The price must be GREATER than 0 — any positive amount, even a "
+                     "small fraction of a credit, but a value can never be given away "
+                     "for free: sharing information always costs the buyer something.")
     elif cfg.enable_trading:
         lines.append("  - propose_trade / respond_trade: sell/buy a measurement value. "
                      "The SELLER sets the price (in credits) the buyer pays on accept — "

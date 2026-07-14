@@ -62,8 +62,7 @@ _INT_KNOBS = {"agents": (2, 12), "message_quota": (0, 50), "max_ticks": (1, 20),
               "n_rounds": (1, 30), "reward_max": (1, 20)}
 _FLOAT_KNOBS = {"tau": (0.0, 1e6), "prior_sigma": (0.0, 1e6), "prior_mu": (-1e9, 1e9),
                 "measure_cost": (0.0, 1e6), "starting_credits": (0.0, 1e6),
-                "gamma": (0.0, 0.99), "survival_cost": (0.0, 1e6),
-                "min_trade_price": (0.0, 1e6)}
+                "gamma": (0.0, 0.99), "survival_cost": (0.0, 1e6)}
 
 
 def _clamp(v, lo, hi):
@@ -98,9 +97,10 @@ def parse_overrides(form) -> dict:
             ov[k] = raw
     if form.get("memory", "").strip() in ("context", "markdown"):
         ov["memory"] = form.get("memory").strip()
-    # tri-state select: "" = preset, "1"/"0" = force trade-only chat censoring
-    if form.get("values_via_trade_only", "").strip() in ("0", "1"):
-        ov["values_via_trade_only"] = form.get("values_via_trade_only").strip() == "1"
+    # tri-state selects: "" = preset, "1"/"0" = force on/off
+    for k in ("values_via_trade_only", "require_paid_trades"):
+        if form.get(k, "").strip() in ("0", "1"):
+            ov[k] = form.get(k).strip() == "1"
     return ov
 
 
@@ -404,7 +404,6 @@ def _preset_data() -> dict:
             "prior_mu": c.prior_mu, "prior_sigma": c.prior_sigma,
             "survival_cost": c.survival_cost, "n_rounds": c.n_rounds,
             "measure_cost": c.measure_cost, "starting_credits": c.starting_credits,
-            "min_trade_price": c.min_trade_price,
             "message_quota": c.message_quota, "max_ticks": c.max_ticks, "gamma": c.gamma,
             "horizon": "fixed" if c.horizon_mode == "fixed" else "geometric",
         }
@@ -819,9 +818,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <div class="prose">
     <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless), <b>ten seeds</b> at each
       setting. In the charts below the <b>solid line</b> is the original run; each <b>dashed line</b> is the
-      <i>same game</i> with the prompt's help taken away — and, on survival, the scripted all-cooperate ceiling
-      and all-solo floor in the identical game. Error bars are 95% CIs; the whole story is the gap between the
-      lines. <b>Survival is on top because it is the robust result</b> — tight intervals, a clean trend.
+      <i>same game</i> with the prompt's help taken away — and, on survival, two scripted strategy ceilings in
+      the identical game: the best possible all-cooperate pair and the best possible all-solo pair. Error bars
+      are 95% CIs; the whole story is the gap between the lines. <b>Survival is on top because it is the robust result</b> — tight intervals, a clean trend.
       Cooperation (below it) points the same way but is noisier, so read its <i>shape</i>, not any single point.</p>
   </div>
   <div class="conditions">
@@ -838,9 +837,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   </div>
   <p class="held"><b>Held fixed in both:</b> the task, measurement noise, budget, survival cost, horizon and
     prior — only the wording changes, and the offset dial runs 0→500 in each. The two faint dashed lines on the
-    survival chart are <b>scripted, non-LLM</b> reference agents in the same game — one that always pools
-    (ceiling), one that never shares (floor). <b>What we did not do:</b> script the LLMs' choices, change the
-    task, or tell the neutral agents the trick.</p>
+    survival chart are <b>scripted, non-LLM</b> reference agents in the same game, each the <b>ceiling of its
+    strategy</b>: the best possible always-pooling pair, and the best possible never-sharing solo pair.
+    <b>What we did not do:</b> script the LLMs' choices, change the task, or tell the neutral agents the
+    trick.</p>
   {% if deconf_charts %}{{ deconf_charts|safe }}{% elif gradient_charts %}{{ gradient_charts|safe }}{% endif %}
   <div class="prose" style="margin-top:22px">
     <p><b>Cooperation is instructed, not discovered.</b> With the cooperative prompt, sharing jumps to the norm
@@ -848,9 +848,10 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
       do it alone. But that's the prompt talking. Strip the "team" framing and the "average your readings" hint
       (the <b style="color:var(--blue)">blue</b> points), and cooperation has <b>no response to the wall at
       all</b> — sharing sits near <b>15%</b> whether the wall is off (14% at offset 0) or lethal. And without
-      pooling they <b>die</b>: neutral survival drops straight onto the scripted <b>solo floor</b>
-      (<b>63%</b> → <b>24%</b> → <b>3%</b> as the wall hardens, n=10 each), never near the always-cooperate
-      ceiling. The pooling was the instruction, not the agents working out that they need each other.</p>
+      pooling they <b>die</b>: neutral survival lands exactly on the <b>ceiling for solo play</b>
+      (<b>63%</b> → <b>24%</b> → <b>3%</b> as the wall hardens, n=10 each) — solo played as well as solo can
+      be played, and no better — never near the <b>ceiling for cooperation</b>. The pooling was the
+      instruction, not the agents working out that they need each other.</p>
     <p><b>Honest — but blind to a liar.</b> They barely cheat: with the referee checking every sold value
       against what the seller actually knew, just <b>1 value in 1,360</b> genuinely contradicted what the seller
       knew — faced with an unverifiable channel they route around it (<b>~85%</b> of matches settle zero trades)
@@ -1004,13 +1005,17 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <option value="1">trade-only — numbers censored from chat; values move only via trades</option>
         <option value="0">open — numbers allowed in messages</option>
       </select></div>
-    <div><label>Minimum trade price — &gt;0 forbids giving values away for free</label>
-      <input name="min_trade_price" placeholder="preset"></div>
+    <div><label>Paid trades</label>
+      <select name="require_paid_trades">
+        <option value="">preset</option>
+        <option value="1">required — price must be &gt; 0 (any amount, never free)</option>
+        <option value="0">off — free offers (price 0) allowed</option>
+      </select></div>
   </div>
   <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
-    To <b>require paid trades</b>: set Value exchange to <b>trade-only</b> and Minimum trade price
-    to <b>1</b> (or more). Chat then censors digits <i>and</i> spelled-out numbers, and the market
-    rejects any offer priced below the minimum.</p>
+    To make <b>paid trading the only way to share a value</b>: set Value exchange to
+    <b>trade-only</b> (chat censors digits <i>and</i> spelled-out numbers) and Paid trades to
+    <b>required</b> (the market rejects price-0 offers — 0.25 credits is fine, free is not).</p>
   <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
     <b>Markdown notes</b>: after every round each agent writes what happened to its own notebook;
     between games its conversation is cleared and only the notebook comes back. The notebooks
@@ -1040,7 +1045,7 @@ function fillPreset(){
   var sel = document.querySelector('select[name=preset]'); if(!sel) return;
   var p = AGORA_PRESETS[sel.value]; if(!p) return;
   ['tau','prior_mu','prior_sigma','survival_cost','n_rounds','measure_cost',
-   'starting_credits','message_quota','max_ticks','gamma','min_trade_price'].forEach(function(k){
+   'starting_credits','message_quota','max_ticks','gamma'].forEach(function(k){
     var el = document.querySelector('[name="'+k+'"]');
     if(el && p[k]!==undefined && p[k]!==null) el.value = p[k];
   });

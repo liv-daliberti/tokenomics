@@ -405,15 +405,19 @@ CHART_CSS = """
 
 
 def _surv_anchors(anchors: dict) -> list:
-    """Scripted ceiling/floor overlays for the survival chart, if anchors loaded."""
+    """Scripted strategy-ceiling overlays for the survival chart, if anchors
+    loaded: the best possible always-pooling cooperator and the best possible
+    never-sharing solo player."""
     if not anchors:
         return []
     out = []
     if anchors.get("honest_cooperator"):
-        out.append({"name": "scripted cooperator (pools)", "rows": anchors["honest_cooperator"],
+        out.append({"name": "ceiling for cooperation (scripted always-pool)",
+                    "rows": anchors["honest_cooperator"],
                     "color": "var(--c-ceil)", "thin": True})
     if anchors.get("bayesian_solo"):
-        out.append({"name": "scripted solo (never shares)", "rows": anchors["bayesian_solo"],
+        out.append({"name": "ceiling for solo play (scripted never-share)",
+                    "rows": anchors["bayesian_solo"],
                     "color": "var(--c-floor)", "thin": True})
     return out
 
@@ -430,7 +434,8 @@ def _figures(rows: list, anchors: dict = None):
     surv_leg = ([{"name": "Qwen LLM (prompted)", "color": "var(--c-surv)"}]
                 + [{"name": a["name"], "color": a["color"], "thin": True} for a in surv_anc]
                 if surv_anc else None)
-    hero_surv = _chart(rows, "survivor_rate", title="Survivor rate — Qwen vs scripted ceiling & floor",
+    hero_surv = _chart(rows, "survivor_rate",
+                       title="Survivor rate — Qwen vs the two strategy ceilings",
                        unit="pct", color="var(--c-surv)", ymax=1.0, hero=True,
                        desc=D["survivor_rate"], anchors=surv_anc, legend=surv_leg)
     panels = "".join([
@@ -575,9 +580,9 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     like a real cooperating pair would.</p>
   <p class="stand" style="font-size:15px"><b>Read this as the prompted condition.</b> These runs use the
     cooperative framing and an "average your readings" hint. Rerun with neutral wording and no hint and the
-    switch largely disappears — cooperation loses its dose-response and survival drops onto the solo floor (the
-    de-confounding control, on the home page). So the switch below is substantially <i>instructed</i>, not
-    emergent.</p>
+    switch largely disappears — cooperation loses its dose-response and survival caps out at the ceiling for
+    solo play (the de-confounding control, on the home page). So the switch below is substantially
+    <i>instructed</i>, not emergent.</p>
   <p class="meta"><b>{{LABEL}}</b> · Qwen-3-32B×2 · offset σ 0→500 · only the offset varies</p>
 
   <div class="card hero">{{HERO}}</div>
@@ -594,11 +599,12 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
     the <b>trend, not the individual points</b>.</p>
 
   <div class="card hero">{{HERO_SURV}}</div>
-  <p class="lede"><b>Read survival against the anchors.</b> The dashed lines are deterministic scripted
-    baselines in the <b>identical</b> game (30 seeds each): an <b>honest-cooperator</b> pair survives ~100% at
-    every offset, while a <b>solo</b> pair (never shares) collapses as the wall hardens. The Qwen agents (solid
-    red) sit <b>between</b> — they cooperate enough to beat solo, but never reach the cooperative ceiling. Past
-    the switch they die in games a cooperating pair walks through: cooperation turns on but stays <b>shallow</b>.</p>
+  <p class="lede"><b>Read survival against the two strategy ceilings.</b> The dashed lines are deterministic
+    scripted baselines in the <b>identical</b> game (30 seeds each), each the best its strategy can do: the
+    <b>ceiling for cooperation</b> (an always-pooling pair, ~100% at every offset) and the <b>ceiling for solo
+    play</b> (a never-sharing pair, collapsing as the wall hardens). The Qwen agents (solid red) sit
+    <b>between</b> — better than the best solo play, never close to the cooperation ceiling. Past the switch
+    they die in games a cooperating pair walks through: cooperation turns on but stays <b>shallow</b>.</p>
 
   <div class="card"><div class="grid2">{{PANELS}}</div></div>
 
@@ -614,7 +620,8 @@ _HTML = r"""<title>Interdependence → cooperation: a dose–response</title>
         "Distrust of unverifiable information" is not what blocks cooperation here.</li>
       <li><b>A third chase a doomed solo fix.</b> The instrument offset is re-drawn every round, but in
         <b>34 of 100</b> matches an agent infers its offset from last round's revealed truth and subtracts it
-        this round — a solo correction that can't work, and a clue to why survival never reaches the ceiling.</li>
+        this round — a solo correction that can't work, and a clue to why survival never reaches the
+        cooperation ceiling.</li>
     </ul>
   </aside>
 

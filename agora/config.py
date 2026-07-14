@@ -96,12 +96,12 @@ class GameConfig:
     # agent cannot simply chat its readings — to hand over a value it must trade it
     # (propose_trade, price can be ~0). Messages become negotiation-only.
     values_via_trade_only: bool = False
-    # Floor on propose_trade's price, enforced by the market (offers below it
-    # are rejected with an error the seller sees). Set > 0 together with
-    # values_via_trade_only to REQUIRE that values change hands only through
-    # PAID trades: numbers are redacted from chat and gifting a value away at
-    # price 0 is impossible.
-    min_trade_price: float = 0.0
+    # Offers must cost STRICTLY more than 0 — any positive price, however
+    # small, so the benefit of sharing stays but it is never free. Enforced by
+    # the market (a price<=0 offer is rejected with an error the seller sees).
+    # Combine with values_via_trade_only to make PAID trades the only way a
+    # value can change hands.
+    require_paid_trades: bool = False
 
     # --- framing & reputation (experiment controls) ---
     # NEUTRAL by default: tools are described mechanically, with no words that

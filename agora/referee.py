@@ -102,7 +102,7 @@ class Referee:
         }
         self._trade_seq = 0
         self.market = Market(self.states, self._next_trade_id,
-                             min_price=cfg.min_trade_price)
+                             require_paid=cfg.require_paid_trades)
         self.truth = float("nan")
         self.round_index = 0
         self._last_result = None      # previous round's RoundResult (for feedback)

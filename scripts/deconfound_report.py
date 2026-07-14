@@ -163,19 +163,24 @@ def comparison_charts(conf: list, dec: list, anc: dict) -> dict:
     surv_anchors = list(dec_overlay)
     surv_legend = list(coop_legend)
     if anc.get("honest_cooperator"):
-        surv_anchors.append({"name": "scripted cooperator (always pools)", "rows": anc["honest_cooperator"],
+        surv_anchors.append({"name": "ceiling for cooperation (scripted always-pool)",
+                             "rows": anc["honest_cooperator"],
                              "color": _C_CEIL, "thin": True})
-        surv_legend.append({"name": "scripted cooperator — ceiling", "color": _C_CEIL, "thin": True})
+        surv_legend.append({"name": "ceiling for cooperation — scripted always-pool",
+                            "color": _C_CEIL, "thin": True})
     if anc.get("bayesian_solo"):
-        surv_anchors.append({"name": "scripted solo (never shares)", "rows": anc["bayesian_solo"],
+        surv_anchors.append({"name": "ceiling for solo play (scripted never-share)",
+                             "rows": anc["bayesian_solo"],
                              "color": _C_FLOOR, "thin": True})
-        surv_legend.append({"name": "scripted solo — floor", "color": _C_FLOOR, "thin": True})
+        surv_legend.append({"name": "ceiling for solo play — scripted never-share",
+                            "color": _C_FLOOR, "thin": True})
     surv = _chart(conf, "survivor_rate",
-                  title="Survival — neutral LLMs fall to the scripted solo floor",
+                  title="Survival — neutral LLMs cap out at the solo ceiling",
                   unit="pct", color=_C_PROMPTED, ymax=1.0, hero=True,
                   desc="Fraction of agents still alive. Prompted vs. neutral LLMs, plus two "
-                       "deterministic scripted baselines in the identical game: an always-pooling "
-                       "cooperator (ceiling) and a never-sharing solo (floor).",
+                       "deterministic scripted baselines in the identical game — each the "
+                       "CEILING of its strategy: the best possible always-pooling cooperator "
+                       "and the best possible never-sharing solo player.",
                   anchors=surv_anchors, legend=surv_legend)
     return {"coop": coop, "surv": surv,
             "conf_wall": _wall_mean(conf, "cooperation"), "dec_wall": _wall_mean(dec, "cooperation"),
@@ -261,7 +266,8 @@ _HTML = r"""<title>Agora — cooperation is instructed, not emergent</title>
     hint) and a <b>neutral</b> control (no framing, no hint). Held fixed in both: the task, measurement noise,
     budget, survival cost, horizon, prior. We did <b>not</b> script the LLMs' choices, change the task, or tell
     the neutral agents the trick. On the survival chart the two faint dashed lines are deterministic
-    <b>scripted, non-LLM</b> agents — always-pool (ceiling) and never-share (floor) — shown for scale.</p>
+    <b>scripted, non-LLM</b> agents — each the <b>ceiling of its strategy</b>: the best possible
+    always-pooling cooperator, and the best possible never-sharing solo player.</p>
   </div>
 
   <h2>1 · Take away the instructions, and cooperation collapses</h2>
@@ -274,8 +280,9 @@ _HTML = r"""<title>Agora — cooperation is instructed, not emergent</title>
   <div class="grad"><div class="card hero">{COOP}</div></div>
   <div class="prose"><p>The <b>robust confirmation is survival</b> — tight intervals, a clean trend. Prompted
     agents pool and survive; de-confounded agents don't pool, so as the wall hardens they <b>die</b>: survival
-    falls straight onto the scripted <b>solo floor</b> — 63% at offset 100, 24% at 200, 3% at 500 (n=10 each) —
-    never near the cooperator ceiling (~100%).</p></div>
+    lands exactly on the <b>ceiling for solo play</b> — 63% at offset 100, 24% at 200, 3% at 500 (n=10 each).
+    They play solo as well as solo can be played, and no better: nowhere near the
+    <b>ceiling for cooperation</b> (~100%).</p></div>
   <div class="grad"><div class="card hero">{SURV}</div></div>
   <p class="note">De-confounded sweep complete: {N_DEC} matches (neutral framing, hint removed), ~10 seeds at
     each of 10 offsets. Dashed = de-confounded, solid = original prompt.</p>

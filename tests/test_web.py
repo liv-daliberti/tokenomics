@@ -121,13 +121,14 @@ def test_trade_only_knobs_flow_through_the_form():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return
     from web.app import parse_overrides
-    ov = parse_overrides({"values_via_trade_only": "1", "min_trade_price": "2",
+    ov = parse_overrides({"values_via_trade_only": "1", "require_paid_trades": "1",
                           "memory": "markdown"})
     assert ov["values_via_trade_only"] is True
-    assert ov["min_trade_price"] == 2.0
+    assert ov["require_paid_trades"] is True
     assert ov["memory"] == "markdown"
     assert "values_via_trade_only" not in parse_overrides({"values_via_trade_only": ""})
-    assert parse_overrides({"values_via_trade_only": "0"})["values_via_trade_only"] is False
+    assert "require_paid_trades" not in parse_overrides({"require_paid_trades": ""})
+    assert parse_overrides({"require_paid_trades": "0"})["require_paid_trades"] is False
 
 
 def test_missing_game_gets_friendly_gone_page():

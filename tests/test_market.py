@@ -139,9 +139,10 @@ def test_nonfinite_money_and_trade_values_are_rejected():
     assert {a: s.credits for a, s in st.items()} == before
 
 
-def test_min_trade_price_floor():
-    # With a floor, a free gift (price 0) and an underpriced offer are contract
-    # violations; an offer AT the floor stands. Default floor 0 changes nothing.
+def test_require_paid_trades_rejects_free_offers_only():
+    # With the rule on, a free gift (price 0) is a contract violation, but ANY
+    # strictly positive price — including a fraction of a credit — stands.
+    # Default off changes nothing.
     states = {a: AgentState(a, 5.0, tau=100.0, messages_left=10) for a in "AB"}
     seq = {"n": 0}
 
@@ -149,18 +150,17 @@ def test_min_trade_price_floor():
         seq["n"] += 1
         return f"T{seq['n']}"
 
-    m = Market(states, counter, min_price=1.0)
-    for bad in (0.0, 0.5):
-        try:
-            m.propose_trade("A", "B", bad, 42.0, 0)
-            assert False, f"price {bad} below the floor should raise"
-        except MarketError as exc:
-            assert "at least 1" in str(exc)
-    t = m.propose_trade("A", "B", 1.0, 42.0, 0)
-    assert t.price == 1.0
+    m = Market(states, counter, require_paid=True)
+    try:
+        m.propose_trade("A", "B", 0.0, 42.0, 0)
+        assert False, "free offer should raise"
+    except MarketError as exc:
+        assert "greater than 0" in str(exc)
+    assert m.propose_trade("A", "B", 0.25, 42.0, 0).price == 0.25  # sub-credit ok
+    assert m.propose_trade("A", "B", 1.0, 42.0, 1).price == 1.0
 
     m0, _ = _market({"A": 5.0, "B": 5.0})
-    assert m0.propose_trade("A", "B", 0.0, 42.0, 0).price == 0.0  # floor off
+    assert m0.propose_trade("A", "B", 0.0, 42.0, 0).price == 0.0  # rule off
 
 
 def test_redaction_masks_digits_and_number_words():
@@ -174,17 +174,17 @@ def test_redaction_masks_digits_and_number_words():
     assert ok == "someone should tell everyone something"
 
 
-def test_trade_only_and_floor_are_announced_to_agents():
+def test_trade_only_and_paid_rules_are_announced_to_agents():
     from agora.config import GameConfig
     from agora.tools import system_prompt, tool_schemas
     cfg = GameConfig(agent_ids=["A", "B"], values_via_trade_only=True,
-                     min_trade_price=1.0)
+                     require_paid_trades=True)
     text = system_prompt(cfg, "A", ["B"])
-    assert "CENSORED" in text and "at least 1 credit" in text
+    assert "CENSORED" in text and "GREATER than 0" in text
     schemas = {s["function"]["name"]: s["function"]["description"]
                for s in tool_schemas(cfg)}
     assert "CENSORED" in schemas["send_message"]
-    assert "at least 1 credit" in schemas["propose_trade"]
+    assert "greater than 0" in schemas["propose_trade"]
     # defaults keep the original wording
     loose = system_prompt(GameConfig(agent_ids=["A", "B"]), "A", ["B"])
     assert "0 to give it away" in loose
