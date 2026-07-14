@@ -14,11 +14,23 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+# Spelled-out numbers are the obvious workaround once digits are blocked
+# ("four eighty"), so the strict channel masks the number words too. Free text
+# can never be sealed perfectly (paraphrase always exists) — this closes the
+# two direct encodings; the message event logs the original text alongside
+# the delivered one, so attempted leaks stay measurable.
+_NUM_WORD_RE = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+    r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+    r"twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|"
+    r"thousand|million|billion|half|third|quarter|dozen)\b",
+    re.IGNORECASE)
 
 
 def _redact_numbers(text: str) -> str:
-    """Hide numeric tokens so a value can't be conveyed in free chat."""
-    return _NUM_RE.sub("[#]", text)
+    """Hide numeric tokens (digits AND spelled-out number words) so a value
+    can't be conveyed in free chat."""
+    return _NUM_WORD_RE.sub("[#]", _NUM_RE.sub("[#]", text))
 
 from .config import GameConfig
 from .environment import Environment
@@ -89,7 +101,8 @@ class Referee:
             for aid in cfg.agent_ids
         }
         self._trade_seq = 0
-        self.market = Market(self.states, self._next_trade_id)
+        self.market = Market(self.states, self._next_trade_id,
+                             min_price=cfg.min_trade_price)
         self.truth = float("nan")
         self.round_index = 0
         self._last_result = None      # previous round's RoundResult (for feedback)
@@ -343,7 +356,10 @@ class Referee:
             recipients = [x for x in self._alive() if x != aid] if to == "all" else [to]
             for r in recipients:
                 self.states[r].inbox.append(Message(aid, to, delivered, tick))
-            self.tx.log("message", sender=aid, to=to, text=delivered, tick=tick)
+            # keep the pre-redaction text when it differs: blocked leak attempts
+            # are a signal the analysis should be able to count
+            extra = {"text_original": text} if delivered != text else {}
+            self.tx.log("message", sender=aid, to=to, text=delivered, tick=tick, **extra)
             note = " (numbers hidden — trade to share a value)" if cfg.values_via_trade_only else ""
             return f"sent{note}", True, False
 

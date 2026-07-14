@@ -112,6 +112,11 @@ def main(argv: List[str] = None) -> None:
     ap.add_argument("--memory", choices=["context", "markdown"], default=None,
                     help="LLM cross-game memory: full context (default) or per-round "
                          "markdown notes with a context reset each game")
+    ap.add_argument("--trade-only", action="store_true",
+                    help="censor numbers (digits and number words) from chat; values "
+                         "can only be handed over via propose_trade")
+    ap.add_argument("--min-trade-price", type=float, default=None,
+                    help="reject trade offers priced below this (>0 forbids free gifts)")
     ap.add_argument("--out", default=None, help="directory for JSONL transcripts")
     args = ap.parse_args(argv)
 
@@ -123,6 +128,10 @@ def main(argv: List[str] = None) -> None:
         base = base.with_(seed=args.seed)
     if args.memory:
         base = base.with_(memory=args.memory)
+    if args.trade_only:
+        base = base.with_(values_via_trade_only=True)
+    if args.min_trade_price is not None:
+        base = base.with_(min_trade_price=args.min_trade_price)
 
     for s in range(args.seeds):
         cfg = base.with_(seed=base.seed + s)

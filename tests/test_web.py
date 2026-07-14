@@ -117,6 +117,19 @@ def test_new_rejects_unknown_backend_and_provider():
     assert r.status_code == 302 and not _JOB_KEYS
 
 
+def test_trade_only_knobs_flow_through_the_form():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    from web.app import parse_overrides
+    ov = parse_overrides({"values_via_trade_only": "1", "min_trade_price": "2",
+                          "memory": "markdown"})
+    assert ov["values_via_trade_only"] is True
+    assert ov["min_trade_price"] == 2.0
+    assert ov["memory"] == "markdown"
+    assert "values_via_trade_only" not in parse_overrides({"values_via_trade_only": ""})
+    assert parse_overrides({"values_via_trade_only": "0"})["values_via_trade_only"] is False
+
+
 def test_missing_game_gets_friendly_gone_page():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

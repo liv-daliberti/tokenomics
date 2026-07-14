@@ -139,6 +139,57 @@ def test_nonfinite_money_and_trade_values_are_rejected():
     assert {a: s.credits for a, s in st.items()} == before
 
 
+def test_min_trade_price_floor():
+    # With a floor, a free gift (price 0) and an underpriced offer are contract
+    # violations; an offer AT the floor stands. Default floor 0 changes nothing.
+    states = {a: AgentState(a, 5.0, tau=100.0, messages_left=10) for a in "AB"}
+    seq = {"n": 0}
+
+    def counter():
+        seq["n"] += 1
+        return f"T{seq['n']}"
+
+    m = Market(states, counter, min_price=1.0)
+    for bad in (0.0, 0.5):
+        try:
+            m.propose_trade("A", "B", bad, 42.0, 0)
+            assert False, f"price {bad} below the floor should raise"
+        except MarketError as exc:
+            assert "at least 1" in str(exc)
+    t = m.propose_trade("A", "B", 1.0, 42.0, 0)
+    assert t.price == 1.0
+
+    m0, _ = _market({"A": 5.0, "B": 5.0})
+    assert m0.propose_trade("A", "B", 0.0, 42.0, 0).price == 0.0  # floor off
+
+
+def test_redaction_masks_digits_and_number_words():
+    from agora.referee import _redact_numbers
+    out = _redact_numbers("my reading is 480.5, i.e. four hundred eighty and a half")
+    assert "480" not in out and "four" not in out.lower()
+    assert "hundred" not in out.lower() and "eighty" not in out.lower()
+    assert "half" not in out.lower()
+    # ordinary words that merely CONTAIN number words survive
+    ok = _redact_numbers("someone should tell everyone something")
+    assert ok == "someone should tell everyone something"
+
+
+def test_trade_only_and_floor_are_announced_to_agents():
+    from agora.config import GameConfig
+    from agora.tools import system_prompt, tool_schemas
+    cfg = GameConfig(agent_ids=["A", "B"], values_via_trade_only=True,
+                     min_trade_price=1.0)
+    text = system_prompt(cfg, "A", ["B"])
+    assert "CENSORED" in text and "at least 1 credit" in text
+    schemas = {s["function"]["name"]: s["function"]["description"]
+               for s in tool_schemas(cfg)}
+    assert "CENSORED" in schemas["send_message"]
+    assert "at least 1 credit" in schemas["propose_trade"]
+    # defaults keep the original wording
+    loose = system_prompt(GameConfig(agent_ids=["A", "B"]), "A", ["B"])
+    assert "0 to give it away" in loose
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -45,9 +45,15 @@ if os.environ.get("MAXTICKS"):
     _overrides["max_ticks"] = int(os.environ["MAXTICKS"])
 # numeric overrides for sweeps (e.g. an interdependence gradient over bias_sigma)
 for _env, _field in (("BIAS_SIGMA", "bias_sigma"), ("PRIOR_SIGMA", "prior_sigma"),
-                     ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost")):
+                     ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost"),
+                     ("MIN_TRADE_PRICE", "min_trade_price")):
     if os.environ.get(_env):
         _overrides[_field] = float(os.environ[_env])
+# VALUES_VIA_TRADE_ONLY=1: censor numbers (digits AND number words) from chat;
+# with MIN_TRADE_PRICE>0 values can then only move through PAID trades.
+if os.environ.get("VALUES_VIA_TRADE_ONLY", "") != "":
+    _overrides["values_via_trade_only"] = (
+        os.environ["VALUES_VIA_TRADE_ONLY"].lower() not in ("0", "false", "no"))
 # de-confounding controls for the emergence test: FRAMING=neutral strips the
 # "you are a team" preamble; STRATEGY_HINT=0 removes the "offsets cancel — average
 # them" solution from the prompt so pooling must be discovered, not instructed.

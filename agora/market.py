@@ -30,10 +30,14 @@ class MarketError(Exception):
 
 class Market:
     """The credit ledger and escrow. Every credit movement goes through here, so the contract invariants (no overdraft, conservation, atomic settlement, no double-spend) hold by construction. It guarantees payment, never information quality."""
-    def __init__(self, states: Dict[str, AgentState], counter: Callable[[], str]):
-        """Bind the ledger to the shared agent-state map and a unique-trade-id counter."""
+    def __init__(self, states: Dict[str, AgentState], counter: Callable[[], str],
+                 min_price: float = 0.0):
+        """Bind the ledger to the shared agent-state map and a unique-trade-id
+        counter. ``min_price`` > 0 makes underpriced offers (including free
+        gifts of values) a contract violation — see GameConfig.min_trade_price."""
         self.states = states
         self._counter = counter                # supplies unique trade ids
+        self.min_price = min_price
         self.trades: Dict[str, Trade] = {}
         self.ledger: List[Dict] = []           # audit log of every credit move
 
@@ -106,6 +110,10 @@ class Market:
             raise MarketError("cannot trade with self")
         if not math.isfinite(price) or price < 0:
             raise MarketError("price must be finite and non-negative")
+        if price < self.min_price:
+            raise MarketError(
+                f"price must be at least {self.min_price:g} credit(s) in this "
+                f"game — values cannot be given away below that")
         if not math.isfinite(claimed_value):
             raise MarketError("claimed value must be finite")
         trade = Trade(

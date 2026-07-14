@@ -38,6 +38,9 @@ def tool_schemas(cfg: GameConfig) -> List[Dict[str, Any]]:
                 "description": (
                     "Deliver a text message to another agent (or 'all'). "
                     "Free, but counts against your per-round message quota."
+                    + (" Numbers (digits or spelled out) are CENSORED from the "
+                       "delivered text — use propose_trade to hand over a value."
+                       if cfg.values_via_trade_only else "")
                 ),
                 "parameters": {
                     "type": "object",
@@ -104,9 +107,13 @@ def tool_schemas(cfg: GameConfig) -> List[Dict[str, Any]]:
                 "name": "propose_trade",
                 "description": (
                     "Offer to sell a measurement value to another agent. YOU set the "
-                    "price: the buyer pays you that many credits if they accept. The "
-                    "price can be 0 (a gift) or any positive amount — you decide what "
-                    "your information is worth. The value you state is delivered "
+                    "price: the buyer pays you that many credits if they accept. "
+                    + (f"The price must be at least {cfg.min_trade_price:g} credit(s) — "
+                       "values cannot be given away in this game. "
+                       if cfg.min_trade_price > 0 else
+                       "The price can be 0 (a gift) or any positive amount — you decide "
+                       "what your information is worth. ")
+                    + "The value you state is delivered "
                     "verbatim if they accept; it is not checked against anything."
                 ),
                 "parameters": {
@@ -232,7 +239,12 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
          f"instrument, plus small noise; costs {cfg.measure_cost:g} credit(s)."
          if cfg.bias_sigma > 0 else
          f"  - measure(): returns theta plus noise; costs {cfg.measure_cost:g} credit(s)."),
-        "  - send_message(to, text): free text to another agent; quota-limited.",
+        ("  - send_message(to, text): free text to another agent; quota-limited. "
+         "NOTE: numbers are CENSORED from delivered messages (digits and spelled-out "
+         "numbers are replaced with [#]), so a measurement value can NOT be shared by "
+         "message — the only way to hand over a value is propose_trade."
+         if cfg.values_via_trade_only else
+         "  - send_message(to, text): free text to another agent; quota-limited."),
     ]
     if cfg.bias_sigma > 0:
         npart = len(peers) + 1
@@ -262,7 +274,12 @@ def system_prompt(cfg: GameConfig, agent_id: str, peers: List[str],
         revive = (" (including an eliminated agent, which revives it next round)"
                   if cfg.elimination_on_ruin else "")
         lines.append(f"  - transfer_credits(to, amount): give credits to another agent{revive}.")
-    if cfg.enable_trading:
+    if cfg.enable_trading and cfg.min_trade_price > 0:
+        lines.append("  - propose_trade / respond_trade: sell/buy a measurement value. "
+                     "The SELLER sets the price (in credits) the buyer pays on accept, "
+                     f"and it must be at least {cfg.min_trade_price:g} credit(s) — values "
+                     "cannot be given away; sharing information always costs the buyer.")
+    elif cfg.enable_trading:
         lines.append("  - propose_trade / respond_trade: sell/buy a measurement value. "
                      "The SELLER sets the price (in credits) the buyer pays on accept — "
                      "0 to give it away, or any positive amount to charge for the info.")

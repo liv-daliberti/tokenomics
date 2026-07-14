@@ -62,7 +62,8 @@ _INT_KNOBS = {"agents": (2, 12), "message_quota": (0, 50), "max_ticks": (1, 20),
               "n_rounds": (1, 30), "reward_max": (1, 20)}
 _FLOAT_KNOBS = {"tau": (0.0, 1e6), "prior_sigma": (0.0, 1e6), "prior_mu": (-1e9, 1e9),
                 "measure_cost": (0.0, 1e6), "starting_credits": (0.0, 1e6),
-                "gamma": (0.0, 0.99), "survival_cost": (0.0, 1e6)}
+                "gamma": (0.0, 0.99), "survival_cost": (0.0, 1e6),
+                "min_trade_price": (0.0, 1e6)}
 
 
 def _clamp(v, lo, hi):
@@ -97,6 +98,9 @@ def parse_overrides(form) -> dict:
             ov[k] = raw
     if form.get("memory", "").strip() in ("context", "markdown"):
         ov["memory"] = form.get("memory").strip()
+    # tri-state select: "" = preset, "1"/"0" = force trade-only chat censoring
+    if form.get("values_via_trade_only", "").strip() in ("0", "1"):
+        ov["values_via_trade_only"] = form.get("values_via_trade_only").strip() == "1"
     return ov
 
 
@@ -400,6 +404,7 @@ def _preset_data() -> dict:
             "prior_mu": c.prior_mu, "prior_sigma": c.prior_sigma,
             "survival_cost": c.survival_cost, "n_rounds": c.n_rounds,
             "measure_cost": c.measure_cost, "starting_credits": c.starting_credits,
+            "min_trade_price": c.min_trade_price,
             "message_quota": c.message_quota, "max_ticks": c.max_ticks, "gamma": c.gamma,
             "horizon": "fixed" if c.horizon_mode == "fixed" else "geometric",
         }
@@ -992,6 +997,20 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
         <option value="markdown">markdown notes — journal each round, context reset per game</option>
       </select></div>
   </div>
+  <div class="row">
+    <div><label>Value exchange</label>
+      <select name="values_via_trade_only">
+        <option value="">preset</option>
+        <option value="1">trade-only — numbers censored from chat; values move only via trades</option>
+        <option value="0">open — numbers allowed in messages</option>
+      </select></div>
+    <div><label>Minimum trade price — &gt;0 forbids giving values away for free</label>
+      <input name="min_trade_price" placeholder="preset"></div>
+  </div>
+  <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
+    To <b>require paid trades</b>: set Value exchange to <b>trade-only</b> and Minimum trade price
+    to <b>1</b> (or more). Chat then censors digits <i>and</i> spelled-out numbers, and the market
+    rejects any offer priced below the minimum.</p>
   <p class="m" style="color:var(--mut);font-size:12px;margin:6px 0 0">
     <b>Markdown notes</b>: after every round each agent writes what happened to its own notebook;
     between games its conversation is cleared and only the notebook comes back. The notebooks
@@ -1021,7 +1040,7 @@ function fillPreset(){
   var sel = document.querySelector('select[name=preset]'); if(!sel) return;
   var p = AGORA_PRESETS[sel.value]; if(!p) return;
   ['tau','prior_mu','prior_sigma','survival_cost','n_rounds','measure_cost',
-   'starting_credits','message_quota','max_ticks','gamma'].forEach(function(k){
+   'starting_credits','message_quota','max_ticks','gamma','min_trade_price'].forEach(function(k){
     var el = document.querySelector('[name="'+k+'"]');
     if(el && p[k]!==undefined && p[k]!==null) el.value = p[k];
   });

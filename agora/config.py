@@ -96,6 +96,12 @@ class GameConfig:
     # agent cannot simply chat its readings — to hand over a value it must trade it
     # (propose_trade, price can be ~0). Messages become negotiation-only.
     values_via_trade_only: bool = False
+    # Floor on propose_trade's price, enforced by the market (offers below it
+    # are rejected with an error the seller sees). Set > 0 together with
+    # values_via_trade_only to REQUIRE that values change hands only through
+    # PAID trades: numbers are redacted from chat and gifting a value away at
+    # price 0 is impossible.
+    min_trade_price: float = 0.0
 
     # --- framing & reputation (experiment controls) ---
     # NEUTRAL by default: tools are described mechanically, with no words that
@@ -106,7 +112,7 @@ class GameConfig:
     # WORDING (not just framing key) never pool silently in an aggregate. Bump
     # when tools.py's preamble text changes. Runs before 2026-07-14 predate the
     # field (absent = the original "team of agents" wording).
-    prompt_version: str = "2026-07-14-user-assist"
+    prompt_version: str = "2026-07-14b-trade-only-note"
     reveal_truth_after_round: bool = True   # reveal past theta so reputations can form
     # When bias_sigma>0 the prompt explains the miscalibrated instrument. With
     # strategy_hint=True it ALSO tells the agent the solution (offsets cancel;
