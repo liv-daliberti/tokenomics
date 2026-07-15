@@ -722,7 +722,10 @@ def compare():
 _FIG_LOCK = threading.Lock()
 # figures that regenerate from live run data on request (throttled); others are
 # served as the committed static file.
-_LIVE_FIGS = {"cost_error.png": "plot_cost_error.py"}
+_LIVE_FIGS = {"cost_error.png": "plot_cost_error.py",
+              "err_lines.png": "plot_error_views.py",
+              "err_heatmap.png": "plot_error_views.py",
+              "err_scatter.png": "plot_error_views.py"}
 
 
 def _maybe_regen(name: str, path: str) -> None:
@@ -759,6 +762,13 @@ def figure(name: str):
     resp = send_file(path, mimetype="image/png")
     resp.headers["Cache-Control"] = "no-cache"      # so a reload shows the latest
     return resp
+
+
+@app.route("/views")
+def views():
+    """Three candidate presentations of the difficulty x deception x model error
+    result, side by side, live-updating — pick one."""
+    return render_template_string(VIEWS, css=_CSS)
 
 
 @app.route("/economics")
@@ -1603,6 +1613,44 @@ GPT54_GAME = _SHELL.replace("{{ inner|safe }}", """
   {% else %}<span class="pill ok">complete</span>{% endif %}
 </div>
 {{ body|safe }}
+""")
+
+VIEWS = _SHELL.replace("{{ inner|safe }}", """
+<meta http-equiv="refresh" content="45">
+<style>
+  .vwrap{max-width:1000px;}
+  .vfig{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:18px 0;}
+  .vfig h3{margin:0 0 2px;font-size:17px;} .vfig .d{color:var(--mut);font-size:13.5px;margin:0 0 12px;line-height:1.5;}
+  .vfig img{width:100%;display:block;border-radius:10px;background:#fff;padding:10px;}
+  .vfig .rec{display:inline-block;font:600 11px/1 ui-monospace,monospace;color:var(--green);
+    border:1px solid var(--green);border-radius:20px;padding:3px 8px;margin-left:8px;vertical-align:middle;}
+</style>
+<a class="back" href="/" style="color:var(--blue);text-decoration:none;font-size:14px">← home</a>
+<h1 style="margin:10px 0 2px">Pick a presentation</h1>
+<p class="sub" style="margin:0 0 6px">Three ways to tell the same result — estimation error by
+difficulty, partner honesty, and model. Filling in live as the grid runs (page refreshes every 45s).
+Tell me the letter you want and I'll make it the paper/site figure.</p>
+
+<div class="vfig">
+  <h3>A · Deception → error lines <span class="rec">my pick</span></h3>
+  <p class="d">x = how much the partner lies, y = error, one line per model, easy vs hard panel.
+    Price dropped (it barely moves error). Reads left-to-right as a story: the more the partner lies,
+    the worse you do — and the GPT/Qwen gap is the whole point.</p>
+  <img src="/fig/err_lines.png" alt="deception to error lines">
+</div>
+<div class="vfig">
+  <h3>B · Heatmap</h3>
+  <p class="d">rows = model × difficulty, columns = partner honesty, colour = error (darker = more wrong).
+    Whole story at a glance; the difficulty×deception interaction is the top-left-light to
+    bottom-right-dark gradient.</p>
+  <img src="/fig/err_heatmap.png" alt="error heatmap">
+</div>
+<div class="vfig">
+  <h3>C · Price scatter (cleaned)</h3>
+  <p class="d">the original idea, tidied: three partner panels, price on x, error on y, seeds joined per
+    difficulty (dark = hard, light = easy). Keeps price on-axis even though it barely moves error.</p>
+  <img src="/fig/err_scatter.png" alt="price scatter">
+</div>
 """)
 
 GONE = _SHELL.replace("{{ inner|safe }}", """
