@@ -719,16 +719,46 @@ def compare():
     return render_template_string(COMPARE, css=_CSS, body=body)
 
 
+_FIG_LOCK = threading.Lock()
+# figures that regenerate from live run data on request (throttled); others are
+# served as the committed static file.
+_LIVE_FIGS = {"cost_error.png": "plot_cost_error.py"}
+
+
+def _maybe_regen(name: str, path: str) -> None:
+    """Regenerate a live figure from current runs, at most every 30s."""
+    script = _LIVE_FIGS.get(name)
+    if not script:
+        return
+    import sys
+    import subprocess
+    with _FIG_LOCK:
+        age = time.time() - os.path.getmtime(path) if os.path.exists(path) else 1e9
+        if age <= 30:
+            return
+        try:
+            subprocess.run([sys.executable, os.path.join(_REPO, "scripts", script),
+                            "--out", os.path.join(_REPO, "paper", "fig",
+                                                  name.replace(".png", ".pdf"))],
+                           cwd=_REPO, timeout=90, capture_output=True)
+        except Exception:      # a plot failure must not break the page
+            pass
+
+
 @app.route("/fig/<name>")
 def figure(name: str):
-    """Serve a committed paper figure (PNG) for embedding on the site."""
+    """Serve a paper figure (PNG). Live figures regenerate from current run
+    data (throttled); the rest are served as the committed static file."""
     if not _SAFE_RUN.match(name) or not name.endswith(".png"):
         abort(404)
     path = os.path.join(_REPO, "paper", "fig", name)
+    _maybe_regen(name, path)
     if not os.path.exists(path):
         abort(404)
     from flask import send_file
-    return send_file(path, mimetype="image/png")
+    resp = send_file(path, mimetype="image/png")
+    resp.headers["Cache-Control"] = "no-cache"      # so a reload shows the latest
+    return resp
 
 
 @app.route("/economics")
@@ -1091,6 +1121,17 @@ INDEX = _SHELL.replace("{{ inner|safe }}", _NAV + """
   <img src="/fig/price_sweep.png"
        alt="GPT-5.4 buy-rate vs price: the honest reading is refused when overpriced, but the fabrication stays bought"
        style="width:100%;max-width:580px;display:block;margin:16px auto 0;border-radius:12px;background:#fff;padding:10px">
+
+  <div class="prose" style="margin-top:24px">
+    <p><b>The whole design space at once.</b> Below: the LLM's estimation <b>error</b> (how wrong its final
+      answer is) against the <b>price of information</b>, for every combination of <b>difficulty</b> (blue =
+      easy, red = the hard wall) and <b>model</b> (● GPT-5.4, ▲ Qwen3-32B), split by whether the partner
+      <b>always lies</b>, <b>sometimes lies</b>, or <b>never lies</b>. Dashed lines are the rational optimum.
+      This figure is <b>rendering live as the runs land</b> — reload to watch it fill in.</p>
+  </div>
+  <img src="/fig/cost_error.png"
+       alt="Estimation error vs price of information, by difficulty and model, for lying/mixed/honest partners"
+       style="width:100%;max-width:900px;display:block;margin:14px auto 0;border-radius:12px;background:#fff;padding:10px">
 </section>
 
 <section class="sec">
