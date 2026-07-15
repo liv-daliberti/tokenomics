@@ -46,12 +46,21 @@ mkdir -p runs/qwen "$HF_HOME" "$VLLM_CACHE_ROOT"
 
 echo "=== trust task $SLURM_ARRAY_TASK_ID | bot=$BOT | seeds=$SEEDS | port $PORT | node $(hostname) ==="
 
+# TP and MAXLEN default to the A100 recipe (2x80GB, full 131072 window) but are
+# overridable so the same script fits smaller GPUs — e.g. the cs partition's
+# 2x A6000 (48GB): TP=2 MAXLEN=65536 keeps the 65GB weights + KV cache in 96GB.
+# The trust probe is short (GAMES=5, one LLM seat), so a 64K window is ample.
+TP="${TP:-2}"
+MAXLEN="${MAXLEN:-131072}"
+# yarn 4x lifts Qwen3's native 32768 window; only needed when MAXLEN>32768
+ROPE='--rope-scaling {"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}'
+[ "$MAXLEN" -le 32768 ] && ROPE=""
+echo "=== serving Qwen3-32B: TP=$TP max-model-len=$MAXLEN ==="
 "$VLLM_PY" -m vllm.entrypoints.openai.api_server \
   --model Qwen/Qwen3-32B --served-model-name qwen3-32b \
-  --tensor-parallel-size 2 \
+  --tensor-parallel-size "$TP" \
   --enable-auto-tool-choice --tool-call-parser hermes --reasoning-parser qwen3 \
-  --max-model-len 131072 \
-  --rope-scaling '{"rope_type":"yarn","factor":4.0,"original_max_position_embeddings":32768}' \
+  --max-model-len "$MAXLEN" $ROPE \
   --gpu-memory-utilization 0.92 --disable-log-requests \
   --port "$PORT" > "runs/qwen/vllm-trust-${BOT}.log" 2>&1 &
 VLLM_PID=$!

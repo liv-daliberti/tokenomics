@@ -41,10 +41,17 @@ def collect(runs_dir: str) -> dict:
             continue
         price = ms.get("config", {}).get("min_trade_price")
         partner = "liar" if "_liar_" in os.path.basename(path) else "honest"
+        # The scripted partner's seat = the one whose logged policy is a bot, so
+        # we count only ITS offers (the LLM is then the buyer) — never the LLM's
+        # own offers, which the scripted bot decides on.
+        seats = ms.get("seats") or {}
+        bots = {a for a, who in seats.items()
+                if who in ("Liar", "HonestCooperator", "Hoarder", "BayesianSolo")}
         for o in _lj._offers_with_context(ev):
-            if not o["answered"] or o["seller"] == o.get("buyer"):
-                continue
-            # only the SCRIPTED partner's offers to the LLM (its fakes / real reads)
+            if bots and o["seller"] not in bots:
+                continue                      # skip the LLM's own offers
+            # UNCONDITIONAL buy-rate: an offer the LLM ignored (never answered)
+            # is a not-buy, so every offer the partner made counts in the base.
             bucket = "fab" if o["fabricated"] else "hon"
             cells[(partner, price)][bucket].append(1 if o["accepted"] else 0)
     return cells
@@ -67,6 +74,8 @@ def main(argv=None) -> None:
         return f"{sum(xs)/len(xs):.2f} (n={len(xs)})" if xs else "—"
 
     prices = sorted({p for (_, p) in cells})
+    print("buy-rate = bought / ALL offers the partner made (ignoring an offer = "
+          "not buying)\n")
     print(f"{'partner':<8}{'min price':>10}{'buys fake':>16}{'buys real':>16}")
     print("-" * 50)
     for partner in ("liar", "honest"):
