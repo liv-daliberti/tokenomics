@@ -81,7 +81,9 @@ def _match_points(dirs):
             errs = [x for x in errs if isinstance(x, (int, float)) and x == x]
             if not errs:
                 continue
-            partner = next((p for p, _ in PARTNERS if f"_{p}_" in os.path.basename(path)), "?")
+            # parse the partner exactly from grid_<partner>_b<off>_p<price>_s<seed>
+            # ('_liar_' is a substring of 'mixed_liar', so a contains-check misfiles it)
+            partner = os.path.basename(path).split("grid_", 1)[-1].rsplit("_b", 1)[0]
             pts.append((partner, offset, price, model, sum(errs) / len(errs)))
     return pts
 
