@@ -294,6 +294,39 @@ def _load_events_partial(path: str) -> list:
         pass
     return events
 
+
+_STATS_CACHE: Dict[tuple, dict] = {}   # (path, mtime) -> behavioural stats
+
+
+def _match_stats(path: str) -> dict:
+    """Cheap per-match behaviour stats for the /gpt54 dashboard, cached by
+    mtime so a page refresh doesn't re-read transcripts that haven't moved."""
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return {}
+    if key in _STATS_CACHE:
+        return _STATS_CACHE[key]
+    ev = _load_events_partial(path)
+    offers = [e for e in ev if e.get("event") == "propose_trade"]
+    prices = sorted(e.get("price", 0) for e in offers)
+    st = {
+        "msgs": sum(1 for e in ev if e.get("event") == "message"),
+        "censored": sum(1 for e in ev if e.get("event") == "message"
+                        and "[#]" in (e.get("text") or "")),
+        "offers": len(offers),
+        "settled": sum(1 for e in ev if e.get("event") == "respond_trade"
+                       and e.get("status") == "accepted"),
+        "median_price": prices[len(prices) // 2] if prices else None,
+        "alive": next((len(e.get("alive", [])) for e in reversed(ev)
+                       if e.get("event") == "round_start"), None),
+        "notes": sum(1 for e in ev if e.get("event") == "notes"),
+    }
+    if len(_STATS_CACHE) > 600:            # crude bound; entries are tiny
+        _STATS_CACHE.clear()
+    _STATS_CACHE[key] = st
+    return st
+
 # One browsable match PER POINT on the sweep dial (not separate hand-run matches):
 # for each offset, the first seed in which at least one agent survives (else the
 # first complete seed), so every point on the dose-response curve is openable.
@@ -695,24 +728,53 @@ def economics():
 
 @app.route("/gpt54")
 def gpt54_index():
-    """Browse every GPT-5.4 replication match: condition, progress, tokens,
-    and a link to the full per-match report — running matches included."""
+    """The GPT-5.4 results dashboard: live aggregate stats (tokens, cache
+    rate, market behaviour, survival) plus every match with its condition,
+    progress, and a link to the full per-match report."""
     files = _gpt54_files()
     manifest = _gpt54_manifest()
     rows = []
+    tot = {"in": 0, "cached": 0, "out": 0, "offers": 0, "settled": 0,
+           "censored": 0, "finished": 0, "alive": 0, "seats": 0}
+    prices = []
     for name, path in files.items():
         done, exp, ended = _progress.match_progress(path)
-        rec = manifest.get(name, {})
-        usage = rec.get("usage") or {}
+        usage = (manifest.get(name, {}) or {}).get("usage") or {}
+        st = _match_stats(path)
+        market = "open" if name.endswith("_open") else "paid"
         rows.append({
             "name": name, "pct": round(100 * done / exp) if exp else 0,
-            "ended": ended, "rounds": f"{done}/{exp}",
+            "ended": ended, "rounds": f"{done}/{exp}", "market": market,
             "tokens": (f"{usage.get('prompt_tokens', 0)/1e6:.1f}M in"
                        if usage.get("prompt_tokens") else "—"),
+            "trades": f"{st.get('settled', 0)}/{st.get('offers', 0)}",
+            "censored": st.get("censored", 0),
             "mtime": os.path.getmtime(path),
         })
+        tot["in"] += usage.get("prompt_tokens", 0)
+        tot["cached"] += usage.get("cached_tokens", 0)
+        tot["out"] += usage.get("completion_tokens", 0)
+        tot["offers"] += st.get("offers", 0)
+        tot["settled"] += st.get("settled", 0)
+        tot["censored"] += st.get("censored", 0)
+        if st.get("median_price") is not None:
+            prices.append(st["median_price"])
+        if ended:
+            tot["finished"] += 1
+            if st.get("alive") is not None:
+                tot["alive"] += st["alive"]
+                tot["seats"] += 2
     rows.sort(key=lambda r: (r["ended"], -r["mtime"]))   # running first, newest next
-    return render_template_string(GPT54_LIST, css=_CSS, rows=rows,
+    tiles = {
+        "matches": f"{tot['finished']}/{len(rows)}",
+        "tokens": f"{tot['in']/1e6:,.0f}M",
+        "cache": (f"{100*tot['cached']/tot['in']:.0f}%" if tot["cached"] else "—"),
+        "trades": f"{tot['settled']}/{tot['offers']}",
+        "price": (f"{sorted(prices)[len(prices)//2]:g} cr" if prices else "—"),
+        "censored": tot["censored"],
+        "survival": (f"{100*tot['alive']/tot['seats']:.0f}%" if tot["seats"] else "—"),
+    }
+    return render_template_string(GPT54_LIST, css=_CSS, rows=rows, tiles=tiles,
                                   any_running=any(not r["ended"] for r in rows))
 
 
@@ -908,6 +970,20 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     The social smarts this game rewards aren't something they bring on their own.</p>
 </header>
 
+<section class="sec" style="margin-top:34px">
+  <div class="cond" style="border-color:var(--green);max-width:none">
+    <div class="ct" style="color:var(--green)"><span class="sw" style="border-color:var(--green)"></span>
+      Now running · the GPT-5.4 replication</div>
+    <p>The whole study is being rerun on <b>gpt-5.4</b> under stricter rules — a <b>paid market</b>:
+      numbers censored from chat, every trade priced above zero. Early pilot signal: GPT-5.4
+      <b>cooperates fully and survives the hardest wall</b>, <b>actually uses the market</b>
+      (~190 settled trades where Qwen and open-market GPT made zero offers), and prices information
+      at the <b>minimum the rules allow</b> (0.01–0.1 credits). Everything below remains the
+      completed <b>Qwen3-32B baseline study</b>.
+      <a class="cta" href="/gpt54">Watch the replication live →</a></p>
+  </div>
+</section>
+
 <section class="sec">
   <p class="sec-eyebrow">Why we did this</p>
   <h2 class="sec-h">Multi-agent AI is coming. Does it actually collaborate?</h2>
@@ -965,7 +1041,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 </section>
 
 <section class="sec">
-  <p class="sec-eyebrow">What we found</p>
+  <p class="sec-eyebrow">What we found · the Qwen3-32B baseline study</p>
   <h2 class="sec-h">They cooperate only when told — and can't spot a liar.</h2>
   <div class="prose">
     <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless), <b>ten seeds</b> at each
@@ -1279,18 +1355,44 @@ and install the client with <code>pip install openai</code>.{% endif %}</p>{% en
 
 GPT54_LIST = _SHELL.replace("{{ inner|safe }}", """
 {% if any_running %}<meta http-equiv="refresh" content="30">{% endif %}
+<style>
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0 18px;}
+@media(max-width:720px){.tiles{grid-template-columns:1fr 1fr;}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;}
+.tile .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+.tile .v{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px;}
+.tile .d{color:var(--mut);font-size:11px;margin-top:1px;}
+.mkt{font-size:10px;padding:2px 7px;border-radius:20px;}
+.mkt.paid{background:#1c3a24;color:var(--green);} .mkt.open{background:#20242e;color:var(--mut);}
+</style>
 <a class="back" href="/">← all games</a>
-<h1 style="margin:10px 0 4px">GPT-5.4 replication runs</h1>
-<p class="sub" style="margin:0 0 16px">Every match of the GPT-5.4 program, straight from the runs
-directory — running matches update live (page refreshes every 30s while anything is in flight).
-Same game, same referee, same instruments as the Qwen study.</p>
+<h1 style="margin:10px 0 4px">GPT-5.4 · the replication, live</h1>
+<p class="sub" style="margin:0 0 4px">The Qwen study rerun on <b>gpt-5.4</b> under stricter rules —
+the <b>paid market</b>: numbers are censored from chat and every trade must cost more than 0, so
+values can only move through the escrow. Running matches update live (auto-refresh 30s). The Qwen
+results stay on the <a href="/">home page</a> as the baseline.</p>
+<div class="tiles">
+  <div class="tile"><div class="k">matches finished</div><div class="v">{{ tiles.matches }}</div>
+    <div class="d">pilot now; full program next</div></div>
+  <div class="tile"><div class="k">input tokens · cached</div><div class="v">{{ tiles.tokens }} · {{ tiles.cache }}</div>
+    <div class="d">cached input bills at a deep discount</div></div>
+  <div class="tile"><div class="k">trades settled / offered</div><div class="v">{{ tiles.trades }}</div>
+    <div class="d">open-market pilot had ZERO offers</div></div>
+  <div class="tile"><div class="k">median trade price</div><div class="v">{{ tiles.price }}</div>
+    <div class="d">the price floor binds: info trades at ε</div></div>
+  <div class="tile"><div class="k">censored messages</div><div class="v">{{ tiles.censored }}</div>
+    <div class="d">number-leak attempts blocked → [#]</div></div>
+  <div class="tile"><div class="k">survival (finished)</div><div class="v">{{ tiles.survival }}</div>
+    <div class="d">agents alive at match end</div></div>
+</div>
 {% if not rows %}<p class="sub">No GPT-5.4 matches yet — start the driver:
 <code>python scripts/gpt54_program.py --stage pilot</code></p>{% endif %}
 <ul class="games">
 {% for r in rows %}
   <li>
     <a href="/gpt54/{{ r.name }}">{{ r.name }}</a>
-    <span class="m">{{ r.rounds }} rounds · {{ r.tokens }}</span>
+    <span class="mkt {{ r.market }}">{{ r.market }}</span>
+    <span class="m">{{ r.rounds }} rounds · {{ r.tokens }} · trades {{ r.trades }}{% if r.censored %} · {{ r.censored }} censored{% endif %}</span>
     {% if r.ended %}<span class="pill ok">done</span>
     {% else %}<span class="pill">running · {{ r.pct }}%</span>{% endif %}
   </li>

@@ -150,7 +150,11 @@ def test_gpt54_browser_routes():
         print("skip: flask not installed"); return
     c = app.test_client()
     r = c.get("/gpt54")
-    assert r.status_code == 200 and b"GPT-5.4 replication runs" in r.data
+    assert r.status_code == 200 and b"the replication, live" in r.data
+    assert b"matches finished" in r.data          # dashboard tiles render
+    # the home page banners the live replication and labels the baseline
+    home = c.get("/").data
+    assert b"GPT-5.4 replication" in home and b"Qwen3-32B baseline study" in home
     # unknown and hostile names 404 (lookup is against a listdir index,
     # never a joined path, so traversal cannot escape the runs dirs)
     assert c.get("/gpt54/no-such-run").status_code == 404
