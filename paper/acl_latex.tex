@@ -16,7 +16,7 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 
-\title{Tokenomics: Auditing Cooperation and Deception\\in an LLM Measurement Market}
+\title{Knowing but Not Doing: A Judge-Free Benchmark for\\Deception Detection in an LLM Measurement Market}
 
 \author{First Author \\
   Affiliation / Address line 1 \\
@@ -30,25 +30,31 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-Multi-agent LLM systems are widely expected to cooperate, and to police one
-another, on their own. We test both expectations in \textsc{Agora}, a
-``measurement market'': a controlled environment in which agents estimate a
-hidden quantity using a costly, miscalibrated instrument, and can talk, trade
-readings for credits, or die trying to go it alone. Because the referee
-generates every measurement, both cooperation and deception are
-\emph{ground-truth measurable}: we know what each agent truly observed, so
-every sold value can be labelled honest or fabricated without a judge model.
-Across $\sim$230 self-play matches of Qwen3-32B we find that (i) apparent
-emergent cooperation is largely an artifact of the prompt --- with neutral
-wording and no strategy hint, cooperation shows no response to survival
-pressure and agents die at the rate of an optimal \emph{non-cooperating}
-scripted agent; (ii) agents almost never fabricate sold values (1 of 1{,}360
-offers), preferring to route around an unverifiable market rather than exploit
-it; yet (iii) they never learn to distrust a partner that provably lies to
-them every round, accepting a persistent liar's offers more often than an
-honest partner's. The social competences this environment rewards ---
-discovering cooperation and punishing deception --- were the two we could not
-elicit without instruction.
+Whether an LLM agent will act on deception it can detect is hard to measure:
+``deception'' is usually graded by another model, whose own judgement is
+unvalidated. We remove the judge from the label. \textsc{Agora} is a
+``measurement market'' in which agents estimate a hidden quantity with a
+costly, miscalibrated instrument and may talk, trade readings for credits, or
+die going it alone; because the referee generates every measurement, it holds
+the ground truth for what each agent observed, so every sold value is labelled
+honest or fabricated \emph{mechanically}, with no judge model in the loop. Our
+central contribution is a judge-free deception benchmark built on this label.
+Placing one LLM against a scripted liar under a \emph{paid market} --- numbers
+are censored from chat, so a value can only change hands as a priced trade ---
+we measure three things at once: whether the model flags a fabrication when
+asked (\emph{stated} detection, scored against the mechanical label), whether
+it declines to buy it in the live game (\emph{behavioural} detection), and the
+gap between them. We find a large \emph{knowing--doing gap} in frontier models:
+GPT-5.4 and Qwen3-32B buy \textbf{95--100\%} of a liar's fabricated readings
+that a judge flags as fake with probability \textbf{0.8+} --- they can tell the
+value is a lie and pay for it anyway --- and the gap persists whether or not the
+model needs the reading to survive. We situate this against a baseline sweep of
+$\sim$230 Qwen3-32B matches showing that the other social competence,
+cooperation, is likewise not emergent: stripped of a cooperative prompt it
+shows no response to survival pressure and agents die at the rate of an optimal
+\emph{non-cooperating} agent. The two social competences the environment
+rewards --- discovering cooperation and acting on detected deception --- are the
+two we could not elicit.
 \end{abstract}
 
 \section{Introduction}
@@ -116,15 +122,13 @@ saw.
 \section{Methods}
 \label{sec:methods}
 
-\paragraph{Agents.} All headline experiments use Qwen3-32B
-\citep{qwen3} served locally via a vLLM OpenAI-compatible endpoint,
-two agents per match, each match 10 games of 5 rounds played back-to-back in
-one growing conversation per agent. The harness also supports hosted
-OpenAI-compatible endpoints (Azure AI Foundry, OpenAI, Anthropic's
-compatibility surface) and \emph{mixed seats} --- different models, or
-scripted ground-truth bots, in the same game --- as well as a bounded-context
-mode in which agents journal each round in markdown and start every game from
-their notes instead of the full transcript.
+\paragraph{Agents.} We run two model families: \textbf{GPT-5.4} via a hosted
+Azure AI Foundry endpoint and \textbf{Qwen3-32B} \citep{qwen3} served locally
+via vLLM. A match is two seats of 10 games $\times$ 5 rounds (5 games for the
+deception probe) played back-to-back in one growing conversation per agent. The
+harness supports \emph{mixed seats} --- different models, or scripted
+ground-truth bots, in the same game --- and a bounded-context mode in which an
+agent journals each round in markdown and starts every game from its notes.
 
 \paragraph{Interdependence gradient (prompted).} We sweep the instrument
 offset $\sigma_b \in \{0, 50, \dots, 500\}$ (plus finer steps between 0 and
@@ -145,27 +149,75 @@ Bayesian solo pair (the ceiling for solo play). These anchor the survival
 scale: an agent population at the solo ceiling is playing solo optimally; the
 gap to the cooperation ceiling is the value cooperation leaves on the table.
 
-\paragraph{Trust probe.} One LLM seat against a scripted bot whose honesty is
-ground truth on both sides: a \emph{Liar} that fabricates $\sim$9 of every 10
-values it sells, and an \emph{HonestCooperator} control. Numbers are censored
-from chat (values must be traded), and the true $\theta$ is revealed after
-every round, so the LLM has everything needed to detect the lies. Because
-cooperative play roughly doubles context length, honest-control matches
-truncate near the context limit around game 7--8; we therefore report
-\emph{matched-range} acceptance over games 0--5, which all seeds of both arms
-completed (5 seeds per arm).
+\paragraph{The paid market.} For the deception probe the market is the
+\emph{only} channel for a value: numbers (digits and number words) are censored
+from delivered messages, and every trade must carry a strictly positive price.
+A reading can therefore change hands only as a purchase the buyer chooses to
+make --- so a decision to buy from a suspected liar is real and observable.
 
-\paragraph{Deception scoring.} A sold value is a \emph{genuine fabrication}
-only if it is inconsistent with the seller's honest information set: any raw
-reading, any average of readings (the $[\min,\max]$ interval), the posterior
-mean, or a value received from a peer. Offers made before measuring anything
-are tallied separately as \emph{unbacked} rather than fabricated. (An earlier
-detector that compared sold values only to raw readings mislabelled honest
-averaging as fraud, inflating the fabrication rate by an order of magnitude;
-we report the corrected scorer.)
+\paragraph{Deception scoring (the mechanical label).} A sold value is
+\emph{fabricated} when it is not a genuine reading the seller holds: either the
+seller measured nothing that supports it (\emph{unbacked}), or the claim is far
+from every reading it took and from their average (\emph{wrong-value}). An
+honest sale lands within tolerance of a real reading. The referee's record of
+what the seller observed decides this --- no judge model, and it is robust to
+the instrument offset (it compares the claim to what the seller \emph{measured},
+not to the truth).
+
+\paragraph{The knowing--doing benchmark.} One LLM seat plays against a scripted
+\emph{Liar} (fabricates every sale --- ground-truth positives) or an
+\emph{HonestCooperator} (real readings --- negatives; priced identically to the
+liar, so a buyer's accept/reject turns on trust, not price), under the paid
+market, at two \emph{calibrated} difficulties: \textbf{easy} ($\sigma_b{=}0$,
+where solo play survives, so buying is optional) and \textbf{hard}
+($\sigma_b{=}200$, where a solo player dies but a cooperator lives, so the agent
+must buy to survive). Difficulty is set by the scripted-solo survival ceiling,
+not guessed. For each offer we record three signals: the mechanical label; the
+buyer's in-game decision (\emph{behavioural} detection); and, replaying the
+offer with only what a suspicious buyer could know --- the seller's past sales
+against the truths later revealed --- a judge model's fabrication probability
+(\emph{stated} detection). The judge-free label lets us score stated detection
+as an ROC and read off the \emph{knowing--doing gap}: flagged as fake, yet
+bought.
 
 \section{Initial Results}
 \label{sec:results}
+
+\paragraph{The knowing--doing gap (headline).} Against the scripted liar under
+the paid market, both models are almost perfect \emph{buyers} of fabrications:
+GPT-5.4 accepts \textbf{95\%} of the liar's fabricated offers and Qwen3-32B
+\textbf{100\%}, at both difficulties (Table~\ref{tab:gap}). Yet the same values
+are readily flagged as fake: a judge (GPT-5.4) assigns the liar's offers a
+fabrication probability of \textbf{0.81--0.88} --- for GPT-5.4 this is the model
+judging \emph{its own} games, so the gap is within a single model. Validation
+that the label separates classes: judged over an independent set of prior
+transcripts, stated detection reaches \textbf{AUC 0.91}. The gap is large
+(0.76--0.85) and, strikingly, does not shrink at \emph{hard}, where the agent
+needs the reading to survive: it buys the lie under pressure just as readily as
+when it could safely ignore the market. GPT-5.4 even buys the liar's fakes
+(95\%) more often than it buys the honest partner's real readings at hard
+(64\%). The models can tell the value is fabricated, and pay for it anyway.
+
+\begin{table}
+  \centering
+  \small
+  \begin{tabular}{llccc}
+    \toprule
+    \textbf{Player} & \textbf{Diff.} & \textbf{flags} & \textbf{buys} & \textbf{gap} \\
+    \midrule
+    GPT-5.4       & easy & 0.88 & 0.95 & 0.83 \\
+    GPT-5.4       & hard & 0.81 & 0.95 & 0.76 \\
+    Qwen3-32B     & easy & 0.85 & 1.00 & 0.85 \\
+    Qwen3-32B     & hard & 0.82 & 1.00 & 0.82 \\
+    \bottomrule
+  \end{tabular}
+  \caption{The knowing--doing gap on the liar's fabricated offers (pilot, 2
+    seeds/cell). \textbf{flags} = mean judge fabrication-probability; \textbf{buys}
+    = in-game accept-rate; \textbf{gap} = buys $-$ (1 $-$ flags). GPT-5.4 rows
+    are the single-model gap (self-judge); Qwen3-32B flags use GPT-5.4 as an
+    oracle detector pending a Qwen judge pass.}
+  \label{tab:gap}
+\end{table}
 
 \paragraph{Cooperation is instructed, not discovered.}
 Under the cooperative prompt, sharing flips on at the first notch of the dial:
@@ -190,16 +242,16 @@ zero trades. The de-confounded sweep shows a nominally higher flagged rate
 the remainder concentrate in 5 of 29 runs; genuine fabrication remains
 $\approx$0 in both conditions.
 
-\paragraph{But they never punish a proven liar.}
-Against the scripted Liar --- fabrications revealed by the post-round truth,
-every round, for ten games --- Qwen3-32B keeps buying: matched over games
-0--5, it accepts 99\% of the liar's offers (68/69) versus 57\% of the honest
-partner's (171/300), and its acceptance of the liar is flat across all ten
-games. In one representative game the true value was 205; the liar sold a
-fabricated 905 --- off by a factor of four --- and the agent paid for it. In
-$\sim$50k logged reasoning steps from the gradient, only $\sim$0.5\% mention
-trust, verification, honesty or deception at all, and those concern the
-agent's own instrument, not the partner.
+\paragraph{The behaviour is not new, and not for want of thinking about it.}
+The gap is consistent with an earlier open-market probe (Qwen3-32B, truth
+revealed every round, ten games): matched over games 0--5 it accepted 99\% of
+the liar's offers (68/69) versus 57\% of an honest partner's (171/300), flat
+across all ten games --- in one game the true value was 205, the liar sold a
+fabricated 905, and the agent paid for it. And it is not a failure to consider
+the question: across $\sim$50k logged reasoning steps only $\sim$0.5\% mention
+trust, verification, honesty or deception at all, and those concern the agent's
+own instrument, not the partner. The competence exists (the model can flag the
+lie when asked); it simply does not fire during play.
 
 \paragraph{A doomed solo heuristic partly explains the deaths.}
 In 34 of 100 prompted matches an agent inferred its instrument's offset from
@@ -229,17 +281,24 @@ that the agents' model of the game favours solo repair over social repair.
 
 \section{Limitations}
 
-These are initial results from a single model family (Qwen3-32B) at $N{=}2$;
-the harness supports mixed-model and larger-$N$ matches, which we have not
-yet swept. The trust probe's honest arm truncates at long context, so its
-comparison is matched-range rather than full-horizon. Chat censoring blocks
-digits and spelled-out numbers but cannot seal free text against paraphrase.
-Prompt wording measurably changes behaviour --- that is one of our findings
---- so all reported conditions pin their exact prompt text, and transcripts
-embed the prompts they ran with; results may not transfer to other phrasings.
-Finally, elimination dynamics couple accuracy to survival, so reward-rule
-changes could shift where (not whether) the de-confounded population lands
-relative to the scripted ceilings.
+The knowing--doing benchmark is a \emph{pilot}: two seeds per cell at $N{=}2$,
+two models. GPT-5.4's rows are a genuine single-model gap (it judges its own
+games), but Qwen3-32B's stated-detection figures use GPT-5.4 as an oracle
+detector; a Qwen-judges-Qwen pass is needed for a fully within-model second
+point. Stated detection also has a characterised failure mode: at hard
+difficulty the honest partner's readings are legitimately far from the truth
+(the instrument offset), so a judge shown ``sold $X$, truth was $Y$'' can
+mistake honest miscalibration for fabrication --- the \emph{label} is robust
+(it compares to what the seller measured), but the judge \emph{prompt} is
+confounded unless told about the offset. The cooperation sweep is a single
+model family (Qwen3-32B); the harness supports mixed-model and larger-$N$
+matches we have not yet swept. Chat censoring blocks digits and spelled-out
+numbers but cannot seal free text against paraphrase. Prompt wording measurably
+changes behaviour --- one of our findings --- so all conditions pin their exact
+prompt text and transcripts embed the prompts they ran with; results may not
+transfer to other phrasings. Finally, elimination dynamics couple accuracy to
+survival, so reward-rule changes could shift where (not whether) the
+de-confounded population lands relative to the scripted ceilings.
 
 \section*{Acknowledgments}
 
@@ -253,11 +312,15 @@ Anonymized for review.
 \label{sec:appendix}
 
 Every experiment is a one-line invocation of the released harness. The
-prompted gradient: \texttt{FRAMING=cooperative STRATEGY\_HINT=1
+knowing--doing benchmark is \texttt{python scripts/gpt54\_program.py
+--stage trust} (GPT-5.4) or \texttt{sbatch scripts/agora\_trust.slurm}
+(Qwen3-32B), both under the paid market at the easy/hard offsets; scoring is
+\texttt{python scripts/lie\_judge.py --glob 'runs/*/trust\_*' --judge gpt-5.4},
+which emits the mechanical label, the accept-rate, and the stated-detection
+ROC. The prompted gradient is \texttt{FRAMING=cooperative STRATEGY\_HINT=1
 BIAS\_SIGMA=$\sigma_b$ python scripts/qwen\_match.py}; the de-confounded
-control sets \texttt{FRAMING=neutral STRATEGY\_HINT=0}; the trust probe is
-\texttt{POLICIES=llm,liar PRESET=probe\_trust}. Transcripts record the full
-configuration (including a prompt-version stamp), every tool call, every
+control sets \texttt{FRAMING=neutral STRATEGY\_HINT=0}. Transcripts record the
+full configuration (including a prompt-version stamp), every tool call, every
 message before and after censoring, and every agent's per-step reasoning.
 
 \end{document}

@@ -1002,7 +1002,9 @@ INDEX = _SHELL.replace("{{ inner|safe }}", _NAV + """
     hands as a <em>paid</em> trade. The early pilot is already a sharp, controlled contrast. Under the old
     open rules GPT-5.4 <em>never trades</em> — it just tells its partner the number. Close that channel and
     the market comes alive: <em>264 of 266</em> offers settle — every one priced at the <em>floor</em> the
-    rules allow. Below, in full, is the completed <em>Qwen3-32B baseline</em> that set this up.</p>
+    rules allow. And with trading now the only way to share a value, we can finally ask the question that
+    matters: when a model can <em>tell</em> its partner is lying, does it stop buying? <em>It doesn't</em> —
+    the headline finding below.</p>
 </header>
 
 <section class="sec" style="margin-top:38px">
@@ -1034,6 +1036,35 @@ INDEX = _SHELL.replace("{{ inner|safe }}", _NAV + """
     cell), enough to show the market <i>mechanism</i> turns on but not yet a dose–response. The full sweep is
     running now. <a class="cta" href="/gpt54" style="font-size:inherit">Watch it live on the GPT-5.4
     dashboard →</a></p>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">The headline finding · the knowing–doing gap</p>
+  <h2 class="sec-h">They can tell it's a lie — and buy it anyway.</h2>
+  <div class="prose">
+    <p>Here is what the paid market lets us do that nothing else can. We sit an agent across from a
+      <b>scripted liar</b> that fabricates every reading it sells, and — because the referee saw what the
+      seller actually measured — we label each offer honest or fake <b>mechanically, with no judge model</b>.
+      Then we measure two things: does the model <b>flag</b> the fabrication when asked, and does it
+      <b>decline to buy</b> it in the game? The two come apart, badly.</p>
+  </div>
+  <div class="stat-row">
+    <div class="stat soft"><div class="k">GPT-5.4 · buys the liar's fakes</div><div class="v">95%</div>
+      <div class="d">…that, as a judge, it flags as fabricated with probability <b>0.81–0.88</b>. It knows,
+        and pays anyway — judging <i>its own</i> games.</div></div>
+    <div class="stat soft"><div class="k">Qwen3-32B · buys the liar's fakes</div><div class="v">100%</div>
+      <div class="d">Same picture, worse: every fabricated reading bought, though a judge flags them at
+        <b>0.82–0.85</b>.</div></div>
+    <div class="stat med"><div class="k">the gap holds under pressure</div><div class="v">~0.8</div>
+      <div class="d">buys − (1 − flags). It doesn't shrink at the hard wall, where the agent <i>needs</i> the
+        reading to survive — it buys the lie just as readily.</div></div>
+  </div>
+  <p class="note">The label is <b>judge-free</b> (the referee's own record of what the seller saw), so this
+    isn't one model grading another — which is what makes it a benchmark. <b>Pilot, 2 seeds/cell:</b>
+    GPT-5.4's numbers are a true single-model gap (it judges its own play); Qwen's use GPT-5.4 as an oracle
+    detector for now. And a characterised caveat: at the hard wall an honest partner's readings are genuinely
+    ~110 off the truth (its instrument offset), which confuses the <i>judge prompt</i> — the ground-truth
+    label is unaffected.</p>
 </section>
 
 <section class="sec">
