@@ -6,5 +6,6 @@
 *.fls
 *.log
 *.out
-*.pdf
+/acl_latex.pdf
 *.synctex.gz
+# keep committed figures under fig/ (only the built manuscript pdf is ignored)

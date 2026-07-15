@@ -719,6 +719,18 @@ def compare():
     return render_template_string(COMPARE, css=_CSS, body=body)
 
 
+@app.route("/fig/<name>")
+def figure(name: str):
+    """Serve a committed paper figure (PNG) for embedding on the site."""
+    if not _SAFE_RUN.match(name) or not name.endswith(".png"):
+        abort(404)
+    path = os.path.join(_REPO, "paper", "fig", name)
+    if not os.path.exists(path):
+        abort(404)
+    from flask import send_file
+    return send_file(path, mimetype="image/png")
+
+
 @app.route("/economics")
 def economics():
     """The interactive cost–utility explorer: the raw price tradeoff (measure
@@ -1065,6 +1077,20 @@ INDEX = _SHELL.replace("{{ inner|safe }}", _NAV + """
     detector for now. And a characterised caveat: at the hard wall an honest partner's readings are genuinely
     ~110 off the truth (its instrument offset), which confuses the <i>judge prompt</i> — the ground-truth
     label is unaffected.</p>
+
+  <div class="prose" style="margin-top:24px">
+    <p><b>Does making the lie expensive fix it?</b> Partly — and the way it fails is the sharpest part of the
+      story. We raise the price of every trade and watch what GPT-5.4 pays for. It prices <b>honest</b>
+      information about right: it buys a real reading (worth ~6 credits) almost always up to a price of 8, then
+      refuses once it's clearly overpriced. But it never prices the <b>fabrication</b>: it buys the liar's fake
+      at every cheap price, and even at <b>32 credits</b> — five times what a real reading is worth, for
+      something worth nothing — it still buys it <b>41%</b> of the time, <i>more often than it buys the
+      fairly-priced honest reading at that same price</i>. The model can value real information; it just won't
+      discount a value for being a lie. The gap is, underneath, a <b>pricing failure</b>.</p>
+  </div>
+  <img src="/fig/price_sweep.png"
+       alt="GPT-5.4 buy-rate vs price: the honest reading is refused when overpriced, but the fabrication stays bought"
+       style="width:100%;max-width:580px;display:block;margin:16px auto 0;border-radius:12px;background:#fff;padding:10px">
 </section>
 
 <section class="sec">

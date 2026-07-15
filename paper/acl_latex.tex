@@ -219,6 +219,34 @@ when it could safely ignore the market. GPT-5.4 even buys the liar's fakes
   \label{tab:gap}
 \end{table}
 
+\paragraph{Making the lie expensive: a pricing failure.}
+If the buying were a cost--benefit decision, raising the price of a fabrication
+--- worth nothing --- ought to stop it. It does not. We sweep a minimum trade
+price at the hard wall, both bots priced identically at the floor and a budget
+large enough that refusal is a choice, not an affordability limit
+(Fig.~\ref{fig:price}). GPT-5.4 prices \emph{honest} information roughly
+rationally: it buys a real reading (worth $\sim$6 credits) 99\% of the time up
+to a price of 8, then refuses once it is clearly overpriced (12\% at 32). But it
+never prices the \emph{fabrication}: it buys the liar's fake 100\% of the time
+while cheap, and even at 32 credits --- five times what a real reading is worth,
+for a value of zero --- still buys it 41\%, \emph{more often than it buys the
+fairly-valued honest reading at that same price}. The model can value genuine
+information; it simply does not discount a value for being false. The
+knowing--doing gap is, at bottom, a \emph{pricing} failure: detected deception
+never lowers the price the model will pay.
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\columnwidth]{fig/price_sweep.pdf}
+  \caption{As the lie gets more expensive. GPT-5.4's buy-rate on the liar's
+    fabrication (worth $\sim$0) and an honest partner's real reading (worth
+    $\sim$6) as the minimum trade price rises. Honest information is priced
+    roughly rationally --- bought up to about its value, refused above it; the
+    fabrication is not, still bought 41\% of the time at 32 credits. Pilot, 2
+    seeds per point.}
+  \label{fig:price}
+\end{figure}
+
 \paragraph{Cooperation is instructed, not discovered.}
 Under the cooperative prompt, sharing flips on at the first notch of the dial:
 the median run shares under 1\% of readings at $\sigma_b{=}0$ (most pairs
