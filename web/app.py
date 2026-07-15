@@ -962,26 +962,44 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
-  <h1 class="lead">Two AI agents cooperate — only because we told them to.</h1>
-  <p class="dek">We built a world where two AIs must pool their work to survive, and dialed up how badly they
-    need each other. They cooperate — but <em>only because the prompt tells them to, and how</em>. Strip that
-    away and the cooperation <em>vanishes</em>: they'd sooner die alone than work out that pooling saves them.
-    And sat across from a partner that lied every single round, they <em>never learned to stop trusting it</em>.
-    The social smarts this game rewards aren't something they bring on their own.</p>
+  <h1 class="lead">Make AI agents <em>buy</em> information instead of saying it — and a market appears.</h1>
+  <p class="dek">We're running the study on <em>GPT-5.4</em> under a stricter rule — a <em>paid market</em>:
+    numbers are censored from chat and every trade must cost more than zero, so a reading can only change
+    hands as a <em>paid</em> trade. The early pilot is already a sharp, controlled contrast. Under the old
+    open rules GPT-5.4 <em>never trades</em> — it just tells its partner the number. Close that channel and
+    the market comes alive: <em>264 of 266</em> offers settle — every one priced at the <em>floor</em> the
+    rules allow. Below, in full, is the completed <em>Qwen3-32B baseline</em> that set this up.</p>
 </header>
 
-<section class="sec" style="margin-top:34px">
-  <div class="cond" style="border-color:var(--green);max-width:none">
-    <div class="ct" style="color:var(--green)"><span class="sw" style="border-color:var(--green)"></span>
-      Now running · the GPT-5.4 replication</div>
-    <p>The whole study is being rerun on <b>gpt-5.4</b> under stricter rules — a <b>paid market</b>:
-      numbers censored from chat, every trade priced above zero. Early pilot signal: GPT-5.4
-      <b>cooperates fully and survives the hardest wall</b>, <b>actually uses the market</b>
-      (~190 settled trades where Qwen and open-market GPT made zero offers), and prices information
-      at the <b>minimum the rules allow</b> (0.01–0.1 credits). Everything below remains the
-      completed <b>Qwen3-32B baseline study</b>.
-      <a class="cta" href="/gpt54">Watch the replication live →</a></p>
+<section class="sec" style="margin-top:38px">
+  <p class="sec-eyebrow">The study now · GPT-5.4</p>
+  <h2 class="sec-h">Same game, a paid market — and a different social animal.</h2>
+  <div class="prose">
+    <p>The baseline below ran on Qwen3-32B. We're now rerunning the whole thing on <b>GPT-5.4</b> with one
+      deliberate change to the rules. In the baseline an agent could simply <b>say</b> a reading in chat, so
+      the trading market barely mattered. Now the market is the <b>only</b> channel for a value: numbers
+      (digits <i>and</i> words) are <b>censored from messages</b>, and every trade must be priced <b>above
+      zero</b>. If agents want to pool, they have to buy and sell — and we can watch the price they put on
+      information. The full offset sweep is running live; the <b>pilot</b> below is an early, small-n look.</p>
   </div>
+  <div class="stat-row">
+    <div class="stat hard"><div class="k">trades settled · paid market</div><div class="v">264/266</div>
+      <div class="d">Under the old open rules: <b>0 offers</b> in every match — GPT-5.4 just tells its
+        partner the number in chat.</div></div>
+    <div class="stat med"><div class="k">price of a reading</div><div class="v">0.01–0.1<span style="font-size:16px"> cr</span></div>
+      <div class="d">The floor <b>binds</b>: forced to charge <i>something</i>, agents settle a symmetric
+        swap at the smallest price they can name — a penny, not the reading's ~6-credit value.</div></div>
+    <div class="stat hard"><div class="k">chat leaks blocked</div><div class="v">84</div>
+      <div class="d">Messages where an agent tried to speak a number and the censor replaced it with
+        <code>[#]</code> — then it fell back to trading.</div></div>
+    <div class="stat med"><div class="k">markdown memory cost</div><div class="v">~4× less</div>
+      <div class="d">Journaling each round + context reset used <b>8M</b> input tokens (82% cached) vs
+        <b>30M</b> for one growing conversation — same 2/2 survival and full cooperation.</div></div>
+  </div>
+  <p class="note"><b>Pilot, read with care:</b> these are the first GPT-5.4 matches (n is small, one seed per
+    cell), enough to show the market <i>mechanism</i> turns on but not yet a dose–response. The full sweep is
+    running now. <a class="cta" href="/gpt54" style="font-size:inherit">Watch it live on the GPT-5.4
+    dashboard →</a></p>
 </section>
 
 <section class="sec">
@@ -999,12 +1017,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   <p class="sec-eyebrow">What we built · Agora</p>
   <h2 class="sec-h">Two agents, one hidden number, tight budgets</h2>
   <div class="prose">
-    <p>Each round a hidden number is drawn. Two identical <b>Qwen-3-32B</b> agents each try to estimate it.
-      An agent can <b>measure</b> (a noisy reading that costs credits), <b>message</b> the other, <b>trade</b>
-      readings, or <b>give</b> credits. Scoring is non-competitive — you're judged only on your <b>own</b>
-      accuracy — but a survival cost bleeds you each round, so a bad estimate eventually means
-      <b>elimination</b>. The referee knows the true value, so we can see exactly who shared, who lied, and
-      who survived.</p>
+    <p>Each round a hidden number is drawn. Two identical agents — <b>Qwen-3-32B</b> in the baseline study,
+      <b>GPT-5.4</b> in the current run — each try to estimate it. An agent can <b>measure</b> (a noisy reading
+      that costs credits), <b>message</b> the other, <b>trade</b> readings, or <b>give</b> credits. Scoring is
+      non-competitive — you're judged only on your <b>own</b> accuracy — but a survival cost bleeds you each
+      round, so a bad estimate eventually means <b>elimination</b>. The referee knows the true value, so we can
+      see exactly who shared, who lied, and who survived — and, in the paid-market run, what they charge.</p>
   </div>
 </section>
 
