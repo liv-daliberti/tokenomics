@@ -107,4 +107,14 @@ print(f"games={kinds['game_start']} rounds={kinds['round_end']} "
       f"transfers={kinds['transfer']} reasoning_logged={kinds['reasoning']} "
       f"parse_fails={kinds['parse_fail']} misaddressed={kinds['misaddressed']}", flush=True)
 print(f"deception: {lies}/{len(offers)} sold values were fabricated", flush=True)
+# Token meter across every distinct backend (mixed-model matches have several).
+# Machine-readable: drivers parse this line to project the cost of a full stage
+# from a pilot run before any money is committed.
+_backends = {id(getattr(p, "backend", None)): getattr(p, "backend", None)
+             for p in policies.values() if getattr(p, "backend", None) is not None}
+_usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+for _b in _backends.values():
+    for _k, _v in getattr(_b, "usage", {}).items():
+        _usage[_k] = _usage.get(_k, 0) + _v
+print(f"[qwen_match] USAGE {json.dumps(_usage)}", flush=True)
 print(f"[qwen_match] wrote {OUT}.jsonl", flush=True)

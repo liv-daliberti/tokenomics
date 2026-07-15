@@ -82,6 +82,10 @@ class OpenAIBackend:
                 key = os.environ.get("AZURE_OPENAI_API_KEY")
             key = key or os.environ.get("OPENAI_API_KEY")
         self.client = OpenAI(base_url=base_url, api_key=key or "EMPTY")
+        # Running token meter — hosted models bill per token and this game's
+        # growing-conversation design makes cost quadratic in match length, so
+        # every driver/pilot needs real numbers, not guesses.
+        self.usage = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     def generate(self, messages: List[Dict[str, Any]],
                  tools: List[Dict[str, Any]], cfg: GameConfig) -> LLMResponse:
@@ -109,6 +113,11 @@ class OpenAIBackend:
             stream=False,                       # streaming breaks hermes tool parsing
             **sampling,
         )
+        u = getattr(resp, "usage", None)
+        self.usage["calls"] += 1
+        if u is not None:
+            self.usage["prompt_tokens"] += getattr(u, "prompt_tokens", 0) or 0
+            self.usage["completion_tokens"] += getattr(u, "completion_tokens", 0) or 0
         msg = resp.choices[0].message
         calls: List[RawToolCall] = []
         for tc in (msg.tool_calls or []):
