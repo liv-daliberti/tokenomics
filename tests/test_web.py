@@ -145,6 +145,18 @@ def test_economics_explorer_page_renders():
     assert '"bucket": 15.0' in page and '"reward_max": 10' in page
 
 
+def test_gpt54_browser_routes():
+    if not _HAVE_FLASK:
+        print("skip: flask not installed"); return
+    c = app.test_client()
+    r = c.get("/gpt54")
+    assert r.status_code == 200 and b"GPT-5.4 replication runs" in r.data
+    # unknown and hostile names 404 (lookup is against a listdir index,
+    # never a joined path, so traversal cannot escape the runs dirs)
+    assert c.get("/gpt54/no-such-run").status_code == 404
+    assert c.get("/gpt54/..").status_code == 404
+
+
 def test_missing_game_gets_friendly_gone_page():
     if not _HAVE_FLASK:
         print("skip: flask not installed"); return

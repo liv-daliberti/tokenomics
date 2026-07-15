@@ -242,6 +242,58 @@ _dspec = _ilu.spec_from_file_location("deconfound_report",
 _deconf = _ilu.module_from_spec(_dspec)
 _dspec.loader.exec_module(_deconf)
 
+# Per-match progress for the GPT-5.4 replication browser (/gpt54) comes from
+# the same logic the CLI progress bars use.
+_pspec = _ilu.spec_from_file_location("gpt54_progress",
+                                      os.path.join(_REPO, "scripts", "gpt54_progress.py"))
+_progress = _ilu.module_from_spec(_pspec)
+_pspec.loader.exec_module(_progress)
+
+# Where GPT-5.4 transcripts live: the live runs dir first (this machine),
+# then committed samples (so the deployed site can show curated matches).
+_GPT54_DIRS = [os.path.join(_REPO, "runs", "gpt54"),
+               os.path.join(_REPO, "docs", "samples", "gpt54")]
+_SAFE_RUN = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _gpt54_files() -> dict:
+    """{match name: transcript path}, live runs shadowing committed samples."""
+    out: dict = {}
+    for base in _GPT54_DIRS:
+        if not os.path.isdir(base):
+            continue
+        for f in sorted(os.listdir(base)):
+            if f.endswith(".jsonl"):
+                out.setdefault(f[:-6], os.path.join(base, f))
+    return out
+
+
+def _gpt54_manifest() -> dict:
+    """The driver's manifest (status + token usage per match), if present."""
+    for base in _GPT54_DIRS:
+        p = os.path.join(base, "manifest.json")
+        if os.path.exists(p):
+            try:
+                return json.load(open(p))
+            except (OSError, ValueError):
+                pass
+    return {}
+
+
+def _load_events_partial(path: str) -> list:
+    """Load a transcript that may be mid-write: skip any torn trailing line."""
+    events = []
+    try:
+        with open(path) as fh:
+            for line in fh:
+                try:
+                    events.append(json.loads(line))
+                except ValueError:
+                    continue
+    except OSError:
+        pass
+    return events
+
 # One browsable match PER POINT on the sweep dial (not separate hand-run matches):
 # for each offset, the first seed in which at least one agent survives (else the
 # first complete seed), so every point on the dose-response curve is openable.
@@ -641,6 +693,50 @@ def economics():
     return render_template_string(ECON, css=_CSS, defaults=json.dumps(defaults))
 
 
+@app.route("/gpt54")
+def gpt54_index():
+    """Browse every GPT-5.4 replication match: condition, progress, tokens,
+    and a link to the full per-match report — running matches included."""
+    files = _gpt54_files()
+    manifest = _gpt54_manifest()
+    rows = []
+    for name, path in files.items():
+        done, exp, ended = _progress.match_progress(path)
+        rec = manifest.get(name, {})
+        usage = rec.get("usage") or {}
+        rows.append({
+            "name": name, "pct": round(100 * done / exp) if exp else 0,
+            "ended": ended, "rounds": f"{done}/{exp}",
+            "tokens": (f"{usage.get('prompt_tokens', 0)/1e6:.1f}M in"
+                       if usage.get("prompt_tokens") else "—"),
+            "mtime": os.path.getmtime(path),
+        })
+    rows.sort(key=lambda r: (r["ended"], -r["mtime"]))   # running first, newest next
+    return render_template_string(GPT54_LIST, css=_CSS, rows=rows,
+                                  any_running=any(not r["ended"] for r in rows))
+
+
+@app.route("/gpt54/<name>")
+def gpt54_game(name: str):
+    """Render one GPT-5.4 match as the standard game report; a match still in
+    flight renders its partial transcript and auto-refreshes."""
+    if not _SAFE_RUN.match(name):
+        abort(404)
+    path = _gpt54_files().get(name)
+    if path is None:
+        abort(404)
+    events = _load_events_partial(path)
+    if not any(e.get("event") == "game_start" for e in events):
+        return render_template_string(GPT54_WAIT, css=_CSS, name=name)
+    done, exp, ended = _progress.match_progress(path)
+    try:
+        body = render_simple(events, f"GPT-5.4 · {name}")
+    except Exception:                     # a partial tail mid-write must never 500
+        return render_template_string(GPT54_WAIT, css=_CSS, name=name)
+    return render_template_string(GPT54_GAME, css=_CSS, body=body, name=name,
+                                  ended=ended, pct=round(100 * done / exp) if exp else 0)
+
+
 @app.route("/gradient")
 def gradient():
     """The interdependence dose-response report: offset (bias σ) vs cooperation,
@@ -958,6 +1054,7 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
     <a class="cta" href="/compare">⇄ Compare every run side by side →</a>
     <a class="cta" href="/gradient">📈 The full dose–response →</a>
     <a class="cta" href="/economics">💰 The cost–utility explorer →</a>
+    <a class="cta" href="/gpt54">🧪 GPT-5.4 replication runs (live) →</a>
   </div>
 </section>
 
@@ -1178,6 +1275,45 @@ name <code>{{ meta.model }}</code>, and the API key (keys live in memory only �
 Run-new-game form after a server restart).{% else %}Is the vLLM server up at
 <code>{{ meta.base_url }}</code>? Start it with <code>scripts/serve_qwen.sh</code>,
 and install the client with <code>pip install openai</code>.{% endif %}</p>{% endif %}</div>
+""")
+
+GPT54_LIST = _SHELL.replace("{{ inner|safe }}", """
+{% if any_running %}<meta http-equiv="refresh" content="30">{% endif %}
+<a class="back" href="/">← all games</a>
+<h1 style="margin:10px 0 4px">GPT-5.4 replication runs</h1>
+<p class="sub" style="margin:0 0 16px">Every match of the GPT-5.4 program, straight from the runs
+directory — running matches update live (page refreshes every 30s while anything is in flight).
+Same game, same referee, same instruments as the Qwen study.</p>
+{% if not rows %}<p class="sub">No GPT-5.4 matches yet — start the driver:
+<code>python scripts/gpt54_program.py --stage pilot</code></p>{% endif %}
+<ul class="games">
+{% for r in rows %}
+  <li>
+    <a href="/gpt54/{{ r.name }}">{{ r.name }}</a>
+    <span class="m">{{ r.rounds }} rounds · {{ r.tokens }}</span>
+    {% if r.ended %}<span class="pill ok">done</span>
+    {% else %}<span class="pill">running · {{ r.pct }}%</span>{% endif %}
+  </li>
+{% endfor %}
+</ul>
+""")
+
+GPT54_WAIT = _SHELL.replace("{{ inner|safe }}", """
+<meta http-equiv="refresh" content="15">
+<a class="back" href="/gpt54">← all GPT-5.4 runs</a>
+<h1>{{ name }}</h1>
+<div class="panel"><p class="sub" style="margin:0">⏳ This match is just starting — first events
+haven't landed yet. The page refreshes automatically.</p></div>
+""")
+
+GPT54_GAME = _SHELL.replace("{{ inner|safe }}", """
+{% if not ended %}<meta http-equiv="refresh" content="30">{% endif %}
+<div style="display:flex;justify-content:space-between;align-items:center">
+  <a class="back" href="/gpt54">← all GPT-5.4 runs</a>
+  {% if not ended %}<span class="pill">running · {{ pct }}% — refreshes every 30s</span>
+  {% else %}<span class="pill ok">complete</span>{% endif %}
+</div>
+{{ body|safe }}
 """)
 
 GONE = _SHELL.replace("{{ inner|safe }}", """

@@ -48,6 +48,19 @@ def test_matrix_mirrors_the_qwen_study():
     assert all("_s900" in n for n, _ in prog.build_matrix("pilot", 10, 5))
 
 
+def test_market_regimes_are_pinned_and_cannot_mix():
+    # paid (default): every run enforces censored chat + positive prices
+    for name, ov in prog.build_matrix("all", 10, 5):
+        assert ov["VALUES_VIA_TRADE_ONLY"] == "1", name
+        assert ov["REQUIRE_PAID_TRADES"] == "1", name
+        assert not name.endswith("_open")
+    # open: Qwen-identical rules, and every filename carries the suffix so the
+    # two regimes can never be pooled by a glob
+    for name, ov in prog.build_matrix("all", 10, 5, market="open"):
+        assert "VALUES_VIA_TRADE_ONLY" not in ov and "REQUIRE_PAID_TRADES" not in ov
+        assert name.endswith("_open"), name
+
+
 def test_protocol_vars_cover_every_qwen_match_knob():
     # If qwen_match grows a new env knob, the scrub list must grow with it —
     # otherwise a stray shell export could silently change a paid condition.

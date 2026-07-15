@@ -118,6 +118,11 @@ class OpenAIBackend:
         if u is not None:
             self.usage["prompt_tokens"] += getattr(u, "prompt_tokens", 0) or 0
             self.usage["completion_tokens"] += getattr(u, "completion_tokens", 0) or 0
+            # cached prompt tokens are billed at a deep discount on hosted
+            # endpoints; track them so cost projections reflect the real bill
+            det = getattr(u, "prompt_tokens_details", None)
+            cached = getattr(det, "cached_tokens", 0) or 0 if det else 0
+            self.usage["cached_tokens"] = self.usage.get("cached_tokens", 0) + cached
         msg = resp.choices[0].message
         calls: List[RawToolCall] = []
         for tc in (msg.tool_calls or []):

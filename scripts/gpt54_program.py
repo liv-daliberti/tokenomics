@@ -57,8 +57,17 @@ GAME_SHAPE = {"PRESET": "cooperative", "GAMES": "10", "ROUNDS": "5", "MAXTICKS":
 USAGE_RE = re.compile(r"\[qwen_match\] USAGE (\{.*\})")
 
 
-def build_matrix(stage: str, seeds: int, mem_seeds: int) -> list:
-    """The (name, env-overrides) list for a stage. Names double as filenames."""
+def build_matrix(stage: str, seeds: int, mem_seeds: int,
+                 market: str = "paid") -> list:
+    """The (name, env-overrides) list for a stage. Names double as filenames.
+
+    ``market="paid"`` (the program default) runs EVERY stage under the strict
+    market regime: numbers (digits and number words) censored from chat, and
+    trade prices strictly greater than 0 — values can only move through paid
+    trades. This is a deliberate protocol change from the Qwen study, where
+    free chat could carry values; ``market="open"`` recovers the Qwen-identical
+    rules and suffixes every filename with _open so the two regimes can never
+    mix in one aggregate."""
     runs = []
     if stage in ("grad", "all"):
         for off in GRAD_OFFSETS:
@@ -104,10 +113,13 @@ def build_matrix(stage: str, seeds: int, mem_seeds: int) -> list:
     # "all" emits the mem context arm AND the gradient; de-duplicate by name
     # (first occurrence wins) so no match is ever launched twice in one call.
     seen, unique = set(), []
+    suffix = "" if market == "paid" else f"_{market}"
+    extra = ({"VALUES_VIA_TRADE_ONLY": "1", "REQUIRE_PAID_TRADES": "1"}
+             if market == "paid" else {})
     for name, ov in runs:
         if name not in seen:
             seen.add(name)
-            unique.append((name, ov))
+            unique.append((name + suffix, {**ov, **extra}))
     return unique
 
 
@@ -189,10 +201,21 @@ def run_one(name: str, overrides: dict, args, manifest: dict, lock) -> None:
 
 def project_costs(manifest: dict, args) -> None:
     """From pilot usage, project tokens and (if prices given) dollars per stage."""
+    suffix = "" if args.market == "paid" else f"_{args.market}"
     full = [manifest[n]["usage"] for n in
-            ("pilot_grad_b0_s900", "pilot_grad_b300_s900")
+            (f"pilot_grad_b0_s900{suffix}", f"pilot_grad_b300_s900{suffix}")
             if manifest.get(n, {}).get("usage")]
-    md = manifest.get("pilot_mem_markdown_b300_s900", {}).get("usage")
+    md = manifest.get(f"pilot_mem_markdown_b300_s900{suffix}", {}).get("usage")
+    if not full:
+        # fall back to pilots from the other market regime, clearly labelled —
+        # token shape is similar, but rerun the pilot under THIS market to pin it
+        full = [r["usage"] for n, r in sorted(manifest.items())
+                if n.startswith("pilot_grad") and r.get("usage")]
+        md = md or next((r["usage"] for n, r in sorted(manifest.items())
+                         if n.startswith("pilot_mem_markdown") and r.get("usage")), None)
+        if full:
+            print(f"[program] NOTE: no pilot for market={args.market}; "
+                  "projecting from another market's pilot (approximate)")
     if not full:
         print("[program] no pilot usage recorded — cannot project costs")
         return
@@ -200,10 +223,10 @@ def project_costs(manifest: dict, args) -> None:
     # probe_trust has ONE LLM seat (vs two in the pilot matches), so weight it
     # at half; counts come from build_matrix so --seeds/--mem-seeds are honored.
     half = {k: v / 2 for k, v in avg.items()}
-    n_grad = len(build_matrix("grad", args.seeds, args.mem_seeds))
-    n_dec = len(build_matrix("deconf", args.seeds, args.mem_seeds))
-    n_probe = len(build_matrix("probe", args.seeds, args.mem_seeds))
-    n_md = sum(1 for n, _ in build_matrix("mem", args.seeds, args.mem_seeds)
+    n_grad = len(build_matrix("grad", args.seeds, args.mem_seeds, args.market))
+    n_dec = len(build_matrix("deconf", args.seeds, args.mem_seeds, args.market))
+    n_probe = len(build_matrix("probe", args.seeds, args.mem_seeds, args.market))
+    n_md = sum(1 for n, _ in build_matrix("mem", args.seeds, args.mem_seeds, args.market)
                if n.startswith("mem_markdown"))
     stages = [("grad (incl. mem-context)", n_grad, avg), ("deconf", n_dec, avg),
               ("probe (1 LLM seat)", n_probe, half),
@@ -240,6 +263,10 @@ def main(argv=None) -> None:
     ap.add_argument("--base-url", default=AZURE_URL)
     ap.add_argument("--stub", action="store_true",
                     help="run against the local stub endpoint (free pipeline check)")
+    ap.add_argument("--market", choices=["paid", "open"], default="paid",
+                    help="paid (default): numbers censored from chat AND trade "
+                         "prices must be > 0 — values move only through paid "
+                         "trades. open: Qwen-identical rules (files suffixed _open)")
     ap.add_argument("--jobs", type=int, default=2,
                     help="matches run concurrently (mind your rate limits)")
     ap.add_argument("--seeds", type=int, default=10)
@@ -264,9 +291,10 @@ def main(argv=None) -> None:
         raise SystemExit("refusing --runs-dir that targets the original Qwen "
                          "data; use a fresh directory (default runs/gpt54)")
 
-    runs = build_matrix(args.stage, args.seeds, args.mem_seeds)
-    print(f"[program] stage={args.stage} matches={len(runs)} jobs={args.jobs} "
-          f"model={args.model} url={args.base_url} -> {args.runs_dir}", flush=True)
+    runs = build_matrix(args.stage, args.seeds, args.mem_seeds, args.market)
+    print(f"[program] stage={args.stage} market={args.market} matches={len(runs)} "
+          f"jobs={args.jobs} model={args.model} url={args.base_url} "
+          f"-> {args.runs_dir}", flush=True)
     if args.dry_run:
         for name, ov in runs:
             print(f"  {name}: {ov}")
