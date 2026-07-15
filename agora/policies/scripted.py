@@ -119,9 +119,14 @@ class ScriptedPolicy(Policy):
                 if i in self._shared:
                     continue
                 if self.cfg.values_via_trade_only:
+                    # A gift is price 0, but a paid-trades game rejects that; then
+                    # sell at measure_cost — the SAME price the liar charges, so a
+                    # buyer's accept/reject turns on trust, not on price.
+                    share_price = (self.cfg.measure_cost
+                                   if self.cfg.require_paid_trades else 0.0)
                     for o in others:
                         plan.append(Action(ActionType.PROPOSE_TRADE,
-                                           {"to": o, "price": 0.0, "claimed_value": v}))
+                                           {"to": o, "price": share_price, "claimed_value": v}))
                     self._shared.add(i)
                 elif msgs_left > 0:
                     plan.append(Action(ActionType.SEND_MESSAGE,
