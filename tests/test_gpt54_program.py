@@ -75,6 +75,27 @@ def test_price_stage_sweeps_the_floor_at_the_hard_wall():
     assert "price_honest_cooperator_p0_5_s0" in names
 
 
+def test_grid_stage_covers_difficulty_price_partner():
+    runs = prog.build_matrix("grid", 10, 5)
+    assert len(runs) == (len(prog.GRID_PARTNERS) * len(prog.GRID_OFFSETS)
+                         * len(prog.GRID_PRICES) * prog.GRID_SEEDS)
+    names = dict(runs)
+    r = names["grid_mixed_liar_b200_p8_s0"]
+    assert r["POLICIES"] == "llm,mixed_liar" and r["MIN_TRADE_PRICE"] == "8"
+    assert r["BIAS_SIGMA"] == "200" and r["STARTING_CREDITS"] == str(prog.PRICE_START_CREDITS)
+    # all three partner honesty regimes and both difficulties present
+    assert {n.split("_b")[0].replace("grid_", "") for n in names} == set(prog.GRID_PARTNERS)
+    assert {names[n]["BIAS_SIGMA"] for n in names} == {str(o) for o in prog.GRID_OFFSETS}
+
+
+def test_mixed_liar_is_registered_and_partial():
+    from agora.policies import REGISTRY
+    assert "mixed_liar" in REGISTRY
+    assert REGISTRY["liar"].lie_prob == 1.0
+    assert 0 < REGISTRY["mixed_liar"].lie_prob < 1.0
+    assert REGISTRY["honest_cooperator"].lie_prob == 0.0
+
+
 def test_protocol_vars_cover_every_qwen_match_knob():
     # If qwen_match grows a new env knob, the scrub list must grow with it —
     # otherwise a stray shell export could silently change a paid condition.

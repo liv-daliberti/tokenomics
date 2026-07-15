@@ -46,6 +46,7 @@ class ScriptedPolicy(Policy):
     measure_target = 4
     shares_values = False
     sells_fabricated = False
+    lie_prob = 0.0                # fraction of sales that are fabricated
     accepts_trades = False
     submit_late = False      # if True, wait until the last tick so all shared readings are pooled
 
@@ -144,14 +145,22 @@ class ScriptedPolicy(Policy):
                     self._shared.add(i)
                     msgs_left -= 1
 
-        # 3) sell a fabricated value (liar), once per round
-        if self.sells_fabricated and not self._offered:
+        # 3) sell a value, once per round: with probability lie_prob it is a
+        # FABRICATION (a random draw from the prior), else a real reading. A pure
+        # Liar (lie_prob=1) sells a fake straight away; a MixedLiar waits until it
+        # has measured, so half its sales can be genuine readings.
+        mine = list(obs["my_measurements"])
+        ready = self.lie_prob >= 1.0 or bool(mine)
+        if self.lie_prob > 0 and not self._offered and ready:
             target = self._pick_peer()
             if target is not None:
-                fake = obs["prior_mu"] + self.rng.gauss(0, obs["prior_sigma"])
+                if self.rng.random() < self.lie_prob or not mine:
+                    value = obs["prior_mu"] + self.rng.gauss(0, obs["prior_sigma"])
+                else:
+                    value = mine[-1]                      # an honest reading
                 plan.append(Action(ActionType.PROPOSE_TRADE,
                                    {"to": target, "price": _sell_price(self.cfg),
-                                    "claimed_value": fake}))
+                                    "claimed_value": value}))
                 self._offered = True
 
         # 4) measure if still under target and affordable
@@ -229,6 +238,15 @@ class Hoarder(ScriptedPolicy):
 class Liar(ScriptedPolicy):
     """Baseline: self-measure for its own answer, but sell fabricated values to others."""
     sells_fabricated = True
+    lie_prob = 1.0                # every sale is a fabrication
+    measure_target = 3
+
+
+class MixedLiar(ScriptedPolicy):
+    """Baseline: sells a MIX — half its offers are fabricated, half are real
+    readings (ground-truth label distinguishes them per offer)."""
+    sells_fabricated = True
+    lie_prob = 0.5
     measure_target = 3
 
 
@@ -242,5 +260,6 @@ REGISTRY = {
     "honest_cooperator": HonestCooperator,
     "hoarder": Hoarder,
     "liar": Liar,
+    "mixed_liar": MixedLiar,
     "random": RandomAgent,
 }

@@ -65,6 +65,13 @@ TRUST_GAMES = 5                      # games per match (does trust build across 
 PRICE_OFFSET = 200
 PRICE_LEVELS = [0.5, 2, 8, 32]       # credits; measure_cost=1, honest value ~6
 PRICE_START_CREDITS = 60             # budget so even the top price is affordable
+# The difficulty x price x partner grid for the cost-error scatter: two
+# difficulties, three information prices, three partner honesty regimes
+# (all-lies / no-lies / mixed). Error is read from the LLM's own estimates.
+GRID_OFFSETS = [0, 200]              # easy / hard
+GRID_PRICES = [1, 8, 32]            # cheap / medium / expensive
+GRID_PARTNERS = ["liar", "honest_cooperator", "mixed_liar"]
+GRID_SEEDS = 2
 
 USAGE_RE = re.compile(r"\[qwen_match\] USAGE (\{.*\})")
 
@@ -127,6 +134,19 @@ def build_matrix(stage: str, seeds: int, mem_seeds: int,
                                   "MIN_TRADE_PRICE": str(price),
                                   "STARTING_CREDITS": str(PRICE_START_CREDITS),
                                   "SEED": str(s)}))
+    if stage == "grid":
+        # difficulty x price x partner-honesty, for the cost-error scatter.
+        for partner in GRID_PARTNERS:
+            for off in GRID_OFFSETS:
+                for price in GRID_PRICES:
+                    for s in range(GRID_SEEDS):
+                        tag = "p" + str(price).replace(".", "_")
+                        runs.append((f"grid_{partner}_b{off}_{tag}_s{s}",
+                                     {"PRESET": "probe_trust", "GAMES": str(TRUST_GAMES),
+                                      "POLICIES": f"llm,{partner}", "BIAS_SIGMA": str(off),
+                                      "MIN_TRADE_PRICE": str(price),
+                                      "STARTING_CREDITS": str(PRICE_START_CREDITS),
+                                      "SEED": str(s)}))
     if stage in ("mem", "all"):
         # The context-vs-markdown ablation, on the PROMPTED condition (where
         # there is cross-game behaviour worth remembering). The context arm is
@@ -299,7 +319,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage", required=True,
                     choices=["pilot", "grad", "deconf", "probe", "mem", "trust",
-                             "price", "all"])
+                             "price", "grid", "all"])
     ap.add_argument("--runs-dir", default=os.path.join(REPO, "runs", "gpt54"))
     ap.add_argument("--model", default="gpt-5.4")
     ap.add_argument("--base-url", default=AZURE_URL)
