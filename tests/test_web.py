@@ -38,7 +38,7 @@ def test_index_loads():
         print("skip: flask not installed"); return
     c = app.test_client()
     r = c.get("/")
-    assert r.status_code == 200 and b"Run new game" in r.data
+    assert r.status_code == 200 and b"Run a game" in r.data
 
 
 def test_scripted_game_runs_and_renders():
@@ -152,9 +152,16 @@ def test_gpt54_browser_routes():
     r = c.get("/gpt54")
     assert r.status_code == 200 and b"the replication, live" in r.data
     assert b"matches finished" in r.data          # dashboard tiles render
-    # the home page banners the live replication and labels the baseline
+    # the home leads with the GPT-5.4 study and links the baseline out
     home = c.get("/").data
-    assert b"GPT-5.4 replication" in home and b"Qwen3-32B baseline study" in home
+    assert b"buy</em> information" in home         # GPT-5.4 hero
+    assert b"Qwen3-32B baseline study, in full" in home  # baseline link card
+    assert b'href="/baseline"' in home
+    # the Qwen narrative now lives on its own page, under the shared nav
+    base = c.get("/baseline")
+    assert base.status_code == 200
+    assert b"cooperate only when told" in base.data
+    assert b"class=\"topnav\"" in base.data and b"class=\"topnav\"" in home
     # unknown and hostile names 404 (lookup is against a listdir index,
     # never a joined path, so traversal cannot escape the runs dirs)
     assert c.get("/gpt54/no-such-run").status_code == 404

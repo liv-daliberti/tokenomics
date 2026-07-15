@@ -559,26 +559,35 @@ def _deconf_charts() -> str:
 
 
 def _page_ctx(page: str) -> dict:
-    """Shared template context (presets, policy names, preset-fill data, and the
-    embedded dose-response charts) for the Games / Create tabs."""
-    charts, chart_css, glabel = _gradient_charts() if page != "create" else ("", "", "")
+    """Shared template context (presets, policy names, preset-fill data, the
+    shared study CSS, and the nav's active tab) for the Home / Create views.
+    The dose-response charts now live on /baseline, not here."""
     return dict(css=_CSS, page=page, presets=sorted(PRESETS),
                 policies_list=sorted(REGISTRY), default_policies=DEFAULT_POLICIES,
                 preset_data=json.dumps(_preset_data()),
-                gradient_charts=charts, chart_css=chart_css, gradient_label=glabel,
-                deconf_charts=(_deconf_charts() if page != "create" else ""))
+                study_css=_STUDY_CSS, nav=("create" if page == "create" else "home"))
 
 
 @app.route("/")
 def index():
-    """The Games tab: the About panel and the gallery of past runs."""
+    """Home: the GPT-5.4 study (one clean scroll) + the run gallery."""
     return render_template_string(INDEX, games=_all_games(), **_page_ctx("games"))
 
 
 @app.route("/create")
 def create():
-    """The Run-new-game tab: the configuration form."""
+    """The Run-new-game view: the configuration form."""
     return render_template_string(INDEX, games=[], **_page_ctx("create"))
+
+
+@app.route("/baseline")
+def baseline():
+    """The completed Qwen3-32B baseline study, in full — the narrative and the
+    dose-response / de-confounding charts that used to live on the home page."""
+    charts, chart_css, _ = _gradient_charts()
+    return render_template_string(
+        BASELINE, css=_CSS, study_css=_STUDY_CSS, nav="baseline",
+        chart_css=chart_css, gradient_charts=charts, deconf_charts=_deconf_charts())
 
 
 @app.route("/delete_all", methods=["POST"])
@@ -887,16 +896,36 @@ document.addEventListener('DOMContentLoaded',function(){var r=document.querySele
  r.forEach(function(x){x.addEventListener('change',toggleBackend);});toggleBackend();});
 </script></body></html>"""
 
-INDEX = _SHELL.replace("{{ inner|safe }}", """
-<div class="nav">
-  <a href="/" class="{{ 'active' if page != 'create' else '' }}">Games</a>
-  <a href="/create" class="{{ 'active' if page == 'create' else '' }}">＋ Run new game</a>
-</div>
+# One nav bar on every narrative/tool page, so the site reads as a single
+# thing instead of a stack of bolted-on pages. `nav` marks the active tab.
+_NAV = """<nav class="topnav">
+  <a class="brand" href="/">Agora</a>
+  <a href="/" class="{{ 'on' if nav=='home' else '' }}">GPT-5.4 study</a>
+  <a href="/gpt54" class="{{ 'on' if nav=='dash' else '' }}">Live dashboard</a>
+  <a href="/baseline" class="{{ 'on' if nav=='baseline' else '' }}">Qwen baseline</a>
+  <a href="/gradient" class="{{ 'on' if nav=='gradient' else '' }}">Dose–response</a>
+  <a href="/economics" class="{{ 'on' if nav=='econ' else '' }}">Cost–utility</a>
+  <span class="spacer"></span>
+  <a class="run {{ 'on' if nav=='create' else '' }}" href="/create">＋ Run a game</a>
+</nav>"""
 
-{% if page != 'create' %}
-<style>
-  {{ chart_css|safe }}
+# Shared "study" CSS — used by the home (GPT-5.4) and the /baseline (Qwen)
+# pages so both speak one visual language. Chart CSS is added per-page.
+_STUDY_CSS = """
   :root{--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+  .topnav{display:flex;gap:2px;align-items:center;flex-wrap:wrap;margin:0 0 22px;padding:0 0 10px;border-bottom:1px solid var(--line);}
+  .topnav a{padding:8px 11px;text-decoration:none;color:var(--mut);font-size:13.5px;font-weight:600;border-radius:8px;white-space:nowrap;}
+  .topnav a:hover{color:var(--fg);background:var(--card);}
+  .topnav a.on{color:var(--fg);}
+  .topnav a.brand{color:var(--fg);font-weight:800;letter-spacing:-.02em;font-size:16px;margin-right:6px;padding-left:0;}
+  .topnav a.run{color:var(--blue);}
+  .topnav .spacer{flex:1;}
+  .toolbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:14px 0 0;}
+  .toolbar a{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;text-decoration:none;color:var(--fg);font-weight:600;font-size:14px;transition:border-color .12s;}
+  .toolbar a:hover{border-color:var(--blue);}
+  .toolbar a span{display:block;color:var(--mut);font-size:12px;font-weight:400;margin-top:3px;}
+  .bl-link{display:flex;justify-content:space-between;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:18px 0 0;text-decoration:none;color:var(--fg);transition:border-color .12s;}
+  .bl-link:hover{border-color:var(--blue);} .bl-link .sub2{color:var(--mut);font-size:13px;margin-top:3px;font-weight:400;}
   .hero{padding:8px 0 4px;}
   .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--blue);margin:0 0 16px;}
   .lead{font-size:clamp(30px,5.2vw,52px);line-height:1.04;letter-spacing:-.022em;font-weight:750;margin:0 0 18px;text-wrap:balance;}
@@ -958,7 +987,12 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
   .explore-links{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0 0;}
   .gallery-head{display:flex;justify-content:space-between;align-items:baseline;margin:34px 0 2px;}
   .gallery-head h2{font-size:18px;margin:0;letter-spacing:-.01em;color:var(--mut);font-weight:600;}
-</style>
+"""
+
+# ---- HOME (/) — the GPT-5.4 study, one clean scroll ----
+INDEX = _SHELL.replace("{{ inner|safe }}", _NAV + """
+{% if page != 'create' %}
+<style>{{ study_css|safe }}</style>
 
 <header class="hero">
   <p class="eyebrow">Agora · a multi-agent LLM study</p>
@@ -1003,154 +1037,28 @@ INDEX = _SHELL.replace("{{ inner|safe }}", """
 </section>
 
 <section class="sec">
-  <p class="sec-eyebrow">Why we did this</p>
-  <h2 class="sec-h">Multi-agent AI is coming. Does it actually collaborate?</h2>
+  <p class="sec-eyebrow">What's next · running now</p>
+  <h2 class="sec-h">The full offset sweep, live on GPT-5.4.</h2>
   <div class="prose">
-    <p>Agents that negotiate, delegate, and split work are arriving fast — but a basic question is unanswered:
-      when they can help each other, do language-model agents share <b>fairly</b>, or does one carry the other
-      while it takes? We built a small, controlled world where cooperation is <b>measurable</b> and deception
-      is <b>verifiable</b>, and watched two copies of the same model play it out.</p>
+    <p>The pilot shows the paid market <i>turns on</i>; the full run measures how it behaves as we dial up how
+      badly the agents need each other — the same offset sweep from <b>0</b> (solo is fine) to <b>500</b> (solo
+      is hopeless) that the baseline used, now under the paid-market rules. Every match streams to the live
+      dashboard as it finishes, with its trades, censored messages, tokens, and survival.</p>
+  </div>
+  <div class="toolbar">
+    <a href="/gpt54">Live dashboard<span>every GPT-5.4 match, updating in real time</span></a>
+    <a href="/economics">Cost–utility explorer<span>the price tradeoff, from the reward rule</span></a>
+    <a href="/create">Run a game<span>drive the market yourself, any model</span></a>
+    <a href="/compare">Compare runs<span>side by side across the dial</span></a>
   </div>
 </section>
 
-<section class="sec">
-  <p class="sec-eyebrow">What we built · Agora</p>
-  <h2 class="sec-h">Two agents, one hidden number, tight budgets</h2>
-  <div class="prose">
-    <p>Each round a hidden number is drawn. Two identical agents — <b>Qwen-3-32B</b> in the baseline study,
-      <b>GPT-5.4</b> in the current run — each try to estimate it. An agent can <b>measure</b> (a noisy reading
-      that costs credits), <b>message</b> the other, <b>trade</b> readings, or <b>give</b> credits. Scoring is
-      non-competitive — you're judged only on your <b>own</b> accuracy — but a survival cost bleeds you each
-      round, so a bad estimate eventually means <b>elimination</b>. The referee knows the true value, so we can
-      see exactly who shared, who lied, and who survived — and, in the paid-market run, what they charge.</p>
-  </div>
-</section>
-
-<section class="sec">
-  <p class="sec-eyebrow">How we tested it</p>
-  <h2 class="sec-h">Make cooperation necessary — then dial exactly how much.</h2>
-  <div class="steps">
-    <div class="step"><div class="step-n">1</div><div>
-      <h4>Two things we can measure directly</h4>
-      <p>When agents <i>can</i> help each other, do they <b>cooperate at all</b> — share readings, talk — or
-        just ignore each other? And when they do, is the give-and-take <b>mutual</b> or <b>one-sided</b> (one
-        gives, the other only takes)? A referee that knows the true value lets us score both. Then we vary how
-        badly they need each other and watch what moves.</p></div></div>
-    <div class="step"><div class="step-n">2</div><div>
-      <h4>One dial: how badly they need each other</h4>
-      <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
-        it. Only <b>averaging both agents' readings</b> cancels it and recovers the truth. We turn that offset
-        from <b>0</b> (solo is fine) up to <b>500</b> (solo is hopeless):</p>
-      <div class="mechanic">
-        <div class="mech-truth">Hidden truth <b>θ = 480</b></div>
-        <div class="mech-row"><span class="tg a">You read</span><span class="num">720</span>your instrument runs high</div>
-        <div class="mech-row"><span class="tg b">Partner reads</span><span class="num">240</span>theirs runs low</div>
-        <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
-      </div></div></div>
-    <div class="step"><div class="step-n">3</div><div>
-      <h4>~140 matches across the dial — then two controls</h4>
-      <p>We run the same game at <b>ten settings</b> of that offset — plus <b>four finer steps</b> between 0 and
-        50 to pin down exactly where cooperation turns on — <b>ten seeds</b> each, ~140 Qwen-vs-Qwen matches in
-        all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep the
-        <b>full context</b> of everything before. Then <b>two controls</b> to ask whether the behaviour is real
-        or prompted: the whole sweep <b>rerun with neutral wording and the how-to hint removed</b>, and a
-        separate <b>probe</b> pitting one agent against a bot whose honesty we control.</p></div></div>
-  </div>
-</section>
-
-<section class="sec">
-  <p class="sec-eyebrow">What we found · the Qwen3-32B baseline study</p>
-  <h2 class="sec-h">They cooperate only when told — and can't spot a liar.</h2>
-  <div class="prose">
-    <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless), <b>ten seeds</b> at each
-      setting. In the charts below the <b>solid line</b> is the original run; each <b>dashed line</b> is the
-      <i>same game</i> with the prompt's help taken away — and, on survival, two scripted strategy ceilings in
-      the identical game: the best possible all-cooperate pair and the best possible all-solo pair. Error bars
-      are 95% CIs; the whole story is the gap between the lines. <b>Survival is on top because it is the robust result</b> — tight intervals, a clean trend.
-      Cooperation (below it) points the same way but is noisier, so read its <i>shape</i>, not any single point.</p>
-  </div>
-  <div class="conditions">
-    <div class="cond prompted">
-      <div class="ct"><span class="sw"></span>Prompted run</div>
-      <p>Cooperative framing — <b>"you and your partner are a team"</b> — plus the hint:
-        <b>"average your two readings to cancel the error."</b></p>
-    </div>
-    <div class="cond neutral">
-      <div class="ct"><span class="sw"></span>Neutral run · the control</div>
-      <p>No team framing, <b>no hint</b> — the agents must work out pooling themselves. Everything else is
-        identical.</p>
-    </div>
-  </div>
-  <p class="held"><b>Held fixed in both:</b> the task, measurement noise, budget, survival cost, horizon and
-    prior — only the wording changes, and the offset dial runs 0→500 in each. The two faint dashed lines on the
-    survival chart are <b>scripted, non-LLM</b> reference agents in the same game, each the <b>ceiling of its
-    strategy</b>: the best possible always-pooling pair, and the best possible never-sharing solo pair.
-    <b>What we did not do:</b> script the LLMs' choices, change the task, or tell the neutral agents the
-    trick.</p>
-  {% if deconf_charts %}{{ deconf_charts|safe }}{% elif gradient_charts %}{{ gradient_charts|safe }}{% endif %}
-  <div class="prose" style="margin-top:22px">
-    <p><b>Cooperation is instructed, not discovered.</b> With the cooperative prompt, sharing jumps to the norm
-      at the <b>very first notch</b> of the wall and stays there — it looks like two agents realising they can't
-      do it alone. But that's the prompt talking. Strip the "team" framing and the "average your readings" hint
-      (the <b style="color:var(--blue)">blue</b> points), and cooperation has <b>no response to the wall at
-      all</b> — sharing sits near <b>15%</b> whether the wall is off (14% at offset 0) or lethal. And without
-      pooling they <b>die</b>: neutral survival lands exactly on the <b>ceiling for solo play</b>
-      (<b>63%</b> → <b>24%</b> → <b>3%</b> as the wall hardens, n=10 each) — solo played as well as solo can
-      be played, and no better — never near the <b>ceiling for cooperation</b>. The pooling was the
-      instruction, not the agents working out that they need each other.</p>
-    <p><b>Honest — but blind to a liar.</b> They barely cheat: with the referee checking every sold value
-      against what the seller actually knew, just <b>1 value in 1,360</b> genuinely contradicted what the seller
-      knew — faced with an unverifiable channel they route around it (<b>~85%</b> of matches settle zero trades)
-      rather than exploit it. But the other half of social reasoning fails. Against a bot that <b>fabricates ~9
-      of every 10</b> readings it sells, truth revealed each round, Qwen <b>never stops buying</b>: matched over
-      the first six games (5 seeds), it accepts the liar <b>99%</b> of the time versus an honest partner's
-      <b>57%</b>, flat across all ten of the liar's games. In one match the true value was <b>205</b> and the
-      liar sold a fabricated <b>905</b> — <b>4× too high</b> — and Qwen paid a credit and bought it.</p>
-  </div>
-  <p class="note">Full per-offset breakdown — cooperation, survival, reciprocity, fabrication, and the scripted
-    baselines — on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.
-    {% if not deconf_charts and not gradient_charts %}<br>The sweep is running — the charts appear here as runs finish.{% endif %}</p>
-</section>
-
-<section class="sec">
-  <p class="sec-eyebrow">What it means</p>
-  <div class="meaning">
-    <p>Put together, it's one picture: the social behaviour this game rewards is <b>not something these agents
-      bring on their own</b>. They cooperate when the prompt tells them to and how — take the instruction away
-      and they'd sooner <b>die alone</b> than work out that pooling saves them. And they don't do the other half
-      of social reasoning either: they <b>never stop trusting a partner that lies</b> to them every round, even
-      with the truth handed to them each time.</p>
-    <p>The one-line version: <b>cooperation between these LLM agents has to be instructed, its absence is fatal,
-      and they don't learn to distrust a proven liar.</b></p>
-    <p class="sub">The caution for anyone building multi-agent AI: don't assume agents will discover cooperation,
-      or police each other, on their own. Neither showed up here unless it was designed in — so build both, and
-      verify them.</p>
-  </div>
-</section>
-
-<section class="sec">
-  <p class="sec-eyebrow">See for yourself</p>
-  <h2 class="sec-h">Explore the runs</h2>
-  <div class="prose"><p>Every run is Qwen-3-32B against itself — a single match at one point on the dial. Open
-    one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two sides
-    of the switch:</p></div>
-  <div class="feat">
-    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0 · coin flip</div>
-      <h4>No wall — cooperation is optional</h4>
-      <p>Either agent can hit the target alone, so cooperating is a coin flip — about half the runs they barely
-        talk (like this one), half they pool anyway. Everyone survives regardless.</p></a>
-    <a class="fcard hard" href="/game/sample-sweep-off050"><div class="ft">offset σ = 50 · the norm</div>
-      <h4>A wall appears — cooperation kicks in</h4>
-      <p>Now going solo is penalized. Within the first game or two the agents start messaging and pooling
-        readings — the same model, one notch of the dial later.</p></a>
-  </div>
-  <div class="explore-links">
-    <a class="cta" href="/compare">⇄ Compare every run side by side →</a>
-    <a class="cta" href="/gradient">📈 The full dose–response →</a>
-    <a class="cta" href="/economics">💰 The cost–utility explorer →</a>
-    <a class="cta" href="/gpt54">🧪 GPT-5.4 replication runs (live) →</a>
-  </div>
-</section>
+<a class="bl-link" href="/baseline">
+  <div><b>The Qwen3-32B baseline study, in full →</b>
+    <div class="sub2">Where this started: cooperation is instructed not discovered, honest but blind to a
+      liar — the offset dial, the two controls, and the dose–response charts.</div></div>
+  <span class="cta">Read the baseline →</span>
+</a>
 
 <div class="gallery-head">
   <h2>All runs</h2>
@@ -1341,6 +1249,169 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 {% endif %}
+""")
+
+# ---- BASELINE (/baseline) — the completed Qwen3-32B study, moved off the home ----
+BASELINE = _SHELL.replace("{{ inner|safe }}", _NAV + """
+<style>{{ chart_css|safe }}{{ study_css|safe }}</style>
+
+<header class="hero">
+  <p class="eyebrow">Agora · the baseline study</p>
+  <h1 class="lead">Two AI agents cooperate — only because we told them to.</h1>
+  <p class="dek">The completed <em>Qwen3-32B</em> study that set up the current GPT-5.4 run. Two identical
+    agents must pool their work to survive, and we dialed up how badly they need each other. They cooperate
+    — but <em>only because the prompt tells them to, and how</em>. Strip that away and the cooperation
+    <em>vanishes</em>: they'd sooner die alone than work out that pooling saves them. And sat across from a
+    partner that lied every single round, they <em>never learned to stop trusting it</em>.</p>
+</header>
+
+<section class="sec">
+  <p class="sec-eyebrow">Why we did this</p>
+  <h2 class="sec-h">Multi-agent AI is coming. Does it actually collaborate?</h2>
+  <div class="prose">
+    <p>Agents that negotiate, delegate, and split work are arriving fast — but a basic question is unanswered:
+      when they can help each other, do language-model agents share <b>fairly</b>, or does one carry the other
+      while it takes? We built a small, controlled world where cooperation is <b>measurable</b> and deception
+      is <b>verifiable</b>, and watched two copies of the same model play it out.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What we built · Agora</p>
+  <h2 class="sec-h">Two agents, one hidden number, tight budgets</h2>
+  <div class="prose">
+    <p>Each round a hidden number is drawn. Two identical <b>Qwen-3-32B</b> agents each try to estimate it.
+      An agent can <b>measure</b> (a noisy reading that costs credits), <b>message</b> the other, <b>trade</b>
+      readings, or <b>give</b> credits. Scoring is non-competitive — you're judged only on your <b>own</b>
+      accuracy — but a survival cost bleeds you each round, so a bad estimate eventually means
+      <b>elimination</b>. The referee knows the true value, so we can see exactly who shared, who lied, and
+      who survived.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">How we tested it</p>
+  <h2 class="sec-h">Make cooperation necessary — then dial exactly how much.</h2>
+  <div class="steps">
+    <div class="step"><div class="step-n">1</div><div>
+      <h4>Two things we can measure directly</h4>
+      <p>When agents <i>can</i> help each other, do they <b>cooperate at all</b> — share readings, talk — or
+        just ignore each other? And when they do, is the give-and-take <b>mutual</b> or <b>one-sided</b> (one
+        gives, the other only takes)? A referee that knows the true value lets us score both. Then we vary how
+        badly they need each other and watch what moves.</p></div></div>
+    <div class="step"><div class="step-n">2</div><div>
+      <h4>One dial: how badly they need each other</h4>
+      <p>Each agent's instrument gets a hidden <b>offset</b> it can't remove — measuring again just repeats
+        it. Only <b>averaging both agents' readings</b> cancels it and recovers the truth. We turn that offset
+        from <b>0</b> (solo is fine) up to <b>500</b> (solo is hopeless):</p>
+      <div class="mechanic">
+        <div class="mech-truth">Hidden truth <b>θ = 480</b></div>
+        <div class="mech-row"><span class="tg a">You read</span><span class="num">720</span>your instrument runs high</div>
+        <div class="mech-row"><span class="tg b">Partner reads</span><span class="num">240</span>theirs runs low</div>
+        <div class="mech-row avg"><span class="tg ok">Average</span><span class="num">480</span>the offsets cancel — the truth, recovered together</div>
+      </div></div></div>
+    <div class="step"><div class="step-n">3</div><div>
+      <h4>~140 matches across the dial — then two controls</h4>
+      <p>We run the same game at <b>ten settings</b> of that offset — plus <b>four finer steps</b> between 0 and
+        50 to pin down exactly where cooperation turns on — <b>ten seeds</b> each, ~140 Qwen-vs-Qwen matches in
+        all. Each match is <b>10 games × 5 rounds</b> in one growing conversation, so the agents keep the
+        <b>full context</b> of everything before. Then <b>two controls</b> to ask whether the behaviour is real
+        or prompted: the whole sweep <b>rerun with neutral wording and the how-to hint removed</b>, and a
+        separate <b>probe</b> pitting one agent against a bot whose honesty we control.</p></div></div>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What we found</p>
+  <h2 class="sec-h">They cooperate only when told — and can't spot a liar.</h2>
+  <div class="prose">
+    <p>We dialed the wall from <b>0</b> (solo is fine) to <b>500</b> (solo is hopeless), <b>ten seeds</b> at each
+      setting. In the charts below the <b>solid line</b> is the original run; each <b>dashed line</b> is the
+      <i>same game</i> with the prompt's help taken away — and, on survival, two scripted strategy ceilings in
+      the identical game: the best possible all-cooperate pair and the best possible all-solo pair. Error bars
+      are 95% CIs; the whole story is the gap between the lines. <b>Survival is on top because it is the robust result</b> — tight intervals, a clean trend.
+      Cooperation (below it) points the same way but is noisier, so read its <i>shape</i>, not any single point.</p>
+  </div>
+  <div class="conditions">
+    <div class="cond prompted">
+      <div class="ct"><span class="sw"></span>Prompted run</div>
+      <p>Cooperative framing — <b>"you and your partner are a team"</b> — plus the hint:
+        <b>"average your two readings to cancel the error."</b></p>
+    </div>
+    <div class="cond neutral">
+      <div class="ct"><span class="sw"></span>Neutral run · the control</div>
+      <p>No team framing, <b>no hint</b> — the agents must work out pooling themselves. Everything else is
+        identical.</p>
+    </div>
+  </div>
+  <p class="held"><b>Held fixed in both:</b> the task, measurement noise, budget, survival cost, horizon and
+    prior — only the wording changes, and the offset dial runs 0→500 in each. The two faint dashed lines on the
+    survival chart are <b>scripted, non-LLM</b> reference agents in the same game, each the <b>ceiling of its
+    strategy</b>: the best possible always-pooling pair, and the best possible never-sharing solo pair.
+    <b>What we did not do:</b> script the LLMs' choices, change the task, or tell the neutral agents the
+    trick.</p>
+  {% if deconf_charts %}{{ deconf_charts|safe }}{% elif gradient_charts %}{{ gradient_charts|safe }}{% endif %}
+  <div class="prose" style="margin-top:22px">
+    <p><b>Cooperation is instructed, not discovered.</b> With the cooperative prompt, sharing jumps to the norm
+      at the <b>very first notch</b> of the wall and stays there — it looks like two agents realising they can't
+      do it alone. But that's the prompt talking. Strip the "team" framing and the "average your readings" hint
+      (the <b style="color:var(--blue)">blue</b> points), and cooperation has <b>no response to the wall at
+      all</b> — sharing sits near <b>15%</b> whether the wall is off (14% at offset 0) or lethal. And without
+      pooling they <b>die</b>: neutral survival lands exactly on the <b>ceiling for solo play</b>
+      (<b>63%</b> → <b>24%</b> → <b>3%</b> as the wall hardens, n=10 each) — solo played as well as solo can
+      be played, and no better — never near the <b>ceiling for cooperation</b>. The pooling was the
+      instruction, not the agents working out that they need each other.</p>
+    <p><b>Honest — but blind to a liar.</b> They barely cheat: with the referee checking every sold value
+      against what the seller actually knew, just <b>1 value in 1,360</b> genuinely contradicted what the seller
+      knew — faced with an unverifiable channel they route around it (<b>~85%</b> of matches settle zero trades)
+      rather than exploit it. But the other half of social reasoning fails. Against a bot that <b>fabricates ~9
+      of every 10</b> readings it sells, truth revealed each round, Qwen <b>never stops buying</b>: matched over
+      the first six games (5 seeds), it accepts the liar <b>99%</b> of the time versus an honest partner's
+      <b>57%</b>, flat across all ten of the liar's games. In one match the true value was <b>205</b> and the
+      liar sold a fabricated <b>905</b> — <b>4× too high</b> — and Qwen paid a credit and bought it.</p>
+  </div>
+  <p class="note">Full per-offset breakdown — cooperation, survival, reciprocity, fabrication, and the scripted
+    baselines — on the <a class="cta" href="/gradient" style="font-size:inherit">gradient page</a>.
+    {% if not deconf_charts and not gradient_charts %}<br>The sweep is running — the charts appear here as runs finish.{% endif %}</p>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">What it means</p>
+  <div class="meaning">
+    <p>Put together, it's one picture: the social behaviour this game rewards is <b>not something these agents
+      bring on their own</b>. They cooperate when the prompt tells them to and how — take the instruction away
+      and they'd sooner <b>die alone</b> than work out that pooling saves them. And they don't do the other half
+      of social reasoning either: they <b>never stop trusting a partner that lies</b> to them every round, even
+      with the truth handed to them each time.</p>
+    <p>The one-line version: <b>cooperation between these LLM agents has to be instructed, its absence is fatal,
+      and they don't learn to distrust a proven liar.</b></p>
+    <p class="sub">This is the baseline the current GPT-5.4 run builds on — same game, but now the market is the
+      only channel for a value, and every trade must cost. <a class="cta" href="/">See the GPT-5.4 study →</a></p>
+  </div>
+</section>
+
+<section class="sec">
+  <p class="sec-eyebrow">See for yourself</p>
+  <h2 class="sec-h">Explore the baseline runs</h2>
+  <div class="prose"><p>Every run is Qwen-3-32B against itself — a single match at one point on the dial. Open
+    one to watch each agent reason, measure, message, and trade tick by tick, then who survived. The two sides
+    of the switch:</p></div>
+  <div class="feat">
+    <a class="fcard soft" href="/game/sample-sweep-off000"><div class="ft">offset σ = 0 · coin flip</div>
+      <h4>No wall — cooperation is optional</h4>
+      <p>Either agent can hit the target alone, so cooperating is a coin flip — about half the runs they barely
+        talk (like this one), half they pool anyway. Everyone survives regardless.</p></a>
+    <a class="fcard hard" href="/game/sample-sweep-off050"><div class="ft">offset σ = 50 · the norm</div>
+      <h4>A wall appears — cooperation kicks in</h4>
+      <p>Now going solo is penalized. Within the first game or two the agents start messaging and pooling
+        readings — the same model, one notch of the dial later.</p></a>
+  </div>
+  <div class="toolbar" style="margin-top:16px">
+    <a href="/gradient">The full dose–response<span>every offset, all four metrics</span></a>
+    <a href="/compare">Compare runs<span>side by side across the dial</span></a>
+    <a href="/economics">Cost–utility explorer<span>the price tradeoff</span></a>
+  </div>
+</section>
 """)
 
 WAIT = _SHELL.replace("{{ inner|safe }}", """
