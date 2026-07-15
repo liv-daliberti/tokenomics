@@ -64,7 +64,10 @@ def _match_points(dirs):
                 ev = load_events(path)
             except (OSError, ValueError, KeyError):
                 continue
-            if not any(e.get("event") == "match_end" for e in ev):
+            # mean error is per-round, so a truncated match (e.g. a chatty Qwen
+            # honest run that overflows context mid-way) is still usable — accept
+            # any transcript with at least a few scored rounds.
+            if sum(e.get("event") == "round_end" for e in ev) < 3:
                 continue
             ms = next((e for e in ev if e.get("event") == "match_start"), None)
             cfg = (ms or {}).get("config", {})
