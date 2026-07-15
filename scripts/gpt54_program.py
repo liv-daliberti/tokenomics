@@ -46,7 +46,8 @@ STUB_URL = "http://127.0.0.1:8111/v1"
 PROTOCOL_VARS = ["MODEL", "BASE_URL", "PROVIDER", "PRESET", "GAMES", "ROUNDS",
                  "MAXTICKS", "SEED", "OUT", "BIAS_SIGMA", "PRIOR_SIGMA", "TAU",
                  "SURVIVAL_COST", "FRAMING", "STRATEGY_HINT", "MEMORY",
-                 "POLICIES", "VALUES_VIA_TRADE_ONLY", "REQUIRE_PAID_TRADES"]
+                 "POLICIES", "VALUES_VIA_TRADE_ONLY", "REQUIRE_PAID_TRADES",
+                 "MIN_TRADE_PRICE", "STARTING_CREDITS"]
 
 # The exact grids of the Qwen study (from runs/qwen + the SLURM scripts).
 GRAD_OFFSETS = [0, 10, 20, 30, 40, 50, 100, 150, 200, 250, 300, 350, 400, 500]
@@ -55,6 +56,15 @@ MEM_OFFSETS = [0, 100, 300]          # no wall / soft wall / hard wall
 GAME_SHAPE = {"PRESET": "cooperative", "GAMES": "10", "ROUNDS": "5", "MAXTICKS": "4"}
 TRUST_SEEDS = 2                      # pilot size for the knowing-doing-gap probe
 TRUST_GAMES = 5                      # games per match (does trust build across games?)
+# The price-sweep probe: hard wall (offset 200, where an HONEST reading is
+# worth ~6 credits by the cost-utility model), a comfortable budget so refusal
+# is a choice not an affordability limit, and a min-trade-price dial swept
+# across / past that value. Does the buy-rate on the liar's fake (worth ~0)
+# fall as it gets pricier, and does the model keep buying the honest reading up
+# to its value and no further?
+PRICE_OFFSET = 200
+PRICE_LEVELS = [0.5, 2, 8, 32]       # credits; measure_cost=1, honest value ~6
+PRICE_START_CREDITS = 60             # budget so even the top price is affordable
 
 USAGE_RE = re.compile(r"\[qwen_match\] USAGE (\{.*\})")
 
@@ -101,6 +111,21 @@ def build_matrix(stage: str, seeds: int, mem_seeds: int,
                     runs.append((f"trust_{bot}_{lvl}_b{off}_s{s}",
                                  {"PRESET": "probe_trust", "GAMES": str(TRUST_GAMES),
                                   "POLICIES": f"llm,{bot}", "BIAS_SIGMA": str(off),
+                                  "SEED": str(s)}))
+    if stage == "price":
+        # As the lie gets more expensive: sweep the min-trade-price floor at the
+        # hard wall vs the liar (does the buy-rate on a worthless fake fall as it
+        # costs more?) and the honest partner (does it keep buying real info up
+        # to its ~6-credit value and stop above?).
+        for bot in ("liar", "honest_cooperator"):
+            for price in PRICE_LEVELS:
+                for s in range(TRUST_SEEDS):
+                    tag = ("p" + str(price).replace(".", "_"))
+                    runs.append((f"price_{bot}_{tag}_s{s}",
+                                 {"PRESET": "probe_trust", "GAMES": str(TRUST_GAMES),
+                                  "POLICIES": f"llm,{bot}", "BIAS_SIGMA": str(PRICE_OFFSET),
+                                  "MIN_TRADE_PRICE": str(price),
+                                  "STARTING_CREDITS": str(PRICE_START_CREDITS),
                                   "SEED": str(s)}))
     if stage in ("mem", "all"):
         # The context-vs-markdown ablation, on the PROMPTED condition (where
@@ -273,7 +298,8 @@ def main(argv=None) -> None:
     """Parse args, guard the key, and run the requested stage of the program."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage", required=True,
-                    choices=["pilot", "grad", "deconf", "probe", "mem", "trust", "all"])
+                    choices=["pilot", "grad", "deconf", "probe", "mem", "trust",
+                             "price", "all"])
     ap.add_argument("--runs-dir", default=os.path.join(REPO, "runs", "gpt54"))
     ap.add_argument("--model", default="gpt-5.4")
     ap.add_argument("--base-url", default=AZURE_URL)

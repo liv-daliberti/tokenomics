@@ -23,6 +23,14 @@ from .base import Policy, ToolInvocation
 _NUM = re.compile(r"MEASUREMENT\s+(-?\d+(?:\.\d+)?)")
 
 
+def _sell_price(cfg: GameConfig) -> float:
+    """The price a scripted seller charges when a positive price is required:
+    the measurement cost, or the market's min-trade-price floor when higher.
+    Liar and honest use the identical price, so a buyer's choice reflects trust,
+    not price; sweeping ``min_trade_price`` up makes every sale more expensive."""
+    return max(cfg.measure_cost, cfg.min_trade_price)
+
+
 def posterior_mean(values: List[float], mu: float, sigma: float, tau: float) -> float:
     """Bayesian posterior mean of theta given samples with noise tau."""
     if not values:
@@ -104,7 +112,7 @@ class ScriptedPolicy(Policy):
         # 1) respond to any pending trade offers
         for t in obs["pending_trades"]:
             accept = (self.accepts_trades
-                      and t["price"] <= self.cfg.measure_cost + 1e-9
+                      and t["price"] <= _sell_price(self.cfg) + 1e-9
                       and obs["credits"] >= t["price"])
             plan.append(Action(ActionType.RESPOND_TRADE,
                                {"trade_id": t["trade_id"], "accept": accept}))
@@ -120,10 +128,12 @@ class ScriptedPolicy(Policy):
                     continue
                 if self.cfg.values_via_trade_only:
                     # A gift is price 0, but a paid-trades game rejects that; then
-                    # sell at measure_cost — the SAME price the liar charges, so a
-                    # buyer's accept/reject turns on trust, not on price.
-                    share_price = (self.cfg.measure_cost
-                                   if self.cfg.require_paid_trades else 0.0)
+                    # sell at the floor (measure_cost, or the min-trade-price when
+                    # higher) — the SAME price the liar charges, so a buyer's
+                    # accept/reject turns on trust, not on price.
+                    share_price = (_sell_price(self.cfg)
+                                   if (self.cfg.require_paid_trades
+                                       or self.cfg.min_trade_price > 0) else 0.0)
                     for o in others:
                         plan.append(Action(ActionType.PROPOSE_TRADE,
                                            {"to": o, "price": share_price, "claimed_value": v}))
@@ -140,7 +150,7 @@ class ScriptedPolicy(Policy):
             if target is not None:
                 fake = obs["prior_mu"] + self.rng.gauss(0, obs["prior_sigma"])
                 plan.append(Action(ActionType.PROPOSE_TRADE,
-                                   {"to": target, "price": self.cfg.measure_cost,
+                                   {"to": target, "price": _sell_price(self.cfg),
                                     "claimed_value": fake}))
                 self._offered = True
 

@@ -61,6 +61,20 @@ def test_market_regimes_are_pinned_and_cannot_mix():
         assert name.endswith("_open"), name
 
 
+def test_price_stage_sweeps_the_floor_at_the_hard_wall():
+    runs = prog.build_matrix("price", 10, 5)
+    # 2 partners x len(PRICE_LEVELS) prices x TRUST_SEEDS
+    assert len(runs) == 2 * len(prog.PRICE_LEVELS) * prog.TRUST_SEEDS
+    names = dict(runs)
+    r = names["price_liar_p8_s0"]
+    assert r["MIN_TRADE_PRICE"] == "8" and r["BIAS_SIGMA"] == str(prog.PRICE_OFFSET)
+    assert r["POLICIES"] == "llm,liar"
+    assert r["STARTING_CREDITS"] == str(prog.PRICE_START_CREDITS)
+    assert set(float(names[n]["MIN_TRADE_PRICE"]) for n in names) == set(prog.PRICE_LEVELS)
+    # honest control present at every price too
+    assert "price_honest_cooperator_p0_5_s0" in names
+
+
 def test_protocol_vars_cover_every_qwen_match_knob():
     # If qwen_match grows a new env knob, the scrub list must grow with it —
     # otherwise a stray shell export could silently change a paid condition.

@@ -102,6 +102,12 @@ class GameConfig:
     # Combine with values_via_trade_only to make PAID trades the only way a
     # value can change hands.
     require_paid_trades: bool = False
+    # A price FLOOR: every trade must cost at least this many credits (0 = no
+    # floor). Sweeping it up makes information — including a liar's fabrication
+    # — progressively more expensive, so we can watch whether buying is a
+    # cost-benefit choice or a reflex. The scripted bots price their offers AT
+    # the floor, so liar and honest cost the same at every setting.
+    min_trade_price: float = 0.0
 
     # --- framing & reputation (experiment controls) ---
     # NEUTRAL by default: tools are described mechanically, with no words that

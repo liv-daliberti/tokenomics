@@ -163,6 +163,26 @@ def test_require_paid_trades_rejects_free_offers_only():
     assert m0.propose_trade("A", "B", 0.0, 42.0, 0).price == 0.0  # rule off
 
 
+def test_min_trade_price_floor():
+    # A price floor rejects anything below it (the price-sweep knob); at/above ok.
+    states = {a: AgentState(a, 100.0, tau=100.0, messages_left=10) for a in "AB"}
+    seq = {"n": 0}
+
+    def counter():
+        seq["n"] += 1
+        return f"T{seq['n']}"
+
+    m = Market(states, counter, min_price=8.0)
+    for bad in (0.0, 4.0, 7.99):
+        try:
+            m.propose_trade("A", "B", bad, 42.0, 0)
+            assert False, f"price {bad} below the 8-credit floor should raise"
+        except MarketError as exc:
+            assert "at least 8" in str(exc)
+    assert m.propose_trade("A", "B", 8.0, 42.0, 0).price == 8.0
+    assert m.propose_trade("A", "B", 20.0, 42.0, 1).price == 20.0
+
+
 def test_redaction_masks_digits_and_number_words():
     from agora.referee import _redact_numbers
     out = _redact_numbers("my reading is 480.5, i.e. four hundred eighty and a half")

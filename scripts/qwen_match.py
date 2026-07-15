@@ -45,7 +45,9 @@ if os.environ.get("MAXTICKS"):
     _overrides["max_ticks"] = int(os.environ["MAXTICKS"])
 # numeric overrides for sweeps (e.g. an interdependence gradient over bias_sigma)
 for _env, _field in (("BIAS_SIGMA", "bias_sigma"), ("PRIOR_SIGMA", "prior_sigma"),
-                     ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost")):
+                     ("TAU", "tau"), ("SURVIVAL_COST", "survival_cost"),
+                     ("MIN_TRADE_PRICE", "min_trade_price"),
+                     ("STARTING_CREDITS", "starting_credits")):
     if os.environ.get(_env):
         _overrides[_field] = float(os.environ[_env])
 # VALUES_VIA_TRADE_ONLY=1: censor numbers (digits AND number words) from chat.
