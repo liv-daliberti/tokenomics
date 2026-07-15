@@ -47,6 +47,69 @@ def rational_error(offset, price):
     return _ERR_POOL if gain > price else _err_solo(offset)
 
 
+# --- the empirical "optimal strategy" reference, per (partner, offset) --------
+# Best scripted response, run in the LLM's seat vs the same partner under the
+# same paid-market economics: IGNORE a liar (solo), COOPERATE with an honest or
+# mixed partner if it helps (min of solo / always-pool). Cached to disk since it
+# is deterministic and the same for every match.
+_OPT_CACHE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "runs", "optimal_ref.json")
+
+
+def optimal_errors(offsets=(0, 200), seeds=3):
+    """{(partner, offset): optimal mean error}. Computed once, then cached."""
+    import json
+    if os.path.exists(_OPT_CACHE):
+        try:
+            raw = json.load(open(_OPT_CACHE))
+            out = {}
+            for k, v in raw.items():             # key "partner|offset" -> int offset
+                p, o = k.rsplit("|", 1)
+                out[(p, int(o))] = v
+            return out
+        except (OSError, ValueError):
+            pass
+    from agora.config import PRESETS
+    from agora.referee import run_match
+    from agora.run import build_policies
+    base = PRESETS["probe_trust"].with_(require_paid_trades=True, min_trade_price=1.0,
+                                        starting_credits=60.0)
+
+    def _err(spec, off, seed):
+        cfg = base.with_(bias_sigma=float(off), seed=seed)
+        r = run_match(cfg, build_policies(cfg, spec, "x", "x"), 4)
+        es = [e["result"]["errors"]["A"] for e in r.transcript.events
+              if e["event"] == "round_end"]
+        es = [x for x in es if x == x]
+        return sum(es) / len(es) if es else float("nan")
+
+    def _mean(spec, off):
+        return sum(_err(spec, off, s) for s in range(seeds)) / seeds
+
+    out = {}
+    for partner in ("liar", "honest_cooperator", "mixed_liar"):
+        for off in offsets:
+            solo = _mean(f"bayesian_solo,{partner}", off)
+            # ignoring is the principled response to a liar; cooperating can only
+            # help against a partner that shares real readings
+            out[(partner, off)] = solo if partner == "liar" \
+                else min(solo, _mean(f"honest_cooperator,{partner}", off))
+    try:
+        json.dump({f"{p}|{o}": v for (p, o), v in out.items()}, open(_OPT_CACHE, "w"))
+    except OSError:
+        pass
+    return out
+
+
+def pct_above_optimal(err, partner, offset, opt):
+    """How far the LLM's error is ABOVE the optimal strategy's, in percent
+    (0 = optimal play). Clamped at 0 (noise can nudge an LLM just under)."""
+    o = opt.get((partner, int(offset)))
+    if not o or o <= 0:
+        return None
+    return max(0.0, 100.0 * (err / o - 1.0))
+
+
 # --- empirical points --------------------------------------------------------
 PARTNERS = [("liar", "always lies"), ("mixed_liar", "mixed"),
             ("honest_cooperator", "never lies")]

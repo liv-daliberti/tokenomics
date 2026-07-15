@@ -33,9 +33,21 @@ MODELS = [("gpt54", "GPT-5.4", "#1f77b4", "o", "-"),
 DIFFS = [(0, "easy (offset 0)"), (200, "hard wall (offset 200)")]
 
 
+YLABEL = "% above the optimal strategy"
+
+
 def _points():
-    return _ce._match_points([("gpt54", os.path.join(REPO, "runs", "gpt54")),
-                              ("qwen", os.path.join(REPO, "runs", "qwen"))])
+    """Grid matches with error re-expressed as % above the optimal strategy for
+    that (partner, offset). Points where no optimal reference exists are dropped."""
+    raw = _ce._match_points([("gpt54", os.path.join(REPO, "runs", "gpt54")),
+                             ("qwen", os.path.join(REPO, "runs", "qwen"))])
+    opt = _ce.optimal_errors()
+    out = []
+    for partner, off, price, model, err in raw:
+        pct = _ce.pct_above_optimal(err, partner, off, opt)
+        if pct is not None:
+            out.append((partner, off, price, model, pct))
+    return out
 
 
 def _agg(pts):
@@ -57,20 +69,22 @@ def view_lines(pts):
         for mk, name, color, marker, ls in MODELS:
             ys = [mean.get((p, mk, off)) for p, _ in HONESTY]
             xx = [x for x, y in zip(xs, ys) if y is not None]
-            yy = [y for y in ys if y is not None]
+            yy = [max(y, 1) for y in ys if y is not None]   # floor 1% for log axis
             if yy:
                 ax.plot(xx, yy, ls, marker=marker, ms=8, lw=2, color=color, label=name)
+        ax.axhline(1, color="#9aa4b2", lw=1, ls=":")     # optimal play
+        ax.set_yscale("log")
         ax.set_xticks(xs)
         ax.set_xticklabels([lbl for _, lbl in HONESTY])
         ax.set_title(title, fontsize=10)
-        ax.grid(True, axis="y", color="#eee", lw=0.7)
+        ax.grid(True, axis="y", color="#eee", lw=0.7, which="both")
         ax.set_axisbelow(True)
         for s in ("top", "right"):
             ax.spines[s].set_visible(False)
-    axes[0].set_ylabel("LLM mean estimation error")
+    axes[0].set_ylabel(YLABEL + "  (0 = optimal)")
     axes[0].legend(frameon=False, fontsize=9, loc="upper left")
-    fig.suptitle("The more a partner lies, the worse each model does — "
-                 "much more for Qwen", fontsize=11, y=1.02)
+    fig.suptitle("How far each model is from optimal play — near-optimal vs a "
+                 "liar, but Qwen is far off", fontsize=11, y=1.02)
     fig.tight_layout()
     _save(fig, "err_lines")
 
@@ -97,11 +111,11 @@ def view_heatmap(pts):
     for i in range(len(rows)):
         for j in range(len(HONESTY)):
             if np.isfinite(M[i, j]):
-                ax.text(j, i, f"{M[i, j]:.0f}", ha="center", va="center",
+                ax.text(j, i, f"{M[i, j]:.0f}%", ha="center", va="center",
                         color="black" if M[i, j] < np.nanmax(M) * 0.6 else "white",
                         fontsize=10, fontweight="bold")
-    ax.set_title("Estimation error: darker = more wrong", fontsize=10)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="mean error")
+    ax.set_title("% above optimal play: darker = further from optimal", fontsize=10)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label=YLABEL)
     fig.tight_layout()
     _save(fig, "err_heatmap")
 
@@ -124,19 +138,21 @@ def view_scatter(pts):
                 if not by_price:
                     continue
                 xs = sorted(by_price)
-                ys = [sum(by_price[x]) / len(by_price[x]) for x in xs]
+                ys = [max(sum(by_price[x]) / len(by_price[x]), 1) for x in xs]
                 shade = color if off else _lighten(color)
                 ax.plot(xs, ys, ls, marker=marker, ms=7, lw=1.6, color=shade)
+        ax.axhline(1, color="#9aa4b2", lw=1, ls=":")
+        ax.set_yscale("log")
         ax.set_xscale("log", base=2)
         ax.set_xticks(prices)
         ax.set_xticklabels([f"{p:g}" for p in prices])
         ax.set_title(f"partner: {label}", fontsize=10)
         ax.set_xlabel("price of information")
-        ax.grid(True, axis="y", color="#eee", lw=0.7)
+        ax.grid(True, axis="y", color="#eee", lw=0.7, which="both")
         ax.set_axisbelow(True)
         for s in ("top", "right"):
             ax.spines[s].set_visible(False)
-    axes[0].set_ylabel("LLM mean estimation error")
+    axes[0].set_ylabel(YLABEL + "  (0 = optimal)")
     from matplotlib.lines import Line2D
     h = [Line2D([], [], color=c, marker=m, ls=l, label=n) for _, n, c, m, l in MODELS]
     h += [Line2D([], [], color="#888", marker="s", ls="", label="dark=hard, light=easy")]
