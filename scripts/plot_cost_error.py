@@ -76,6 +76,7 @@ def optimal_errors(offsets=(0, 200), seeds=3):
                                         starting_credits=60.0)
 
     def _err(spec, off, seed):
+        """Mean per-round error of seat A for one scripted match."""
         cfg = base.with_(bias_sigma=float(off), seed=seed)
         r = run_match(cfg, build_policies(cfg, spec, "x", "x"), 4)
         es = [e["result"]["errors"]["A"] for e in r.transcript.events
@@ -84,6 +85,7 @@ def optimal_errors(offsets=(0, 200), seeds=3):
         return sum(es) / len(es) if es else float("nan")
 
     def _mean(spec, off):
+        """Mean of _err over the reference seeds."""
         return sum(_err(spec, off, s) for s in range(seeds)) / seeds
 
     out = {}

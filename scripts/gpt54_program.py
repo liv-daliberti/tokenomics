@@ -47,7 +47,8 @@ PROTOCOL_VARS = ["MODEL", "BASE_URL", "PROVIDER", "PRESET", "GAMES", "ROUNDS",
                  "MAXTICKS", "SEED", "OUT", "BIAS_SIGMA", "PRIOR_SIGMA", "TAU",
                  "SURVIVAL_COST", "FRAMING", "STRATEGY_HINT", "MEMORY",
                  "POLICIES", "VALUES_VIA_TRADE_ONLY", "REQUIRE_PAID_TRADES",
-                 "MIN_TRADE_PRICE", "STARTING_CREDITS"]
+                 "MIN_TRADE_PRICE", "STARTING_CREDITS", "ELICIT_PFAB",
+                 "SHOW_SELLER_HISTORY", "SHOW_JUDGE_FLAG"]
 
 # The exact grids of the Qwen study (from runs/qwen + the SLURM scripts).
 GRAD_OFFSETS = [0, 10, 20, 30, 40, 50, 100, 150, 200, 250, 300, 350, 400, 500]
@@ -72,6 +73,17 @@ GRID_OFFSETS = [0, 200]              # easy / hard
 GRID_PRICES = [1, 8, 32]            # cheap / medium / expensive
 GRID_PARTNERS = ["liar", "honest_cooperator", "mixed_liar"]
 GRID_SEEDS = 2
+# The gap ladder: escalating scaffolds on the trust probe, ONE per rung —
+# does anything make the model ACT on the fabrication it can detect?
+# R0 baseline = the existing trust_* runs (never re-emitted here);
+# mem = cross-game markdown notebook; elicit = respond_trade requires a stated
+# p_fabricated at the decision point; hist = seller track record rendered next
+# to each offer (evidence, no verdict); flag = a live SELF-judge's
+# p(fabricated) injected next to the offer (the verdict handed over).
+LADDER_RUNGS = [("mem", {"MEMORY": "markdown"}),
+                ("elicit", {"ELICIT_PFAB": "1"}),
+                ("hist", {"SHOW_SELLER_HISTORY": "1"}),
+                ("flag", {"SHOW_JUDGE_FLAG": "1"})]
 
 USAGE_RE = re.compile(r"\[qwen_match\] USAGE (\{.*\})")
 
@@ -119,6 +131,21 @@ def build_matrix(stage: str, seeds: int, mem_seeds: int,
                                  {"PRESET": "probe_trust", "GAMES": str(TRUST_GAMES),
                                   "POLICIES": f"llm,{bot}", "BIAS_SIGMA": str(off),
                                   "SEED": str(s)}))
+    if stage == "ladder":
+        # The gap ladder (see LADDER_RUNGS): the trust grid re-run with exactly
+        # one scaffold per rung. Both partners at both difficulties per rung —
+        # the honest arm is the control that separates real discrimination
+        # from blanket distrust.
+        for rung, knob in LADDER_RUNGS:
+            for bot in ("liar", "honest_cooperator"):
+                for off, lvl in ((0, "easy"), (200, "hard")):
+                    for s in range(TRUST_SEEDS):
+                        runs.append((f"ladder_{rung}_{bot}_{lvl}_b{off}_s{s}",
+                                     {"PRESET": "probe_trust",
+                                      "GAMES": str(TRUST_GAMES),
+                                      "POLICIES": f"llm,{bot}",
+                                      "BIAS_SIGMA": str(off),
+                                      "SEED": str(s), **knob}))
     if stage == "price":
         # As the lie gets more expensive: sweep the min-trade-price floor at the
         # hard wall vs the liar (does the buy-rate on a worthless fake fall as it
@@ -319,7 +346,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stage", required=True,
                     choices=["pilot", "grad", "deconf", "probe", "mem", "trust",
-                             "price", "grid", "all"])
+                             "price", "grid", "ladder", "all"])
     ap.add_argument("--runs-dir", default=os.path.join(REPO, "runs", "gpt54"))
     ap.add_argument("--model", default="gpt-5.4")
     ap.add_argument("--base-url", default=AZURE_URL)

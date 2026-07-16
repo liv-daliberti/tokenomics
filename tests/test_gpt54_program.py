@@ -88,6 +88,30 @@ def test_grid_stage_covers_difficulty_price_partner():
     assert {names[n]["BIAS_SIGMA"] for n in names} == {str(o) for o in prog.GRID_OFFSETS}
 
 
+def test_ladder_stage_matrix():
+    runs = prog.build_matrix("ladder", 10, 5)
+    # 4 rungs x 2 bots x 2 difficulties x TRUST_SEEDS
+    assert len(runs) == len(prog.LADDER_RUNGS) * 2 * 2 * prog.TRUST_SEEDS
+    names = dict(runs)
+    r = names["ladder_flag_liar_hard_b200_s1"]
+    assert r["SHOW_JUDGE_FLAG"] == "1" and r["POLICIES"] == "llm,liar"
+    assert r["BIAS_SIGMA"] == "200" and r["GAMES"] == str(prog.TRUST_GAMES)
+    # paid market pinned, like the R0 trust runs these compare against
+    assert r["VALUES_VIA_TRADE_ONLY"] == "1" and r["REQUIRE_PAID_TRADES"] == "1"
+    # each rung sets exactly ITS one scaffold knob and no other
+    knob_of = dict(prog.LADDER_RUNGS)
+    scaffolds = {"MEMORY", "ELICIT_PFAB", "SHOW_SELLER_HISTORY", "SHOW_JUDGE_FLAG"}
+    for name, ov in runs:
+        rung = name.split("_")[1]
+        assert set(ov) & scaffolds == set(knob_of[rung]), name
+    # R0 is the existing trust_* files: never re-emitted, and ladder runs are
+    # never part of "all" (the Qwen-mirror program)
+    assert not any(n.startswith("trust_") for n, _ in runs)
+    assert not any(n.startswith("ladder_") for n, _ in prog.build_matrix("all", 10, 5))
+    # every scaffold env var is scrubbed from the child environment between runs
+    assert scaffolds <= set(prog.PROTOCOL_VARS)
+
+
 def test_mixed_liar_is_registered_and_partial():
     from agora.policies import REGISTRY
     assert "mixed_liar" in REGISTRY

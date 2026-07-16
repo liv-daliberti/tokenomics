@@ -162,11 +162,13 @@ def view_scatter(pts):
 
 
 def _lighten(hexc, f=0.5):
+    """Blend a #rrggbb colour toward white by fraction ``f``."""
     r, g, b = (int(hexc[i:i + 2], 16) for i in (1, 3, 5))
     return "#" + "".join(f"{int(c + (255 - c) * f):02x}" for c in (r, g, b))
 
 
 def _save(fig, name):
+    """Write the figure to paper/fig/<name>.png and .pdf."""
     os.makedirs(FIG, exist_ok=True)
     fig.savefig(os.path.join(FIG, name + ".png"), dpi=150, bbox_inches="tight")
     fig.savefig(os.path.join(FIG, name + ".pdf"), bbox_inches="tight")

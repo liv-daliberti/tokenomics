@@ -34,6 +34,7 @@ def _redact_numbers(text: str) -> str:
 
 from .config import GameConfig
 from .environment import Environment
+from .judge import judge_probability
 from .market import Market, MarketError
 from .observation import build_observation, render_observation
 from .rewards import settle_round
@@ -61,13 +62,17 @@ class MatchResult:
 
 
 def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
-              transcript: Optional[Transcript] = None) -> MatchResult:
+              transcript: Optional[Transcript] = None,
+              judge_backend=None) -> MatchResult:
     """Play ``n_games`` games back-to-back with the SAME policy objects.
 
     The world resets each game (fresh hidden values via a per-game seed, budgets
     restored, agents revived) but the policies persist — so an LLM agent keeps
     its whole conversation and can remember and adapt to earlier games. This is
     the "co-evolving within a context window" setting.
+
+    ``judge_backend`` powers the show_judge_flag scaffold (a live self-judge
+    per pending offer); pass the LLM seat's own backend for a self-judge.
     """
     tx = transcript or Transcript()
     # who is in each seat — the served model name for an LLM seat (so mixed-
@@ -76,13 +81,17 @@ def run_match(cfg: GameConfig, policies: Dict[str, object], n_games: int,
                    or type(p).__name__)
              for aid, p in policies.items()}
     tx.log("match_start", config=cfg, n_games=n_games, seats=seats)
+    # seller track record carried ACROSS games (a match is one relationship):
+    # seller -> [(game, round, claimed_value, revealed_truth_or_None), ...]
+    seller_history: Dict[str, list] = {}
     games: List[GameResult] = []
     for g in range(n_games):
         for pol in policies.values():
             if hasattr(pol, "reset_game"):
                 pol.reset_game(g, n_games)
         ref = Referee(cfg.with_(seed=cfg.seed + g), policies, tx,
-                      game_index=g, n_games=n_games)
+                      game_index=g, n_games=n_games,
+                      seller_history=seller_history, judge_backend=judge_backend)
         games.append(ref.run())
     tx.log("match_end", n_games=n_games)
     return MatchResult(cfg, n_games, games, tx)
@@ -92,12 +101,18 @@ class Referee:
     """The authoritative game loop. Owns the world (RNG, ledger, states, transcript), schedules turns, executes every action, enforces quotas/escrow, and logs everything."""
     def __init__(self, cfg: GameConfig, policies: Dict[str, object],
                  transcript: Optional[Transcript] = None, game_index: int = 0,
-                 n_games: int = 1):
+                 n_games: int = 1, seller_history: Optional[Dict[str, list]] = None,
+                 judge_backend=None):
         """Build fresh agent states (starting credits, per-agent noise) and the market for one game."""
         self.cfg = cfg
         self.policies = policies
         self.game_index = game_index
         self.n_games = n_games
+        # shared across the match's games when run_match passes it in
+        self.seller_history: Dict[str, list] = \
+            seller_history if seller_history is not None else {}
+        self.judge_backend = judge_backend
+        self._judge_cache: Dict[str, Optional[float]] = {}   # trade_id -> prob
         self.env = Environment(cfg)
         self.tx = transcript or Transcript()
         self.states: Dict[str, AgentState] = {
@@ -117,6 +132,29 @@ class Referee:
         """Return a fresh unique trade id (T1, T2, ...)."""
         self._trade_seq += 1
         return f"T{self._trade_seq}"
+
+    def _revealed_history(self, seller: str) -> list:
+        """The seller's track record restricted to rounds whose truth was
+        revealed — the only entries a buyer (or its judge) may see."""
+        return [h for h in self.seller_history.get(seller, [])
+                if isinstance(h[3], (int, float))]
+
+    def _judge_flag(self, trade) -> Optional[float]:
+        """Self-judge p(fabricated) for one pending offer, cached per trade_id
+        so re-rendering across ticks costs one model call, not max_ticks calls
+        (None results are cached too — no retry storm on a failing endpoint)."""
+        if trade.trade_id in self._judge_cache:
+            return self._judge_cache[trade.trade_id]
+        offer = {"seller": trade.seller, "claimed_value": trade.claimed_value,
+                 "price": trade.price,
+                 "seller_history": self._revealed_history(trade.seller)}
+        prob, err = judge_probability(self.judge_backend, offer, self.cfg)
+        self._judge_cache[trade.trade_id] = prob
+        self.tx.log("judge_flag", game_index=self.game_index,
+                    round=self.round_index, trade_id=trade.trade_id,
+                    seller=trade.seller, buyer=trade.buyer, prob=prob,
+                    **({"error": err} if err else {}))
+        return prob
 
     def _alive(self) -> List[str]:
         """The ids of agents still in the game."""
@@ -191,6 +229,14 @@ class Referee:
             )
             rounds.append(rr)
             self.tx.log("round_end", game_index=self.game_index, round=r, result=rr)
+            # record every offer proposed this round (market.trades is cleared
+            # only at the next _reset_round) into the seller track record; the
+            # truth is attached only if the game reveals it, so the record
+            # holds exactly what a suspicious buyer could legitimately know
+            for t in self.market.trades.values():
+                self.seller_history.setdefault(t.seller, []).append(
+                    (self.game_index, r, t.claimed_value,
+                     self.truth if cfg.reveal_truth_after_round else None))
             for a in cfg.agent_ids:
                 if alive_before[a] and not self.states[a].alive:
                     self.tx.log("elimination", game_index=self.game_index, round=r, agent=a)
@@ -279,12 +325,23 @@ class Referee:
                    if t.buyer == aid and t.status == "pending"]
         # Feedback on the previous round is shown once, at the round's first tick.
         last = self._last_result if (tick == 0 and not final) else None
+        policy = self.policies[aid]
+        # gap-ladder scaffolds, attached per pending offer: the seller's track
+        # record (hist) and/or a live self-judge verdict (flag — LLM buyers
+        # only, so a scripted seat never burns a judge call)
+        extra = {}
+        if cfg.show_seller_history and pending:
+            extra["seller_records"] = {t.seller: self._revealed_history(t.seller)
+                                       for t in pending}
+        if (cfg.show_judge_flag and pending and self.judge_backend is not None
+                and getattr(policy, "backend", None) is not None):
+            extra["judge_flags"] = {t.trade_id: self._judge_flag(t)
+                                    for t in pending}
         obs = build_observation(st, cfg, self.round_index, tick, peers, pending,
                                 past_truths, eliminated, final_answer=final,
-                                last_result=last)
+                                last_result=last, **extra)
         st.inbox = []  # surfaced now; each message is shown once
         obs_text = render_observation(obs)
-        policy = self.policies[aid]
         # Fold in any pending game-boundary note (in markdown-memory mode it
         # carries the agent's notebook) BEFORE logging, so the transcript shows
         # exactly the text the model receives.
@@ -395,7 +452,9 @@ class Referee:
             except MarketError as exc:
                 return f"ERROR: {exc}", True, False
             self.tx.log("respond_trade", trade_id=a["trade_id"], responder=aid,
-                        accept=a["accept"], status=trade.status, tick=tick)
+                        accept=a["accept"], status=trade.status, tick=tick,
+                        **({"p_fabricated": a["p_fabricated"]}
+                           if "p_fabricated" in a else {}))
             return f"trade {a['trade_id']} {trade.status}", True, False
 
         if action.type is ActionType.SUBMIT_ESTIMATE:

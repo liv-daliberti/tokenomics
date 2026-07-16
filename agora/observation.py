@@ -25,6 +25,8 @@ def build_observation(
     eliminated: Optional[List[str]] = None,
     final_answer: bool = False,
     last_result: Optional[RoundResult] = None,
+    seller_records: Optional[Dict[str, list]] = None,
+    judge_flags: Optional[Dict[str, Optional[float]]] = None,
 ) -> Dict[str, Any]:
     # NOTE (information isolation): an observation contains ONLY this agent's own
     # measurements, the messages/trades others chose to send it, and the publicly
@@ -52,8 +54,15 @@ def build_observation(
             for m in state.inbox
         ],
         "pending_trades": [
+            # gap-ladder scaffolds ride along with the offer: seller_record
+            # (R3a "hist" — [(game, round, claimed, revealed_truth), ...]) and
+            # judge_prob (R3b "flag"); keys absent unless the referee passed them
             {"trade_id": t.trade_id, "seller": t.seller,
-             "price": t.price, "claimed_value": t.claimed_value}
+             "price": t.price, "claimed_value": t.claimed_value,
+             **({"seller_record": (seller_records or {}).get(t.seller, [])}
+                if seller_records is not None else {}),
+             **({"judge_prob": (judge_flags or {}).get(t.trade_id)}
+                if judge_flags is not None else {})}
             for t in pending_trades
         ],
         "peers": peers,
@@ -162,6 +171,18 @@ def render_observation(obs: Dict[str, Any]) -> str:
                 f"  {t['trade_id']}: {t['seller']} sells value "
                 f"{t['claimed_value']:.1f} for {t['price']:g} credits."
             )
+            rec = t.get("seller_record")
+            if rec:
+                bits = "; ".join(
+                    f"game {g} round {r}: sold {c:.1f} — truth was {tr:.1f} "
+                    f"(off by {abs(c - tr):.0f})" for g, r, c, tr in rec[-12:])
+                lines.append(f"      {t['seller']}'s earlier sales, each with the "
+                             f"true value revealed after that round: {bits}.")
+            elif rec is not None:
+                lines.append(f"      {t['seller']} has no revealed track record yet.")
+            if t.get("judge_prob") is not None:
+                lines.append(f"      your own assessment: "
+                             f"p(fabricated)={t['judge_prob']:.2f}")
     if obs["past_truths"]:
         past = ", ".join(f"{v:.1f}" for v in obs["past_truths"])
         lines.append(f"True values from past rounds (now revealed): [{past}].")

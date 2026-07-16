@@ -128,6 +128,23 @@ class GameConfig:
     # that combining with peers cancels the offset.
     strategy_hint: bool = True
 
+    # --- gap-ladder scaffolds (all default OFF; each rung of the knowing-doing
+    # ladder turns exactly ONE on; the flag is stamped into match_start config,
+    # so no prompt_version bump is needed — default prompts are unchanged) ---
+    # R2 "elicit": respond_trade REQUIRES p_fabricated (0-1) — the buyer must
+    # state its probability that the offered value is fabricated at the moment
+    # it decides, forcing the belief to be invoked at the decision point.
+    elicit_fabrication_prob: bool = False
+    # R3a "hist": each pending offer is rendered with the seller's track record
+    # (past sold values paired with the later-revealed truths) — the evidence a
+    # suspicious buyer could assemble itself, surfaced but with no verdict.
+    show_seller_history: bool = False
+    # R3b "flag": a live self-judge (same model as the buyer) computes
+    # p(fabricated) from the track record and "your own assessment:
+    # p(fabricated)=0.XX" is injected next to the offer — the verdict handed
+    # over, so neither forming nor invoking the belief is required.
+    show_judge_flag: bool = False
+
     # --- model serving (LLM policy only; ignored by scripted policies) ---
     enable_thinking: bool = False     # Qwen3 hybrid-thinking toggle
     temperature: float = 0.4

@@ -54,7 +54,12 @@ for _env, _field in (("BIAS_SIGMA", "bias_sigma"), ("PRIOR_SIGMA", "prior_sigma"
 # REQUIRE_PAID_TRADES=1: offers must cost >0 (any positive price, never free).
 # Together they make PAID trading the only way a value can change hands.
 for _env, _field in (("VALUES_VIA_TRADE_ONLY", "values_via_trade_only"),
-                     ("REQUIRE_PAID_TRADES", "require_paid_trades")):
+                     ("REQUIRE_PAID_TRADES", "require_paid_trades"),
+                     # gap-ladder scaffolds (one per rung): forced pre-buy
+                     # elicitation, seller track record, live self-judge flag
+                     ("ELICIT_PFAB", "elicit_fabrication_prob"),
+                     ("SHOW_SELLER_HISTORY", "show_seller_history"),
+                     ("SHOW_JUDGE_FLAG", "show_judge_flag")):
     if os.environ.get(_env, "") != "":
         _overrides[_field] = os.environ[_env].lower() not in ("0", "false", "no")
 # de-confounding controls for the emergence test: FRAMING=neutral strips the
@@ -84,10 +89,18 @@ print(f"[qwen_match] model={MODEL} preset={PRESET} agents={ids} policies={POLICI
 policies = build_policies(cfg, POLICIES, MODEL, BASE_URL, n_games=GAMES,
                           api_key=API_KEY, provider=PROVIDER)
 
+# show_judge_flag: SELF-judge — reuse the LLM seat's backend (same model,
+# endpoint and client), so judge tokens land in the same USAGE meter that
+# cost projection parses.
+judge_backend = None
+if cfg.show_judge_flag:
+    judge_backend = next((getattr(p, "backend", None) for p in policies.values()
+                          if getattr(p, "backend", None) is not None), None)
+
 os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
 tx = Transcript(OUT + ".jsonl")
 try:
-    run_match(cfg, policies, GAMES, tx)
+    run_match(cfg, policies, GAMES, tx, judge_backend=judge_backend)
 except Exception:
     print("[qwen_match] match errored (partial transcript kept):\n"
           + traceback.format_exc(), flush=True)
