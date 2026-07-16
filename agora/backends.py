@@ -107,12 +107,27 @@ class OpenAIBackend:
         if tools:
             sampling["tools"] = tools
             sampling["tool_choice"] = "auto"    # "required" is buggy on Qwen3+vLLM
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            stream=False,                       # streaming breaks hermes tool parsing
-            **sampling,
-        )
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=False,                   # streaming breaks hermes tool parsing
+                **sampling,
+            )
+        except Exception as exc:
+            # Hosted endpoints sometimes 400 a whole conversation as
+            # 'invalid_prompt' (a usage-policy heuristic — observed on
+            # game-boundary notebook injections). That is a property of the
+            # provider, not of the game: skip THIS turn with a visible marker
+            # instead of killing a paid multi-game match. Counted in usage so
+            # reports can quantify how often the provider intervened.
+            if getattr(exc, "code", None) != "invalid_prompt":
+                raise
+            self.usage["calls"] += 1
+            self.usage["filtered"] = self.usage.get("filtered", 0) + 1
+            return LLMResponse(content=(
+                "[provider filtered: the endpoint rejected this turn's prompt "
+                "as invalid_prompt; the turn was skipped]"), tool_calls=[])
         u = getattr(resp, "usage", None)
         self.usage["calls"] += 1
         if u is not None:

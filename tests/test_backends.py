@@ -88,6 +88,43 @@ def test_empty_tools_are_omitted_from_the_request():
     assert "tools" not in kwargs and "tool_choice" not in kwargs
 
 
+def test_invalid_prompt_filter_skips_the_turn_not_the_match():
+    # Hosted endpoints sometimes 400 a whole conversation as 'invalid_prompt'
+    # (usage-policy heuristic; observed on notebook injections). One filtered
+    # turn must degrade to a visible no-op, never kill a paid match — and any
+    # OTHER error must still raise.
+    if not _HAVE_OPENAI:
+        print("skip: openai not installed"); return
+    from agora.backends import OpenAIBackend
+    be = OpenAIBackend()
+
+    class _Filtered(Exception):
+        code = "invalid_prompt"
+
+    def raise_filtered(**kwargs):
+        raise _Filtered("flagged as potentially violating our usage policy")
+
+    be.client = types.SimpleNamespace(chat=types.SimpleNamespace(
+        completions=types.SimpleNamespace(create=raise_filtered)))
+    cfg = GameConfig(agent_ids=["A", "B"], seed=0)
+    resp = be.generate([{"role": "user", "content": "hi"}], _A_TOOL, cfg)
+    assert resp.tool_calls == [] and "provider filtered" in resp.content
+    assert be.usage["filtered"] == 1 and be.usage["calls"] == 1
+
+    class _Other(Exception):
+        code = "context_length_exceeded"
+
+    def raise_other(**kwargs):
+        raise _Other("too long")
+
+    be.client.chat.completions.create = raise_other
+    try:
+        be.generate([{"role": "user", "content": "hi"}], _A_TOOL, cfg)
+        raise AssertionError("expected the non-filter error to propagate")
+    except _Other:
+        pass
+
+
 def test_provider_explicit_override_and_validation():
     if not _HAVE_OPENAI:
         print("skip: openai not installed"); return
