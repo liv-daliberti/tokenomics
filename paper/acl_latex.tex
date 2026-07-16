@@ -45,7 +45,7 @@ we measure three things at once: whether the model flags a fabrication when
 asked (\emph{stated} detection, scored against the mechanical label), whether
 it declines to buy it in the live game (\emph{behavioural} detection), and the
 gap between them. We find a large \emph{knowing--doing gap} in frontier models:
-GPT-5.4 and Qwen3-32B buy \textbf{95--100\%} of a liar's fabricated readings
+GPT-5.4 and Qwen3-32B buy \textbf{85--100\%} of a liar's fabricated readings
 that a judge flags as fake with probability \textbf{0.8+} --- they can tell the
 value is a lie and pay for it anyway --- and the gap persists whether or not the
 model needs the reading to survive. We situate this against a baseline sweep of
@@ -184,19 +184,20 @@ bought.
 \label{sec:results}
 
 \paragraph{The knowing--doing gap (headline).} Against the scripted liar under
-the paid market, both models are almost perfect \emph{buyers} of fabrications:
-GPT-5.4 accepts \textbf{95\%} of the liar's fabricated offers and Qwen3-32B
-\textbf{100\%}, at both difficulties (Table~\ref{tab:gap}). Yet the same values
-are readily flagged as fake: a judge (GPT-5.4) assigns the liar's offers a
-fabrication probability of \textbf{0.81--0.88} --- for GPT-5.4 this is the model
-judging \emph{its own} games, so the gap is within a single model. Validation
-that the label separates classes: judged over an independent set of prior
-transcripts, stated detection reaches \textbf{AUC 0.91}. The gap is large
-(0.76--0.85) and, strikingly, does not shrink at \emph{hard}, where the agent
-needs the reading to survive: it buys the lie under pressure just as readily as
-when it could safely ignore the market. GPT-5.4 even buys the liar's fakes
-(95\%) more often than it buys the honest partner's real readings at hard
-(64\%). The models can tell the value is fabricated, and pay for it anyway.
+the paid market, both models are near-reflexive \emph{buyers} of fabrications:
+GPT-5.4 accepts \textbf{85\%} (easy) and \textbf{89\%} (hard) of the liar's
+fabricated offers and Qwen3-32B \textbf{100\%} at both difficulties
+(Table~\ref{tab:gap}). Yet the same values are readily flagged as fake: a judge
+(GPT-5.4) assigns the liar's offers a fabrication probability of
+\textbf{0.81--0.88} --- for GPT-5.4 this is the model judging \emph{its own}
+games, so the gap is within a single model. Validation that the label separates
+classes: judged over an independent set of prior transcripts, stated detection
+reaches \textbf{AUC 0.91}. The gap is large (0.70--0.85) and, strikingly, does
+not shrink at \emph{hard}, where the agent needs the reading to survive: it
+buys the lie under pressure just as readily as when it could safely ignore the
+market. GPT-5.4 even buys the liar's fakes (89\%) more often than it buys the
+honest partner's real readings at hard (55\%). The models can tell the value
+is fabricated, and pay for it anyway.
 
 \begin{table}
   \centering
@@ -205,8 +206,8 @@ when it could safely ignore the market. GPT-5.4 even buys the liar's fakes
     \toprule
     \textbf{Player} & \textbf{Diff.} & \textbf{flags} & \textbf{buys} & \textbf{gap} \\
     \midrule
-    GPT-5.4       & easy & 0.88 & 0.95 & 0.83 \\
-    GPT-5.4       & hard & 0.81 & 0.95 & 0.76 \\
+    GPT-5.4       & easy & 0.88 & 0.85 & 0.73 \\
+    GPT-5.4       & hard & 0.81 & 0.89 & 0.70 \\
     Qwen3-32B     & easy & 0.85 & 1.00 & 0.85 \\
     Qwen3-32B     & hard & 0.82 & 1.00 & 0.82 \\
     \bottomrule
@@ -219,31 +220,33 @@ when it could safely ignore the market. GPT-5.4 even buys the liar's fakes
   \label{tab:gap}
 \end{table}
 
-\paragraph{Making the lie expensive: a pricing failure.}
+\paragraph{Making the lie expensive: price does what detection does not.}
 If the buying were a cost--benefit decision, raising the price of a fabrication
---- worth nothing --- ought to stop it. It does not. We sweep a minimum trade
-price at the hard wall, both bots priced identically at the floor and a budget
-large enough that refusal is a choice, not an affordability limit
-(Fig.~\ref{fig:price}). GPT-5.4 prices \emph{honest} information roughly
-rationally: it buys a real reading (worth $\sim$6 credits) 99\% of the time up
-to a price of 8, then refuses once it is clearly overpriced (12\% at 32). But it
-never prices the \emph{fabrication}: it buys the liar's fake 100\% of the time
-while cheap, and even at 32 credits --- five times what a real reading is worth,
-for a value of zero --- still buys it 41\%, \emph{more often than it buys the
-fairly-valued honest reading at that same price}. The model can value genuine
-information; it simply does not discount a value for being false. The
-knowing--doing gap is, at bottom, a \emph{pricing} failure: detected deception
-never lowers the price the model will pay.
+--- worth nothing --- ought to stop it. It does, but only once the price is
+salient. We sweep a minimum trade price at the hard wall, both bots priced
+identically at the floor and a budget large enough that refusal is a choice,
+not an affordability limit (Fig.~\ref{fig:price}). At or below the honest
+reading's worth ($\sim$6 credits), GPT-5.4 buys the liar's fake \textbf{100\%}
+of the time --- \emph{more} often than it buys the honest partner's real
+reading at the same price (75\%) --- despite flagging the same values as
+fabricated when asked. Past that value the cost--benefit machinery visibly
+engages, and for both sellers: the fake falls to 36\% at 8 credits and 10\% at
+32, the real reading holds to 72\% at 8 and drops to 2\% at 32. So the model
+\emph{can} run the purchase through a value calculation --- an expensive lie is
+refused --- but detected falsity alone never triggers that calculation: when
+the lie is cheap, knowing it is a lie changes nothing. The knowing--doing gap
+is a \emph{low-price} phenomenon, which is exactly the regime in which
+information usually flows between agents.
 
 \begin{figure}
   \centering
   \includegraphics[width=\columnwidth]{fig/price_sweep.pdf}
   \caption{As the lie gets more expensive. GPT-5.4's buy-rate on the liar's
     fabrication (worth $\sim$0) and an honest partner's real reading (worth
-    $\sim$6) as the minimum trade price rises. Honest information is priced
-    roughly rationally --- bought up to about its value, refused above it; the
-    fabrication is not, still bought 41\% of the time at 32 credits. Pilot, 2
-    seeds per point.}
+    $\sim$6) as the minimum trade price rises. Below the reading's value the
+    fake is bought \emph{more} often than the real thing (100\% vs 75\%);
+    above it both demand curves collapse (10\% vs 2\% at 32). Price disciplines
+    the purchase; detection alone does not. Pilot, 2 seeds per point.}
   \label{fig:price}
 \end{figure}
 
