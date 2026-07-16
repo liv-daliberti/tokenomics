@@ -27,7 +27,7 @@ _spec.loader.exec_module(_lr)
 
 RUNGS = _lr.RUNGS                                     # base -> ... -> flag
 RUNG_LABELS = {"base": "baseline", "mem": "+memory\nnotebook",
-               "elicit": "+state belief\nbefore buying", "hist": "+seller\ntrack record",
+               "elicit": "+elicit\np(fake)", "hist": "+track\nrecord",
                "flag": "+own verdict\nshown"}
 # entity-consistent, CVD-validated pair (dataviz six checks, light surface)
 MODELS = [("gpt54", "GPT-5.4", "#1f77b4", "o", "-"),
@@ -75,7 +75,7 @@ def main(argv=None):
         ax_buy.set_title(title, fontsize=10)
         ax_buy.set_ylim(-0.04, 1.04)
         ax_buy.axhline(0, color="#9aa4b2", lw=1, ls=":")
-        ax_disc.set_ylim(-0.54, 1.04)
+        ax_disc.set_ylim(-1.04, 1.04)
         ax_disc.axhline(0, color="#9aa4b2", lw=1, ls=":")
         ax_disc.set_xticks(xs)
         ax_disc.set_xticklabels([RUNG_LABELS.get(r, r) for r in have], fontsize=8)

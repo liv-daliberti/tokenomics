@@ -111,8 +111,11 @@ def collect(arms: list) -> tuple:
                     cell["stated_n"].append(1)
                 if p is not None:
                     cell[f"p_{kind}"].append(p)
-                    cell["auc_labels"].append(o["fabricated"])
-                    cell["auc_scores"].append(p)
+                    # AUC must pool BOTH partners (a liar cell has only
+                    # positives) — key it without the partner
+                    pooled = cells[(model, rung, "_pooled_", lvl)]
+                    pooled["auc_labels"].append(o["fabricated"])
+                    pooled["auc_scores"].append(p)
                     if o["fabricated"]:
                         cell["gap"].append(1 if (buy and p >= 0.5) else 0)
                 if o["fabricated"] and o["game"] is not None:
@@ -146,6 +149,9 @@ def rows_for(cells) -> list:
     """Flatten cells into report rows in ladder order."""
     out = []
     for (model, rung, partner, lvl), c in cells.items():
+        if partner == "_pooled_":
+            continue
+        pooled = cells.get((model, rung, "_pooled_", lvl), {})
         buy_fab, buy_hon = _mean(c["buy_fab"]), _mean(c["buy_hon"])
         row = {
             "model": model, "rung": rung, "partner": partner, "difficulty": lvl,
@@ -155,8 +161,10 @@ def rows_for(cells) -> list:
             "discrimination": (buy_hon - buy_fab
                                if buy_fab is not None and buy_hon is not None else None),
             "p_fab": _mean(c["p_fab"]), "p_hon": _mean(c["p_hon"]),
-            "stated_auc": (_lj._auc(c["auc_labels"], c["auc_scores"])
-                           if c["auc_scores"] else None),
+            # the in-context detection AUC for this model x rung x difficulty
+            # (pooled over both partners; same value on both partner rows)
+            "stated_auc": (_lj._auc(pooled["auc_labels"], pooled["auc_scores"])
+                           if pooled.get("auc_scores") else None),
             "gap_rate": _mean(c["gap"]), "n_gap": len(c["gap"]),
             # elicited-p omission: answered offers that carry no stated belief
             # (only meaningful on the elicit rung, where the schema demands one)
